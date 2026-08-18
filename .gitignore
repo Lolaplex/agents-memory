@@ -3,10 +3,12 @@ __pycache__/
 .venv/
 venv/
 
-# Live personal store — ship memory/*.example.* instead
+# Live personal store is ~/.agents/memory (and <repo>/.agents/memory).
+# These ignores only cover leftover files if someone still writes in this clone.
 memory/USER.md
 memory/PROJECTS.md
 memory/facts.md
+memory/chats-index.md
 memory/scan.json
 memory/projects/*.md
 !memory/projects/.gitkeep

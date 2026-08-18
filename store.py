@@ -1,20 +1,38 @@
-"""Local markdown memory store. No cloud."""
+"""Local markdown memory store. No cloud.
+
+Two layers, one retrieval:
+
+- User: ``~/.agents/memory`` — identity, project map, global facts, chat index.
+- Project: ``<repo>/.agents/memory`` — facts that belong to that repo.
+
+Search unions both. Always-on injection stays short (USER.md + PROJECTS.md).
+Chat bodies stay in product folders; only titles/paths are ingested.
+`add_memory` requires kind+name (user taxonomy) or project= (repo facts.md).
+"""
 from __future__ import annotations
 
 import json
 import re
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent
-MEMORY = ROOT / "memory"
-PROJECTS_DIR = MEMORY / "projects"
-USER_MD = MEMORY / "USER.md"
-PROJECTS_MD = MEMORY / "PROJECTS.md"
-SCAN_JSON = MEMORY / "scan.json"
-FACTS_MD = MEMORY / "facts.md"
+EXAMPLES = ROOT / "memory"
+LEGACY_MEMORY = ROOT / "memory"
+AGENTS_HOME = Path.home() / ".agents"
+USER_MEMORY = AGENTS_HOME / "memory"
+MEMORY = USER_MEMORY
+ORPHANS = USER_MEMORY / "orphans"
+USER_MD = USER_MEMORY / "USER.md"
+PROJECTS_MD = USER_MEMORY / "PROJECTS.md"
+SCAN_JSON = USER_MEMORY / "scan.json"
+FACTS_MD = USER_MEMORY / "facts.md"
+CHATS_INDEX = USER_MEMORY / "chats-index.md"
+LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
+PROJECTS_DIR = ORPHANS
 
 MARKER = "<!-- agent-memory-sync -->"
 PATHS_BEGIN = "<!-- agent-memory-paths -->"
@@ -61,8 +79,17 @@ class Project:
         return Path(self.path)
 
     @property
+    def memory_dir(self) -> Path:
+        repo = self.path_obj
+        if repo.is_dir():
+            return repo / ".agents" / "memory"
+        return ORPHANS
+
+    @property
     def detail_path(self) -> Path:
-        return PROJECTS_DIR / f"{self.slug}.md"
+        if self.path_obj.is_dir():
+            return self.memory_dir / "facts.md"
+        return ORPHANS / f"{self.slug}.md"
 
 
 def _read(path: Path) -> str:
@@ -99,18 +126,120 @@ def default_scan() -> dict:
     }
 
 
+LAYOUT_TEXT = """# Agent memory layout
+
+User store `~/.agents/memory` plus `<repo>/.agents/memory`. Search unions all markdown.
+
+| Folder | Holds |
+|--------|--------|
+| `concepts/` | Reusable ideas (ISAR kernel, Koru fragments, resolver vs agent) |
+| `entities/` | Named people, orgs, products, machines |
+| `workflows/` | How to do a thing (ingest, sync, git-updater, sandbox) |
+| `projects/` | One card per slug (also for trees not in `~/repos`) |
+| `notes/scratch/` | Throw-away |
+| `notes/<slug>/` | Working notes linked to a project |
+
+Always-on injection: `USER.md` + `PROJECTS.md` only.
+Chat bodies stay in product folders. `chats-index.md` is the catalog.
+`add_memory` takes `kind`+`name` (or `project=` for a repo). Bare dumps are rejected.
+"""
+
+
+MEMORY_FOLDERS = (
+    "concepts",
+    "entities",
+    "workflows",
+    "projects",
+    "notes/scratch",
+)
+
+
+def _copy_if_missing(src: Path, dst: Path) -> bool:
+    if not src.exists() or dst.exists():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
+
+
+def migrate_legacy_store() -> List[str]:
+    """Copy clone `memory/` live files into ~/.agents/memory once.
+
+    Prefer the clone if the user store is still an empty example.
+    """
+    moved: List[str] = []
+    if not LEGACY_MEMORY.is_dir():
+        return moved
+
+    def take(src: Path, dst: Path, replace: bool) -> None:
+        if not src.exists():
+            return
+        if dst.exists() and not replace:
+            return
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        moved.append(str(dst))
+
+    take(LEGACY_MEMORY / "USER.md", USER_MD, replace=user_profile_looks_blank())
+    take(
+        LEGACY_MEMORY / "PROJECTS.md",
+        PROJECTS_MD,
+        replace=not parse_projects(),
+    )
+    legacy_facts = LEGACY_MEMORY / "facts.md"
+    take(
+        legacy_facts,
+        FACTS_MD,
+        replace=FACTS_MD.exists()
+        and legacy_facts.exists()
+        and FACTS_MD.stat().st_size < legacy_facts.stat().st_size,
+    )
+    take(LEGACY_MEMORY / "scan.json", SCAN_JSON, replace=False)
+    legacy_scan = LEGACY_MEMORY / "scan.json"
+    if legacy_scan.exists():
+        dest_ok = False
+        if SCAN_JSON.exists():
+            try:
+                dest_ok = any(
+                    Path(r).expanduser().is_dir()
+                    for r in (json.loads(_read(SCAN_JSON)).get("roots") or [])
+                )
+            except json.JSONDecodeError:
+                dest_ok = False
+        take(legacy_scan, SCAN_JSON, replace=not dest_ok)
+    take(LEGACY_MEMORY / "chats-index.md", CHATS_INDEX, replace=not CHATS_INDEX.exists())
+
+    by_slug = {p.slug: p for p in parse_projects()}
+    legacy_projects = LEGACY_MEMORY / "projects"
+    if legacy_projects.is_dir():
+        for src in sorted(legacy_projects.glob("*.md")):
+            slug = src.stem
+            p = by_slug.get(slug)
+            dest = p.detail_path if p else ORPHANS / src.name
+            take(src, dest, replace=False)
+            orphan = ORPHANS / src.name
+            if p and p.path_obj.is_dir() and orphan.exists() and dest != orphan:
+                take(orphan, dest, replace=False)
+                if dest.exists():
+                    orphan.unlink()
+                    moved.append(f"removed orphan {orphan}")
+    return moved
+
+
 def ensure_memory_layout() -> None:
-    """Create memory/ and copy *.example.* into live files if they are missing."""
-    MEMORY.mkdir(parents=True, exist_ok=True)
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    gitkeep = PROJECTS_DIR / ".gitkeep"
-    if not gitkeep.exists():
-        _write(gitkeep, "")
+    """Create ~/.agents/memory, migrate clone leftovers, then fill missing examples."""
+    USER_MEMORY.mkdir(parents=True, exist_ok=True)
+    ORPHANS.mkdir(parents=True, exist_ok=True)
+    for rel in MEMORY_FOLDERS:
+        (USER_MEMORY / rel).mkdir(parents=True, exist_ok=True)
+    migrate_legacy_store()
+    if not LAYOUT_MD.exists():
+        _write(LAYOUT_MD, LAYOUT_TEXT)
     pairs = (
-        (MEMORY / "USER.example.md", USER_MD),
-        (MEMORY / "PROJECTS.example.md", PROJECTS_MD),
-        (MEMORY / "facts.example.md", FACTS_MD),
-        (MEMORY / "scan.example.json", SCAN_JSON),
+        (EXAMPLES / "USER.example.md", USER_MD),
+        (EXAMPLES / "PROJECTS.example.md", PROJECTS_MD),
+        (EXAMPLES / "facts.example.md", FACTS_MD),
+        (EXAMPLES / "scan.example.json", SCAN_JSON),
     )
     for src, dst in pairs:
         if dst.exists() or not src.exists():
@@ -351,10 +480,15 @@ def stub_project_md(p: Project) -> str:
 
 
 def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
-    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    if p.detail_path.exists() and not overwrite_empty:
+    dest = p.detail_path
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if p.path_obj.is_dir():
+        gi = dest.parent / ".gitignore"
+        if not gi.exists():
+            _write(gi, "*\n!.gitignore\n")
+    if dest.exists() and not overwrite_empty:
         return
-    _write(p.detail_path, stub_project_md(p))
+    _write(dest, stub_project_md(p))
 
 
 def register_project(
@@ -410,8 +544,9 @@ def project_agents_text(p: Project) -> str:
     return (
         f"{MARKER}\n\n"
         f"# Project: {p.slug}\n\n"
-        f"Global profile is synced into `.cursor/rules/{cursor_rule_name()}` and "
-        f"`~/.gemini/config/AGENTS.md`.\n\n"
+        f"User memory: `{USER_MEMORY}`.\n"
+        "Project memory: `.agents/memory/facts.md`.\n"
+        "Retrieval is overarching (MCP `search_memory`). This file is the local slice.\n\n"
         f"{details}\n"
     )
 
@@ -439,8 +574,9 @@ def repo_pointer_rule_text() -> str:
         "alwaysApply: true\n"
         "---\n\n"
         f"{MARKER}\n\n"
-        f"Read `{USER_MD}` and `{PROJECTS_MD}` at session start before coding.\n\n"
-        "- MCP: `agent-memory` (local markdown).\n"
+        f"User memory: `{USER_MEMORY}` (identity, project map, chat index).\n"
+        "This repo: `.agents/memory/facts.md`.\n"
+        "Search both via MCP `agent-memory` / `search_memory`.\n\n"
         f"- New folder under {roots_txt} -> skill `memory-sync` or "
         "`register_project`. Do not leave it unlisted.\n"
     )
@@ -467,6 +603,8 @@ def inject_into_repo(p: Project) -> List[str]:
     repo = p.path_obj
     if not repo.is_dir():
         return written
+    ensure_project_file(p)
+    written.append(str(p.detail_path))
     rule = repo / ".cursor" / "rules" / cursor_rule_name()
     _write(rule, repo_pointer_rule_text())
     written.append(str(rule))
@@ -481,10 +619,12 @@ def inject_into_repo(p: Project) -> List[str]:
 def _machine_paths_block() -> str:
     inv = ROOT / "inventory.py"
     syn = ROOT / "sync.py"
+    ingest = ROOT / "ingest_chats.py"
     roots = ", ".join(f"`{r}`" for r in scan_roots()) or "`scan.json` roots"
     return (
-        f"Install: `{ROOT}`  \n"
-        f"Live store: `{MEMORY}`  \n"
+        f"Install (engine): `{ROOT}`  \n"
+        f"User memory: `{USER_MEMORY}`  \n"
+        f"Project memory: `<repo>/.agents/memory`  \n"
         f"Cursor rule: `{cursor_rule_name()}`  \n"
         f"Scan roots: {roots}\n\n"
         "Scripts (absolute, any workspace):\n\n"
@@ -492,6 +632,7 @@ def _machine_paths_block() -> str:
         f"python {inv}\n"
         f"python {inv} --json\n"
         f"python {syn}\n"
+        f"python {ingest}\n"
         "```\n\n"
         "Register:\n\n"
         "```powershell\n"
@@ -552,35 +693,104 @@ def sync_injection(include_repos: bool = True) -> List[str]:
     return written
 
 
-def iter_memory_files() -> List[Path]:
-    files = [USER_MD, PROJECTS_MD, FACTS_MD]
-    if PROJECTS_DIR.is_dir():
-        files.extend(sorted(PROJECTS_DIR.glob("*.md")))
-    return [f for f in files if f.exists()]
+def file_id(path: Path) -> str:
+    path = path.resolve()
+    try:
+        rel = path.relative_to(USER_MEMORY.resolve())
+        return f"user/{rel.as_posix()}"
+    except ValueError:
+        pass
+    for p in parse_projects():
+        if not p.path_obj.is_dir():
+            continue
+        root = (p.path_obj / ".agents" / "memory").resolve()
+        try:
+            rel = path.relative_to(root)
+            return f"project/{p.slug}/{rel.as_posix()}"
+        except ValueError:
+            continue
+    return path.as_posix()
+
+
+def resolve_memory_path(rel: str) -> Path:
+    rel = rel.replace("\\", "/").lstrip("/")
+    if rel.startswith("user/"):
+        return (USER_MEMORY / rel[len("user/") :]).resolve()
+    if rel.startswith("project/"):
+        rest = rel[len("project/") :]
+        slug, _, inner = rest.partition("/")
+        p = projects_by_slug().get(slug)
+        if not p:
+            raise FileNotFoundError(rel)
+        if not inner:
+            return p.detail_path
+        return (p.memory_dir / inner).resolve()
+    legacy = USER_MEMORY / rel
+    if legacy.exists():
+        return legacy
+    if rel.startswith("projects/"):
+        slug = Path(rel).stem
+        p = projects_by_slug().get(slug)
+        if p:
+            return p.detail_path
+    raise FileNotFoundError(rel)
+
+
+def _markdown_under(root: Path) -> List[Path]:
+    if not root.is_dir():
+        return []
+    return sorted(p for p in root.rglob("*.md") if p.is_file())
+
+
+def iter_user_memory_files() -> List[Path]:
+    return _markdown_under(USER_MEMORY)
+
+
+def iter_project_memory_files(slug: str = "") -> List[Path]:
+    files: List[Path] = []
+    for p in parse_projects():
+        if slug and p.slug != slug:
+            continue
+        if p.path_obj.is_dir():
+            folder = p.path_obj / ".agents" / "memory"
+            files.extend(_markdown_under(folder))
+            continue
+        if p.detail_path.exists():
+            files.append(p.detail_path)
+    return files
+
+
+def iter_memory_files(project: str = "") -> List[Path]:
+    """Overarching retrieval: user store plus every (or one) project store."""
+    seen: set[str] = set()
+    out: List[Path] = []
+    chunks = iter_user_memory_files()
+    chunks.extend(iter_project_memory_files(project.strip() if project else ""))
+    if project:
+        # still include user layer so cross-cutting facts remain findable
+        pass
+    for path in chunks:
+        key = str(path.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
 
 
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
     q = query.lower().strip()
-    files = iter_memory_files()
-    if project:
-        slug = project.strip()
-        files = [f for f in files if f.stem == slug or f.name.lower() == f"{slug}.md"]
-        p = projects_by_slug().get(slug)
-        if p:
-            files.append(p.detail_path)
-        files = [f for f in files if f.exists()]
+    files = iter_memory_files(project=project)
     hits: List[dict] = []
     for path in files:
         for i, line in enumerate(_read(path).splitlines(), 1):
-            if q and q not in line.lower():
+            if not q or q not in line.lower():
                 continue
-            if not q:
-                continue
-            rel = path.relative_to(MEMORY).as_posix()
+            ident = file_id(path)
             hits.append(
                 {
-                    "id": f"{rel}:{i}",
-                    "file": rel,
+                    "id": f"{ident}:{i}",
+                    "file": ident,
                     "line": i,
                     "text": line.strip(),
                 }
@@ -590,62 +800,152 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
     return hits
 
 
-def add_memory(fact: str, project: str = "") -> str:
-    fact = fact.strip()
-    if not fact:
-        raise ValueError("empty fact")
+KIND_FOLDERS = {
+    "concept": "concepts",
+    "concepts": "concepts",
+    "entity": "entities",
+    "entities": "entities",
+    "workflow": "workflows",
+    "workflows": "workflows",
+    "project": "projects",
+    "projects": "projects",
+}
+
+KIND_HELP = (
+    "add_memory needs kind=concept|entity|workflow|project|note|scratch and name=, "
+    "or project=<slug> to write <repo>/.agents/memory/facts.md"
+)
+
+
+def slugify_name(name: str) -> str:
+    name = (name or "").strip().replace("\\", "/").split("/")[-1]
+    if name.lower().endswith(".md"):
+        name = name[:-3]
+    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-._").lower()
+    if not name:
+        raise ValueError("empty name")
+    return name
+
+
+def _heading_from_stem(stem: str) -> str:
+    return stem.replace("-", " ").replace("_", " ").strip().title()
+
+
+def memory_file_for(kind: str = "", name: str = "", project: str = "") -> Path:
+    """Resolve where a fact belongs. User taxonomy or a registered repo facts.md."""
+    kind = (kind or "").strip().lower()
+    name = (name or "").strip()
+    project = (project or "").strip()
+    if kind in {"notes"}:
+        kind = "note"
+
+    if kind == "scratch":
+        return USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+
+    if kind == "note":
+        if project:
+            stem = slugify_name(name) if name else "captured"
+            return USER_MEMORY / "notes" / slugify_name(project) / f"{stem}.md"
+        return USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+
+    if kind in KIND_FOLDERS:
+        stem = slugify_name(name or project)
+        return USER_MEMORY / KIND_FOLDERS[kind] / f"{stem}.md"
+
     if project:
         p = projects_by_slug().get(project)
         if not p:
             raise ValueError(f"unknown project '{project}' — register it first")
         ensure_project_file(p)
-        text = _read(p.detail_path)
-        if "## Captured" not in text:
-            text = text.rstrip() + "\n\n## Captured\n\n"
-        lines = text.splitlines()
-        # drop placeholder
-        lines = [ln for ln in lines if ln.strip() != "- (none yet)"]
-        if not any(ln.strip() == "## Captured" for ln in lines):
-            lines.append("")
-            lines.append("## Captured")
-            lines.append("")
-        # insert after heading
-        out: List[str] = []
-        inserted = False
-        for ln in lines:
-            out.append(ln)
-            if not inserted and ln.strip() == "## Captured":
-                out.append(f"- {fact}")
-                inserted = True
-        if not inserted:
+        return p.detail_path
+
+    raise ValueError(KIND_HELP)
+
+
+def _already_has_fact(text: str, fact: str) -> bool:
+    needle = fact.strip().lstrip("-").strip().lower()
+    if not needle:
+        return True
+    for line in text.splitlines():
+        if line.strip().lstrip("-").strip().lower() == needle:
+            return True
+    return False
+
+
+def _append_bullet(path: Path, fact: str) -> str:
+    bullet = fact if fact.lstrip().startswith("- ") else f"- {fact}"
+    if path.exists():
+        text = _read(path)
+        if _already_has_fact(text, fact):
+            return file_id(path)
+        body = text.rstrip()
+        if body and not body.splitlines()[-1].lstrip().startswith("- "):
+            body += "\n"
+        _write(path, body + f"\n{bullet}\n")
+        return file_id(path)
+    _write(path, f"# {_heading_from_stem(path.stem)}\n\n{bullet}\n")
+    return file_id(path)
+
+
+def _append_repo_captured(path: Path, fact: str) -> str:
+    text = _read(path)
+    if _already_has_fact(text, fact):
+        return file_id(path)
+    if "## Captured" not in text:
+        text = text.rstrip() + "\n\n## Captured\n\n"
+    lines = [ln for ln in text.splitlines() if ln.strip() != "- (none yet)"]
+    if not any(ln.strip() == "## Captured" for ln in lines):
+        lines.extend(["", "## Captured", ""])
+    out: List[str] = []
+    inserted = False
+    for ln in lines:
+        out.append(ln)
+        if not inserted and ln.strip() == "## Captured":
             out.append(f"- {fact}")
-        _write(p.detail_path, "\n".join(out))
-        return f"{p.detail_path.relative_to(MEMORY).as_posix()}"
-    if not FACTS_MD.exists():
-        _write(FACTS_MD, "# Captured facts\n\n")
-    text = _read(FACTS_MD).rstrip() + f"\n- {fact}\n"
-    _write(FACTS_MD, text)
-    return "facts.md"
+            inserted = True
+    if not inserted:
+        out.append(f"- {fact}")
+    _write(path, "\n".join(out))
+    return file_id(path)
+
+
+def add_memory(fact: str, kind: str = "", name: str = "", project: str = "") -> str:
+    """File a durable fact. kind+name → user taxonomy; project= alone → repo facts.md."""
+    fact = fact.strip()
+    if not fact:
+        raise ValueError("empty fact")
+    path = memory_file_for(kind=kind, name=name, project=project)
+    if not kind and project and path.name == "facts.md":
+        return _append_repo_captured(path, fact)
+    return _append_bullet(path, fact)
 
 
 def get_project_memories(project: str) -> str:
     p = projects_by_slug().get(project)
     if not p:
         return f"Unknown project '{project}'. See PROJECTS.md."
-    body = _read(p.detail_path) if p.detail_path.exists() else stub_project_md(p)
     header = (
         f"slug: {p.slug}\npath: {p.path}\nrole: {p.role}\n"
-        f"stack: {p.stack}\nstatus: {p.status}\n\n"
+        f"stack: {p.stack}\nstatus: {p.status}\n"
+        f"file: {p.detail_path}\n\n"
     )
-    return header + body
+    files = _markdown_under(p.memory_dir) if p.path_obj.is_dir() else []
+    if not files and p.detail_path.exists():
+        files = [p.detail_path]
+    if not files:
+        return header + stub_project_md(p)
+    parts = [header]
+    for path in files:
+        parts.append(f"## {file_id(path)}\n\n{_read(path).rstrip()}\n")
+    return "\n".join(parts)
 
 
 def delete_memory(memory_id: str) -> str:
     if ":" not in memory_id:
-        raise ValueError("id must look like 'facts.md:12' or 'projects/omnus.md:8'")
+        raise ValueError("id must look like 'user/facts.md:12' or 'project/slug/facts.md:8'")
     rel, _, line_s = memory_id.rpartition(":")
     line_no = int(line_s)
-    path = MEMORY / rel
+    path = resolve_memory_path(rel)
     if not path.exists():
         raise FileNotFoundError(rel)
     lines = _read(path).splitlines()

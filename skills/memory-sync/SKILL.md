@@ -10,32 +10,23 @@ Local markdown memory. Not cloud.
 ## Paths
 
 <!-- agent-memory-paths -->
-This clone. Live store: `memory/`. Scripts from the agent-memory repo root:
-
-```powershell
-python inventory.py
-python inventory.py --json
-python sync.py
-```
-
-Register:
-
-```powershell
-python inventory.py --register SLUG "C:\path\to\repo" "role here" "stack here"
-```
-
-New folders: whatever `memory/scan.json` lists under `roots`. Cursor rule filename: `cursor_rule_name` in that file (default `user-rules.mdc`).
+User memory: `~/.agents/memory`. Project memory: `<repo>/.agents/memory`.
 <!-- /agent-memory-paths -->
 
 | File | What |
 |------|------|
-| `USER.md` | Identity, talk style, stack, ALWAYS/NEVER |
-| `PROJECTS.md` | slug / path / role / stack / status |
-| `projects/<slug>.md` | Project facts |
-| `facts.md` | Global captured facts |
-| `scan.json` | Roots, ignore list, Cursor rule name |
+| `~/.agents/memory/USER.md` | Identity, talk style, stack, ALWAYS/NEVER |
+| `~/.agents/memory/PROJECTS.md` | slug / path / role / stack / status |
+| `~/.agents/memory/concepts/` | Ideas |
+| `~/.agents/memory/entities/` | Named things |
+| `~/.agents/memory/workflows/` | Procedures |
+| `~/.agents/memory/projects/` | Project cards |
+| `~/.agents/memory/notes/scratch/` | Throw-away |
+| `~/.agents/memory/notes/<slug>/` | Linked working notes |
+| `~/.agents/memory/chats-index.md` | Chat title catalog |
+| `~/.agents/memory/scan.json` | Roots, ignore list, Cursor rule name |
 
-MCP server `agent-memory`: `inventory_projects`, `register_project`, `ignore_project`, `add_memory`, `search_memory`, `get_project_memories`, `sync_local_agents_md`, `list_projects`.
+MCP server `agent-memory`: `inventory_projects`, `register_project`, `ignore_project`, `add_memory` (kind+name or project=), `search_memory`, `get_project_memories`, `sync_local_agents_md`, `list_projects`.
 
 ## When this skill fires
 
@@ -54,7 +45,7 @@ MCP server `agent-memory`: `inventory_projects`, `register_project`, `ignore_pro
    - **add** → role + stack (one line each)
    - **ignore** → never list again (`ignore_project` / `--ignore SLUG`)
    - **skip** → leave for later
-4. Register adds write `PROJECTS.md`, `projects/SLUG.md`, then sync injection files.
+4. Register adds write `PROJECTS.md` and `<repo>/.agents/memory/facts.md`, then sync injection files.
 5. For **missing**: confirm delete from `PROJECTS.md` or fix the path. Do not guess a new path.
 6. Run `sync.py` if you edited markdown by hand.
 7. Tell the user: Cursor/Antigravity pick up MCP + rules after reload if the server name changed.
@@ -69,9 +60,14 @@ If you scaffold a repo under a scan root:
 
 ## Edit rules
 
-- Durable identity → `USER.md` then `sync.py`
-- Durable project fact → `add_memory(fact, project="slug")` or edit `projects/<slug>.md`
-- Do not copy secrets, tokens, SSH keys, or `.env` values into memory
+- Durable identity → `~/.agents/memory/USER.md` then `sync.py`
+- Idea → MCP `add_memory(kind="concept"|"entity", name="stem")`
+- Procedure → `add_memory(kind="workflow", name="stem")`
+- Project card → `add_memory(kind="project", name="slug")` and/or `<repo>/.agents/memory/`
+- Repo-local fact → `add_memory(fact, project="slug")` (no kind)
+- Working note → `add_memory(kind="note", name="stem", project="slug")`; throw-away → `kind="scratch"`
+- Chat titles → `python ingest_chats.py`. ChatGPT bodies → `python extract_openai.py` then distill; never dump transcripts or `user.json`
+- Do not copy secrets, tokens, SSH keys, emails, phones, or `.env` values into memory
 - Do not overwrite a repo root `AGENTS.md` unless it contains `<!-- agent-memory-sync -->`
 - Per-repo always-on file is `.cursor/rules/<cursor_rule_name>` (generated)
 

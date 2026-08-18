@@ -32,7 +32,7 @@ mcp = FastMCP("agent-memory")
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search local markdown memory (USER.md, PROJECTS.md, projects/*.md, facts.md)."""
+    """Search all local markdown (concepts/entities/workflows/projects/notes + each repo .agents/memory)."""
     try:
         hits = store_search(query, project=project)
         if not hits:
@@ -46,10 +46,21 @@ def search_memory(query: str, project: str = "") -> str:
 
 
 @mcp.tool()
-def add_memory(fact_or_message: str, project: str = "") -> str:
-    """Append a durable fact to local markdown. Use project slug when it is project-specific."""
+def add_memory(
+    fact_or_message: str,
+    kind: str = "",
+    name: str = "",
+    project: str = "",
+) -> str:
+    """File a durable fact in the right folder.
+
+    kind=concept|entity|workflow|project|note|scratch plus name= (file stem).
+    kind=note uses project= as the notes/<slug>/ folder (or scratch if omitted).
+    project= alone (no kind) writes <repo>/.agents/memory/facts.md.
+    Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
+    """
     try:
-        loc = store_add(fact_or_message, project=project)
+        loc = store_add(fact_or_message, kind=kind, name=name, project=project)
         return f"Saved to {loc}"
     except Exception as e:
         return f"Error saving memory: {e}"
@@ -66,7 +77,7 @@ def get_project_memories(project: str) -> str:
 
 @mcp.tool()
 def delete_memory(memory_id: str) -> str:
-    """Delete a memory line by id from search_memory, e.g. facts.md:3 or projects/omnus.md:12."""
+    """Delete a memory line by id from search_memory, e.g. user/facts.md:3 or project/git-updater/facts.md:12."""
     try:
         removed = store_delete(memory_id)
         return f"Deleted {memory_id}: {removed}"
@@ -103,7 +114,7 @@ def register_project(
     stack: str = "—",
     status: str = "active",
 ) -> str:
-    """Add or update a project in PROJECTS.md, write projects/<slug>.md, inject Cursor/Antigravity rules, sync."""
+    """Add or update a project in PROJECTS.md, write `<repo>/.agents/memory/facts.md`, inject rules, sync."""
     try:
         p = store_register(slug, path, role=role, stack=stack, status=status)
         written = sync_injection(include_repos=True)

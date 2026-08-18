@@ -28,7 +28,7 @@ def main() -> int:
         print(merge_cursor_mcp())
         if user_profile_looks_blank():
             print(
-                "\nUSER.md still blank (Name:). Fill memory/USER.md + memory/scan.json, "
+                "\nUSER.md still blank (Name:). Fill ~/.agents/memory/USER.md + scan.json, "
                 "then run: python sync.py"
             )
         print("\nReload Cursor so MCP `agent-memory` appears.")

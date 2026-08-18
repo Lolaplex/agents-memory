@@ -2,9 +2,35 @@
 
 Local markdown memory for coding agents. MCP server + Cursor/Antigravity injection. No cloud.
 
-Live identity (`memory/USER.md`, `PROJECTS.md`, `facts.md`, `scan.json`, `projects/*.md`) is **gitignored**. This repo ships the engine and empty examples.
+Live files live under **`~/.agents/memory`** (user) and **`<repo>/.agents/memory`** (project). This repo ships the engine and `memory/*.example.*` templates.
 
 **Coding agents:** follow [`AGENTS.md`](AGENTS.md). That file is the install spec. This README is the map.
+
+## Layout
+
+Same split as skills: one user folder, one folder per repo, one search across both.
+
+| Path | What |
+|------|------|
+| `~/.agents/memory/USER.md` | Always-on identity |
+| `~/.agents/memory/PROJECTS.md` | slug / path / role / stack / status |
+| `~/.agents/memory/concepts/` | Reusable ideas |
+| `~/.agents/memory/entities/` | Named people, orgs, products, machines |
+| `~/.agents/memory/workflows/` | Procedures |
+| `~/.agents/memory/projects/` | Overarching project cards |
+| `~/.agents/memory/notes/scratch/` | Throw-away |
+| `~/.agents/memory/notes/<slug>/` | Notes linked to a project |
+| `~/.agents/memory/chats-index.md` | Chat titles + paths (not bodies) |
+| `<repo>/.agents/memory/` | In-tree project slice |
+| `mcp_server.py` | MCP: search / add (kind+name) / register / inventory / sync |
+| `ingest_chats.py` | Rebuild the chat title index |
+| `extract_openai.py` | Unzip ChatGPT export; keep durable user lines only |
+| `inventory.py` | Disk vs `PROJECTS.md` |
+| `sync.py` | Rewrite Cursor rules + Gemini `AGENTS.md` |
+
+Retrieval is overarching: `search_memory` unions the user store and every registered project's `.agents/memory`. Always-on injection stays short (USER + PROJECTS only).
+
+Chat *bodies* stay in Cursor / VS Code / Antigravity / Pi / ChatGPT export folders.
 
 ## Setup
 
@@ -14,38 +40,25 @@ Same interpreter for pip and MCP:
 python -m pip install -r requirements.txt
 ```
 
-Fill `memory/USER.md` and `memory/scan.json` (copy from `*.example.*` if missing), then:
+Fill `~/.agents/memory/USER.md` and `scan.json` (copied from `memory/*.example.*` on first run), then:
 
 ```bash
 python sync.py --init
 python inventory.py
+python ingest_chats.py
+python extract_openai.py
 ```
 
 `--init` does not overwrite an existing `USER.md`. It does:
 
-- copy examples → live files **only if missing**
+- copy examples → `~/.agents/memory` **only if missing**
+- migrate a leftover clone `memory/` live store into `~/.agents/memory` once
 - write Cursor + Gemini injection and the `memory-sync` skill
 - merge `agent-memory` into `~/.cursor/mcp.json` (other servers untouched; command = this Python)
 
 If you edit `USER.md` after `--init`, run `python sync.py` again. Reload Cursor.
 
-`scan.json` `roots` must be folders that exist (`~/Coding` is expanded; change it if that path is empty). `expand_children` = monorepo parents whose nested repos should also be tracked. `cursor_rule_name` defaults to `user-rules.mdc`.
-
-Manual MCP fallback: `mcp.json.example`. Prefer `--init`.
-
-## Layout
-
-| Path | What |
-|------|------|
-| `AGENTS.md` | Install spec for coding agents |
-| `memory/USER.md` | Always-on identity (gitignored) |
-| `memory/PROJECTS.md` | slug / path / role / stack / status |
-| `memory/projects/<slug>.md` | Per-project facts |
-| `memory/facts.md` | Global captured facts |
-| `memory/scan.json` | Scan roots, ignore list, Cursor rule filename |
-| `mcp_server.py` | MCP: search / add / register / inventory / sync |
-| `inventory.py` | Disk vs `PROJECTS.md` |
-| `sync.py` | Rewrite Cursor rules + Gemini `AGENTS.md` |
+Project facts are gitignored inside each repo (`.agents/memory/.gitignore`) so they stay local unless you force-add them.
 
 ## Scripts
 
@@ -56,9 +69,7 @@ python inventory.py
 python inventory.py --json
 python inventory.py --register SLUG "/path/to/repo" "role" "stack"
 python inventory.py --ignore SLUG
+python ingest_chats.py
+python extract_openai.py
 python sync.py
 ```
-
-## Existing install
-
-If `memory/USER.md` already exists, `--init` does not overwrite it. Sync still refreshes injection, the user-level skill, and the MCP entry.

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Live personal store — ship memory/*.example.* instead
+memory/USER.md
+memory/PROJECTS.md
+memory/facts.md
+memory/scan.json
+memory/projects/*.md
+!memory/projects/.gitkeep
+memory-bootstrap/
+
+# Generated injection (memory-sync)
+.agents/AGENTS.md
+.cursor/rules/*.mdc

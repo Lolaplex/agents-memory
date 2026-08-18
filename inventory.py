@@ -28,7 +28,7 @@ def main() -> int:
     parser.add_argument(
         "--sync",
         action="store_true",
-        help="rewrite Cursor + Antigravity injection files",
+        help="rewrite Cursor + Antigravity + Zed injection files",
     )
     parser.add_argument(
         "--no-repos",

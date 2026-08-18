@@ -19,13 +19,14 @@ Live store is **`~/.agents/memory`** (user) plus **`<repo>/.agents/memory`** (pr
 4. Write `~/.agents/memory/USER.md` (real identity, not empty `Name:`) and `scan.json` (`roots` must exist on disk). `cursor_rule_name` default `user-rules.mdc` is fine.
 5. Run `python sync.py --init` from this repo root.
    - Copies examples only if live files are missing (never overwrites filled `USER.md`).
-   - Writes Cursor user rule + `~/.gemini/config/AGENTS.md` + `~/.cursor/skills/memory-sync`.
+   - Writes Cursor user rule + `~/.gemini/config/AGENTS.md` + `%APPDATA%/Zed/AGENTS.md` + `memory-sync` skill (Cursor + `~/.agents/skills`).
    - Ensures each registered repo has `.agents/memory/facts.md`.
    - Merges `agent-memory` into `~/.cursor/mcp.json` using **this** Python (`sys.executable`). Other MCP servers stay.
+   - Copies Cursor + Antigravity MCP servers into Zed `context_servers` and mirrors user skills into `~/.agents/skills`.
 6. Run `python inventory.py`. For each **unknown** folder: register (slug, path, role, stack) or `--ignore`. For **missing**: ask before deleting.
 7. Run `python ingest_chats.py` to (re)build `~/.agents/memory/chats-index.md` from ChatGPT export, Cursor, VS Code, Antigravity, and Pi. Titles + paths only. Optional: `python extract_openai.py` unzip+filter the ChatGPT zip (staging in `%TEMP%`, not always-on). Distill with MCP `add_memory(kind=..., name=...)`.
 8. If you edited `USER.md` / `scan.json` *after* `--init`, run `python sync.py` again.
-9. Tell the human **one** thing: reload Cursor (MCP). You cannot do that for them.
+9. Tell the human **one** thing: reload Cursor and Zed (MCP). You cannot do that for them.
 
 ## Done when
 

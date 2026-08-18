@@ -1,6 +1,6 @@
 ---
 name: memory-sync
-description: Audits and updates local agent memory. Scans configured coding folders, registers or ignores new projects, writes PROJECTS.md, syncs Cursor rules and Antigravity AGENTS.md. Use when the user says Bestandaufnahme, memory sync, neues Projekt, inventory, Projekte updaten, register project, or wants agents to know a new repo path.
+description: Audits and updates local agent memory. Scans configured coding folders, registers or ignores new projects, writes PROJECTS.md, syncs Cursor/Antigravity/Zed injection. Use when the user says Bestandaufnahme, memory sync, neues Projekt, inventory, Projekte updaten, register project, or wants agents to know a new repo path.
 ---
 
 # memory-sync
@@ -48,7 +48,7 @@ MCP server `agent-memory`: `inventory_projects`, `register_project`, `ignore_pro
 4. Register adds write `PROJECTS.md` and `<repo>/.agents/memory/facts.md`, then sync injection files.
 5. For **missing**: confirm delete from `PROJECTS.md` or fix the path. Do not guess a new path.
 6. Run `sync.py` if you edited markdown by hand.
-7. Tell the user: Cursor/Antigravity pick up MCP + rules after reload if the server name changed.
+7. Tell the user: Cursor / Antigravity / Zed pick up MCP + rules after reload if the server name changed.
 
 ## New project while coding (no full audit)
 

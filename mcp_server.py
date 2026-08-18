@@ -139,7 +139,7 @@ def ignore_project(slug: str) -> str:
 
 @mcp.tool()
 def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") -> str:
-    """Sync always-on memory into Cursor + Antigravity. Optional: also inject one repo by path or slug."""
+    """Sync always-on memory into Cursor + Antigravity + Zed. Optional: also inject one repo by path or slug."""
     try:
         written = sync_injection(include_repos=True)
         extra = []

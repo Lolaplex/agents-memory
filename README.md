@@ -1,6 +1,6 @@
 # agent-memory
 
-Local markdown memory for coding agents. MCP server + Cursor/Antigravity injection. No cloud.
+Local markdown memory for coding agents. MCP server + Cursor / Antigravity / Zed injection. No cloud.
 
 Live files live under **`~/.agents/memory`** (user) and **`<repo>/.agents/memory`** (project). This repo ships the engine and `memory/*.example.*` templates.
 
@@ -26,7 +26,7 @@ Same split as skills: one user folder, one folder per repo, one search across bo
 | `ingest_chats.py` | Rebuild the chat title index |
 | `extract_openai.py` | Unzip ChatGPT export; keep durable user lines only |
 | `inventory.py` | Disk vs `PROJECTS.md` |
-| `sync.py` | Rewrite Cursor rules + Gemini `AGENTS.md` |
+| `sync.py` | Rewrite Cursor rules + Gemini/Zed `AGENTS.md` + Zed MCP |
 
 Retrieval is overarching: `search_memory` unions the user store and every registered project's `.agents/memory`. Always-on injection stays short (USER + PROJECTS only).
 
@@ -53,10 +53,11 @@ python extract_openai.py
 
 - copy examples → `~/.agents/memory` **only if missing**
 - migrate a leftover clone `memory/` live store into `~/.agents/memory` once
-- write Cursor + Gemini injection and the `memory-sync` skill
+- write Cursor + Gemini + Zed injection and the `memory-sync` skill
 - merge `agent-memory` into `~/.cursor/mcp.json` (other servers untouched; command = this Python)
+- merge Cursor + Antigravity MCP servers into Zed `context_servers`
 
-If you edit `USER.md` after `--init`, run `python sync.py` again. Reload Cursor.
+If you edit `USER.md` after `--init`, run `python sync.py` again. Reload Cursor / Zed.
 
 Project facts are gitignored inside each repo (`.agents/memory/.gitignore`) so they stay local unless you force-add them.
 

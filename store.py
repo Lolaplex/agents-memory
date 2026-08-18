@@ -12,6 +12,7 @@ Chat bodies stay in product folders; only titles/paths are ingested.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -38,8 +39,13 @@ MARKER = "<!-- agent-memory-sync -->"
 PATHS_BEGIN = "<!-- agent-memory-paths -->"
 PATHS_END = "<!-- /agent-memory-paths -->"
 DEFAULT_RULE_NAME = "user-rules.mdc"
-LEGACY_RULE_NAMES = ("felix-always.mdc",)
+LEGACY_RULE_STEMS = ("felix-always",)
 SKILL_TEMPLATE = ROOT / "skills" / "memory-sync" / "SKILL.md"
+SKIP_SKILL_NAMES = {
+    "antigravity_guide",
+    "agy-customizations",
+    "permissioned-github",
+}
 
 INJECTION_GEMINI = Path.home() / ".gemini" / "config" / "AGENTS.md"
 INJECTION_AGENTS_MD = ROOT / ".agents" / "AGENTS.md"
@@ -329,6 +335,227 @@ def merge_cursor_mcp() -> str:
     return f"OK {path}"
 
 
+def zed_config_dir() -> Path:
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(appdata) / "Zed"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / "zed"
+    return Path.home() / ".config" / "zed"
+
+
+def zed_settings_path() -> Path:
+    return zed_config_dir() / "settings.json"
+
+
+def zed_agents_path() -> Path:
+    return zed_config_dir() / "AGENTS.md"
+
+
+def _strip_jsonc(text: str) -> str:
+    out: List[str] = []
+    i = 0
+    n = len(text)
+    in_str = False
+    escape = False
+    while i < n:
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < n else ""
+        if in_str:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and nxt == "/":
+            while i < n and text[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i < n and not (text[i] == "*" and i + 1 < n and text[i + 1] == "/"):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        out.append(ch)
+        i += 1
+    stripped = "".join(out)
+    stripped = re.sub(r",(\s*[}\]])", r"\1", stripped)
+    return stripped
+
+
+def _load_jsonc(path: Path) -> dict:
+    raw = _read(path)
+    if not raw.strip():
+        return {}
+    data = json.loads(_strip_jsonc(raw))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: root is not an object")
+    return data
+
+
+def _resolve_cmd(cmd: str) -> str:
+    if not cmd:
+        return cmd
+    p = Path(cmd)
+    if p.is_file():
+        return str(p)
+    found = shutil.which(cmd)
+    return found or cmd
+
+
+def _mcp_servers_from_file(path: Path) -> Dict[str, dict]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(_read(path) or "{}")
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    servers = data.get("mcpServers") or data.get("context_servers") or {}
+    if not isinstance(servers, dict):
+        return {}
+    out: Dict[str, dict] = {}
+    for name, spec in servers.items():
+        if isinstance(name, str) and isinstance(spec, dict):
+            out[name] = spec
+    return out
+
+
+def collect_mcp_servers() -> Dict[str, dict]:
+    """Union of Cursor + Antigravity MCP configs. Later files fill missing fields only."""
+    home = Path.home()
+    sources = [
+        home / ".cursor" / "mcp.json",
+        home / ".gemini" / "config" / "mcp_config.json",
+        home / ".gemini" / "config" / "mcp.json",
+        home / ".gemini" / "antigravity-ide" / "mcp_config.json",
+    ]
+    merged: Dict[str, dict] = {}
+    for path in sources:
+        for name, spec in _mcp_servers_from_file(path).items():
+            if name not in merged:
+                merged[name] = dict(spec)
+                continue
+            for key, val in spec.items():
+                if key not in merged[name] or merged[name][key] in (None, "", {}, []):
+                    merged[name][key] = val
+    merged["agent-memory"] = mcp_entry()
+    return merged
+
+
+def mcp_spec_to_zed(spec: dict) -> dict:
+    url = spec.get("url")
+    if isinstance(url, str) and url.strip():
+        entry: dict = {"source": "custom", "url": url.strip()}
+        headers = spec.get("headers")
+        if isinstance(headers, dict) and headers:
+            entry["headers"] = headers
+        return entry
+    cmd = spec.get("command")
+    if isinstance(cmd, dict):
+        path = str(cmd.get("path") or cmd.get("command") or "")
+        args = cmd.get("args") or []
+        env = cmd.get("env") or {}
+        entry = {
+            "source": "custom",
+            "command": _resolve_cmd(path),
+            "args": list(args) if isinstance(args, list) else [],
+        }
+        if isinstance(env, dict) and env:
+            entry["env"] = env
+        return entry
+    command = _resolve_cmd(str(cmd or ""))
+    args = spec.get("args") or []
+    env = spec.get("env") or {}
+    entry = {
+        "source": "custom",
+        "command": command,
+        "args": list(args) if isinstance(args, list) else [],
+    }
+    if isinstance(env, dict) and env:
+        entry["env"] = env
+    return entry
+
+
+def merge_zed_mcp() -> str:
+    """Upsert Cursor/AG MCP servers into Zed settings.json context_servers."""
+    path = zed_settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            data = _load_jsonc(path)
+        except (json.JSONDecodeError, ValueError) as e:
+            return f"FAIL {path}: {e}. Merge skipped."
+    else:
+        data = {}
+    servers = data.get("context_servers")
+    if not isinstance(servers, dict):
+        servers = {}
+        data["context_servers"] = servers
+    for name, spec in collect_mcp_servers().items():
+        servers[name] = mcp_spec_to_zed(spec)
+    agent = data.get("agent")
+    if not isinstance(agent, dict):
+        agent = {}
+        data["agent"] = agent
+    perms = agent.get("tool_permissions")
+    if not isinstance(perms, dict):
+        perms = {}
+        agent["tool_permissions"] = perms
+    perms.setdefault("default", "allow")
+    _write(path, json.dumps(data, indent=2, ensure_ascii=False))
+    return f"OK {path} ({len(servers)} context_servers)"
+
+
+def skill_source_roots() -> List[Path]:
+    home = Path.home()
+    return [
+        home / ".cursor" / "skills",
+        home / ".gemini" / "config" / "skills",
+        home / ".claude" / "skills",
+    ]
+
+
+def zed_skills_root() -> Path:
+    return Path.home() / ".agents" / "skills"
+
+
+def mirror_skills_to_zed() -> List[str]:
+    """Copy user skills from Cursor/AG/Claude into ~/.agents/skills (Zed global)."""
+    dest_root = zed_skills_root()
+    dest_root.mkdir(parents=True, exist_ok=True)
+    written: List[str] = []
+    for src_root in skill_source_roots():
+        if not src_root.is_dir():
+            continue
+        for child in sorted(src_root.iterdir()):
+            if not child.is_dir() or child.name in SKIP_SKILL_NAMES:
+                continue
+            skill_md = child / "SKILL.md"
+            if not skill_md.is_file():
+                continue
+            dest = dest_root / child.name
+            if dest.resolve() == child.resolve():
+                continue
+            if dest.exists():
+                continue
+            shutil.copytree(child, dest)
+            written.append(str(dest / "SKILL.md"))
+    return written
+
+
 def save_scan(cfg: dict) -> None:
     _write(SCAN_JSON, json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
 
@@ -546,6 +773,7 @@ def project_agents_text(p: Project) -> str:
         f"# Project: {p.slug}\n\n"
         f"User memory: `{USER_MEMORY}`.\n"
         "Project memory: `.agents/memory/facts.md`.\n"
+        "Zed personal: `%APPDATA%/Zed/AGENTS.md` (Windows) or `~/.config/zed/AGENTS.md`.\n"
         "Retrieval is overarching (MCP `search_memory`). This file is the local slice.\n\n"
         f"{details}\n"
     )
@@ -588,13 +816,47 @@ def purge_legacy_rules(rules_dir: Path) -> List[str]:
         return []
     current = cursor_rule_name().lower()
     removed: List[str] = []
-    for name in LEGACY_RULE_NAMES:
-        if name.lower() == current:
+    for path in list(rules_dir.iterdir()):
+        if not path.is_file():
             continue
-        path = rules_dir / name
-        if path.is_file():
+        name = path.name.lower()
+        if name == current:
+            continue
+        stem = path.stem.lower()
+        drop = stem in LEGACY_RULE_STEMS or name.startswith("felix-always.")
+        if not drop and path.suffix.lower() in {".mdc", ".md", ".mdr"}:
+            if MARKER in _read(path):
+                drop = True
+        if drop:
             path.unlink()
             removed.append(str(path))
+    return removed
+
+
+def iter_rules_dirs() -> List[Path]:
+    seen = set()
+    out: List[Path] = []
+
+    def add(path: Path) -> None:
+        key = str(path).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(path)
+
+    add(Path.home() / ".cursor" / "rules")
+    add(ROOT / ".cursor" / "rules")
+    for p in parse_projects():
+        add(p.path_obj / ".cursor" / "rules")
+    for _slug, path in discover_disk():
+        add(path / ".cursor" / "rules")
+    return out
+
+
+def purge_legacy_rules_everywhere() -> List[str]:
+    removed: List[str] = []
+    for rules_dir in iter_rules_dirs():
+        removed.extend(purge_legacy_rules(rules_dir))
     return removed
 
 
@@ -665,10 +927,11 @@ def install_skills() -> List[str]:
     if not text:
         return []
     written: List[str] = []
-    targets = [Path.home() / ".cursor" / "skills" / "memory-sync" / "SKILL.md"]
-    agents_root = Path.home() / ".agents" / "skills"
-    if agents_root.is_dir() or (agents_root / "memory-sync" / "SKILL.md").exists():
-        targets.append(agents_root / "memory-sync" / "SKILL.md")
+    targets = [
+        Path.home() / ".cursor" / "skills" / "memory-sync" / "SKILL.md",
+        Path.home() / ".agents" / "skills" / "memory-sync" / "SKILL.md",
+        Path.home() / ".gemini" / "config" / "skills" / "memory-sync" / "SKILL.md",
+    ]
     for path in targets:
         _write(path, text)
         written.append(str(path))
@@ -680,16 +943,22 @@ def sync_injection(include_repos: bool = True) -> List[str]:
     written: List[str] = []
     _write(INJECTION_GEMINI, gemini_agents_text())
     written.append(str(INJECTION_GEMINI))
+    zed_agents = zed_agents_path()
+    _write(zed_agents, gemini_agents_text())
+    written.append(str(zed_agents))
     cursor_user = injection_cursor_user()
     _write(cursor_user, cursor_rule_text())
     written.append(str(cursor_user))
-    written.extend(purge_legacy_rules(Path.home() / ".cursor" / "rules"))
+    written.extend(purge_legacy_rules_everywhere())
     _write(INJECTION_AGENTS_MD, gemini_agents_text())
     written.append(str(INJECTION_AGENTS_MD))
     written.extend(install_skills())
+    written.extend(mirror_skills_to_zed())
+    written.append(merge_zed_mcp())
     if include_repos:
         for p in parse_projects():
             written.extend(inject_into_repo(p))
+        written.extend(purge_legacy_rules_everywhere())
     return written
 
 

@@ -5,6 +5,7 @@ import argparse
 import sys
 
 from .cli_help import emit_help_json
+from .ingest_config import migrate_ingest_legacy_ids
 from .store import consolidate_repo_leaks, merge_agent_mcp, merge_zed_mcp, sync_injection, user_profile_looks_blank
 
 
@@ -39,11 +40,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     written, warnings = sync_injection(include_repos=not args.no_repos)
+    migrated = migrate_ingest_legacy_ids()
     print(f"wrote {len(written)} files")
     for w in written:
         print(w)
     for warn in warnings:
         print(f"WARN {warn}")
+    for note in migrated:
+        print(f"ingest {note}")
     if args.init:
         moved = consolidate_repo_leaks()
         if moved:

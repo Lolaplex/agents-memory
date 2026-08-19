@@ -27,7 +27,7 @@ mcp = FastMCP("agent-memory")
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search all local markdown (concepts/entities/workflows/projects/notes + each repo .agents/memory)."""
+    """Search typed markdown under ~/.agents/memory and registered repos. Does not search product chat/jsonl graves — use chats-index.md for body paths."""
     try:
         hits = store_search(query, project=project)
         if not hits:
@@ -242,7 +242,7 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
 
 @mcp.tool()
 def ingest_catalog() -> str:
-    """Rebuild chats-index.md and entity reference cards from ingest.json (catalog phase)."""
+    """Catalog phase: rebuild chats-index.md + entity cards (titles/paths only). Bodies stay in product folders. Same contract for every ingest source."""
     try:
         from .ingest_catalog import run_catalog
 
@@ -254,7 +254,7 @@ def ingest_catalog() -> str:
 
 @mcp.tool()
 def ingest_extract(source_id: str = "") -> str:
-    """Extract durable user lines into staging/ingest/<id>/captured.md (extract phase)."""
+    """Extract phase: filter durable user lines into staging/ingest/<id>/captured.md (inbox, not memory). Distill explicitly afterward."""
     try:
         from .ingest_extractors import run_extract
 

@@ -282,7 +282,7 @@ def build_index(cfg: dict | None = None) -> Path:
         if len(openai) > 0:
             map_rows.append(
                 (
-                    str(openai_src.get("label") or "ChatGPT export"),
+                    str(openai_src.get("label") or "Open AI — GDPR export"),
                     str(exports[0]) if exports else "",
                     str(len(openai)),
                     "openai-export",
@@ -327,7 +327,7 @@ def build_index(cfg: dict | None = None) -> Path:
         "",
     ]
     if openai:
-        parts.extend(["## ChatGPT export", "", render_table(["date", "title", "shard"], openai), ""])
+        parts.extend(["## Open AI — GDPR export", "", render_table(["date", "title", "shard"], openai), ""])
     for title, rows in source_tables:
         if not rows:
             continue

@@ -6,15 +6,15 @@
     {
       "id": "openai-export",
       "kind": "openai-export",
-      "label": "ChatGPT export",
+      "label": "Open AI — GDPR export",
       "paths": [],
       "globs": ["~/Downloads/*chatgpt*", "~/Downloads/*openai*export*"],
       "catalog": true,
       "extract": true
     },
     {
-      "id": "agent-transcripts",
-      "label": "your Agent transcripts",
+      "id": "cursor",
+      "label": "Cursor",
       "paths": ["~/.cursor/projects/*/agent-transcripts"],
       "kind": "agent-jsonl",
       "catalog": true,
@@ -42,7 +42,11 @@
     {
       "id": "antigravity",
       "label": "Antigravity",
-      "paths": ["~/.gemini/antigravity/brain", "~/.gemini/antigravity-cli/brain"],
+      "paths": [
+        "~/.gemini/antigravity/brain",
+        "~/.gemini/antigravity-ide/brain",
+        "~/.gemini/antigravity-cli/brain"
+      ],
       "kind": "antigravity-brain",
       "catalog": true,
       "extract": true

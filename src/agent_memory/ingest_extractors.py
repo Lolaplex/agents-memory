@@ -60,7 +60,7 @@ def unzip_export(src: Path, dest: Path | None = None) -> Path:
         return dest
     if src.is_dir():
         return src
-    raise FileNotFoundError(f"not a ChatGPT export zip or folder: {src}")
+    raise FileNotFoundError(f"not an Open AI GDPR export zip or folder: {src}")
 
 
 def _dedupe_bullets(lines: List[str]) -> List[str]:

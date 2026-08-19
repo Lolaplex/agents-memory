@@ -135,7 +135,7 @@ def full_spec() -> dict[str, Any]:
         "scripts_no_flags": {
             "ingest": "Serial ingest: catalog (references) -> extract (staging) -> distill via MCP add_memory.",
             "consolidate": "Move live markdown leaked into the engine clone into ~/.agents/memory.",
-            "extract-openai": "Thin wrapper: ingest extract for openai-export ( --out = legacy JSON ).",
+            "extract-openai": "Thin wrapper: ingest extract for Open AI GDPR export (openai-export; --out = legacy JSON).",
             "mcp": "MCP stdio server. Tools: see abi/MCP.md.",
         },
         "injection": injection_spec(),

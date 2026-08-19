@@ -31,7 +31,7 @@ def _src(kind: str, fixture_dir: str, label: str, sid: str) -> dict:
 
 class ExtractFilterTests(unittest.TestCase):
     def test_agent_jsonl_fixture_keep_drop(self):
-        lines = extract_agent_jsonl(_src("agent-jsonl", "agent-jsonl", "Agent", "agent-transcripts"))
+        lines = extract_agent_jsonl(_src("agent-jsonl", "agent-jsonl", "Cursor", "cursor"))
         joined = "\n".join(lines)
         self.assertIn("sandbox clone", joined)
         self.assertIn("project map", joined)
@@ -49,7 +49,7 @@ class ExtractFilterTests(unittest.TestCase):
 
     def test_openai_export_fixture_keep_drop(self):
         lines = EXTRACTORS["openai-export"](
-            _src("openai-export", "openai-export", "ChatGPT export", "openai-export")
+            _src("openai-export", "openai-export", "Open AI — GDPR export", "openai-export")
         )
         joined = "\n".join(lines)
         self.assertIn("Markdown with a path", joined)
@@ -102,7 +102,7 @@ class ExtractFilterTests(unittest.TestCase):
     def test_extract_cap_per_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             mem = Path(tmp)
-            src = _src("agent-jsonl", "agent-jsonl", "Agent", "agent-transcripts")
+            src = _src("agent-jsonl", "agent-jsonl", "Cursor", "cursor")
             cfg = normalize_ingest(
                 {
                     "version": 1,
@@ -116,7 +116,7 @@ class ExtractFilterTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertEqual(text.count("\n- "), 1)
             state = __import__("json").loads((mem / "ingest" / "state.json").read_text(encoding="utf-8"))
-            entry = state["sources"]["agent-transcripts"]
+            entry = state["sources"]["cursor"]
             self.assertTrue(entry.get("extract_capped"))
             self.assertGreater(entry.get("extract_total_before_cap") or 0, 1)
 

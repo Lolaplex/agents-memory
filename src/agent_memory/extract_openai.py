@@ -1,4 +1,4 @@
-"""Filter ChatGPT export: durable user lines → staging/ingest/openai-export/captured.md."""
+"""Filter Open AI GDPR export: durable user lines → staging/ingest/openai-export/captured.md."""
 from __future__ import annotations
 
 import argparse
@@ -24,7 +24,7 @@ def unzip_export(src: Path, dest: Path | None = None) -> Path:
         return dest
     if src.is_dir():
         return src
-    raise FileNotFoundError(f"not a ChatGPT export zip or folder: {src}")
+    raise FileNotFoundError(f"not an Open AI GDPR export zip or folder: {src}")
 
 
 def extract_facts(root: Path) -> list[dict]:
@@ -57,13 +57,13 @@ def resolve_export(path: str) -> Path:
     found = discover_openai_exports()
     if not found:
         raise FileNotFoundError(
-            "no ChatGPT export found — configure openai-export in ~/.agents/memory/ingest.json"
+            "no Open AI GDPR export found — configure openai-export in ~/.agents/memory/ingest.json"
         )
     return found[0]
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Filter ChatGPT export to ingest staging")
+    parser = argparse.ArgumentParser(description="Filter Open AI GDPR export to ingest staging")
     parser.add_argument("--zip", help="export zip or unpacked folder")
     parser.add_argument("--out", help="legacy: write JSON instead of markdown staging")
     args = parser.parse_args(argv)
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     src = get_source("openai-export", cfg) or {
         "id": "openai-export",
         "kind": "openai-export",
-        "label": "ChatGPT export",
+        "label": "Open AI — GDPR export",
         "paths": [str(resolve_export(args.zip or ""))],
         "extract": True,
     }
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         src = dict(src)
         src["paths"] = [str(Path(args.zip).expanduser())]
     lines = extract_openai(src)
-    label = str(src.get("label") or "ChatGPT export")
+    label = str(src.get("label") or "Open AI — GDPR export")
     path = write_staging("openai-export", label, lines)
     print(f"kept {len(lines)} user statements")
     print(f"staging {path}")

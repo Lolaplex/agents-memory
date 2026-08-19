@@ -19,7 +19,7 @@ Commands:
   inventory        Disk vs PROJECTS.md
   ingest           Catalog / extract pipeline
   consolidate      Move clone leaks into ~/.agents/memory
-  extract-openai   Filter ChatGPT export into staging
+  extract-openai   Filter Open AI GDPR export into staging
   distill          Inspect staging inbox for distillation
   mcp              stdio MCP server
   help-json        Machine-readable CLI + injection spec

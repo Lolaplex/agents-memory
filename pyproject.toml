@@ -7,6 +7,10 @@ name = "agent-memory"
 version = "0.42"
 description = "Local markdown memory for coding agents — ABI in abi/, Python MCP reference implementation"
 readme = "README.md"
+authors = [
+    { name = "Felix Kempf" },
+    { name = "Fabian Schindler" },
+]
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.0.0"]
 

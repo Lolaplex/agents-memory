@@ -51,16 +51,25 @@ def add_memory(
     kind: str = "",
     name: str = "",
     project: str = "",
+    collection: str = "",
 ) -> str:
     """File a durable fact in the right folder.
 
-    kind=concept|entity|workflow|project|note|scratch plus name= (file stem).
-    kind=note uses project= as the notes/<slug>/ folder (or scratch if omitted).
-    project= alone (no kind) writes <repo>/.agents/memory/facts.md.
+    kind=concept|entity|workflow|project|note|scratch|research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|staging
+    plus name= (file stem). collection= for notes/ or a note class
+    (feature, bug-fix, simplification, architecture, process, testing).
+    Sequential 001-topic.md: plans, tasks, waves, roadmap, decisions, lifecycle notes.
+    kind=research is topical (input). project= alone writes staging/captured.md (inbox).
     Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
     """
     try:
-        loc = store_add(fact_or_message, kind=kind, name=name, project=project)
+        loc = store_add(
+            fact_or_message,
+            kind=kind,
+            name=name,
+            project=project,
+            collection=collection,
+        )
         return f"Saved to {loc}"
     except Exception as e:
         return f"Error saving memory: {e}"
@@ -68,7 +77,7 @@ def add_memory(
 
 @mcp.tool()
 def get_project_memories(project: str) -> str:
-    """Return the full local markdown file for a project slug."""
+    """Return the project link plus in-tree `.agents/memory` markdown."""
     try:
         return store_get_project(project)
     except Exception as e:
@@ -77,7 +86,7 @@ def get_project_memories(project: str) -> str:
 
 @mcp.tool()
 def delete_memory(memory_id: str) -> str:
-    """Delete a memory line by id from search_memory, e.g. user/facts.md:3 or project/git-updater/facts.md:12."""
+    """Delete a memory line by id from search_memory, e.g. user/notes/programming/chat-stores.md:3 or project/git-updater/staging/captured.md:12."""
     try:
         removed = store_delete(memory_id)
         return f"Deleted {memory_id}: {removed}"
@@ -114,7 +123,7 @@ def register_project(
     stack: str = "—",
     status: str = "active",
 ) -> str:
-    """Add or update a project in PROJECTS.md, write `<repo>/.agents/memory/facts.md`, inject rules, sync."""
+    """Add or update a project in PROJECTS.md, write `<repo>/.agents/memory/` (link + folders), inject AGENTS.md+CLAUDE.md, sync."""
     try:
         p = store_register(slug, path, role=role, stack=stack, status=status)
         written = sync_injection(include_repos=True)

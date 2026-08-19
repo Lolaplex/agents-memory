@@ -2,12 +2,17 @@
 
 Two layers, one retrieval:
 
-- User: ``~/.agents/memory`` — identity, project map, global facts, chat index.
-- Project: ``<repo>/.agents/memory`` — facts that belong to that repo.
+- User: ``~/.agents/memory`` — identity, project map, concepts/entities/workflows,
+  project **links**, personal notes, chat index.
+- Project: ``<repo>/.agents/memory`` — staging (inbox), research, sequential
+  plans/tasks/waves/roadmap, decisions (ADRs), lifecycle notes.
 
 Search unions both. Always-on injection stays short (USER.md + PROJECTS.md).
 Chat bodies stay in product folders; only titles/paths are ingested.
-`add_memory` requires kind+name (user taxonomy) or project= (repo facts.md).
+`add_memory` requires kind+name (user taxonomy) or project= (in-tree notes).
+AGENTS.md is the real instruction file. CLAUDE.md is bound to it (git symlink in
+this repo; installed homes symlink, else hardlink, else copy). Windows without
+symlink privilege uses a hardlink so the two names cannot drift.
 """
 from __future__ import annotations
 
@@ -33,7 +38,66 @@ SCAN_JSON = USER_MEMORY / "scan.json"
 FACTS_MD = USER_MEMORY / "facts.md"
 CHATS_INDEX = USER_MEMORY / "chats-index.md"
 LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
-PROJECTS_DIR = ORPHANS
+PROJECTS_DIR = USER_MEMORY / "projects"
+CLAUDE_HOME = Path.home() / ".claude"
+HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
+HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
+
+NOTE_COLLECTIONS = (
+    "projects",
+    "interests",
+    "education",
+    "finance",
+    "family",
+    "preferences",
+    "programming",
+    "work",
+    "certifications",
+    "scratch",
+)
+PROJECT_ARTIFACTS = {
+    "research": "research",
+    "plan": "plans",
+    "plans": "plans",
+    "task": "tasks",
+    "tasks": "tasks",
+    "roadmap": "roadmap",
+    "wave": "waves",
+    "waves": "waves",
+    "decision": "decisions",
+    "decisions": "decisions",
+    "adr": "decisions",
+    "staging": "staging",
+    "captured": "staging",
+}
+SEQUENTIAL_FOLDERS = frozenset({"plans", "tasks", "roadmap", "waves", "decisions"})
+NOTE_LIFECYCLES = ("proposed", "implemented", "rejected")
+NOTE_CLASSES = (
+    "feature",
+    "bug-fix",
+    "simplification",
+    "architecture",
+    "process",
+    "testing",
+)
+PROJECT_MEMORY_TOP = (
+    "staging",
+    "research",
+    "plans",
+    "tasks",
+    "roadmap",
+    "waves",
+    "decisions",
+)
+SEQ_RE = re.compile(r"^(\d{2,4})(?:-|$)")
+POINTER_MARK = "<!-- agent-memory-sync-pointer -->"
+STAGING_HEADER = (
+    "# Staging\n\n"
+    "Not memory. Distill each bullet into a typed file "
+    "(`plans/001-…`, `tasks/001-…`, `waves/001-…`, `roadmap/001-…`, "
+    "`decisions/001-…`, `notes/proposed|implemented|rejected/<class>/`), "
+    "then delete it here.\n"
+)
 
 MARKER = "<!-- agent-memory-sync -->"
 PATHS_BEGIN = "<!-- agent-memory-paths -->"
@@ -89,13 +153,19 @@ class Project:
         repo = self.path_obj
         if repo.is_dir():
             return repo / ".agents" / "memory"
-        return ORPHANS
+        return ORPHANS / self.slug
 
     @property
     def detail_path(self) -> Path:
-        if self.path_obj.is_dir():
-            return self.memory_dir / "facts.md"
-        return ORPHANS / f"{self.slug}.md"
+        return self.memory_dir / "README.md"
+
+    @property
+    def user_link_dir(self) -> Path:
+        return USER_MEMORY / "projects" / self.slug
+
+    @property
+    def user_link_path(self) -> Path:
+        return self.user_link_dir / "README.md"
 
 
 def _read(path: Path) -> str:
@@ -136,18 +206,46 @@ LAYOUT_TEXT = """# Agent memory layout
 
 User store `~/.agents/memory` plus `<repo>/.agents/memory`. Search unions all markdown.
 
+One home per fact. Path encodes where it belongs. No dump files (`facts.md`, `MEMORY.md`).
+
+## User (`~/.agents/memory`)
+
 | Folder | Holds |
 |--------|--------|
-| `concepts/` | Reusable ideas (ISAR kernel, Koru fragments, resolver vs agent) |
-| `entities/` | Named people, orgs, products, machines |
-| `workflows/` | How to do a thing (ingest, sync, git-updater, sandbox) |
-| `projects/` | One card per slug (also for trees not in `~/repos`) |
-| `notes/scratch/` | Throw-away |
-| `notes/<slug>/` | Working notes linked to a project |
+| `concepts/` `entities/` `workflows/` | Cross-cutting ideas, named things, procedures |
+| `projects/<slug>/` | **Link** to a real tree (`path` in README). Not a second copy of the repo. |
+| `notes/<collection>/` | Personal notes. Guide collections below — add a folder when a fact does not fit. |
+
+Note collection **guides** (not a closed set): `projects/` `interests/` `education/` `finance/` `family/` `preferences/` `programming/` `work/` `certifications/` `scratch/`.
+`notes/projects/<slug>/` is personal notes *about* a project.
+
+## Project (`<repo>/.agents/memory`) — Cordis layering
+
+Cordis: a service claims one `ctx.key`; nested fibers have their own lifecycle; registrations are reversible; serial work has an order.
+
+| Folder | Role |
+|--------|------|
+| `staging/` | **Inbox only.** `captured.md` / `from-chats.md`. Distill, then empty. |
+| `research/` | Input. Not a decision. |
+| `plans/` `tasks/` `waves/` `roadmap/` | Ordered work. Files are `001-topic.md`, `002-…`. |
+| `notes/proposed/<class>/` | In flight (fiber PENDING). |
+| `notes/implemented/<class>/` | Shipped rationale — why, alternatives, what was given up. |
+| `notes/rejected/<class>/` | Declined; keep while it prevents a remount. |
+| `decisions/` | ADRs: `001-title.md`. The claimed contract (present tense), one seam per file. Promote from `implemented/architecture` when the rule is the thing callers rely on. |
+
+Note classes (guide): `feature` `bug-fix` `simplification` `architecture` `process` `testing`.
+
+Archive a previous plan as `plans/PLAN-NNN.md` (GAIA) instead of overwriting the current one.
+
+## Instruction files
+
+Canonical user always-on: `~/.agents/AGENTS.md` (USER.md + PROJECTS.md).
+`CLAUDE.md` next to it is **bound** to `AGENTS.md` (symlink if the OS allows, else hardlink, else copy). DeepSeek git-symlinks `CLAUDE.md` → `AGENTS.md`; this repo does that in git. A Windows checkout without symlink privilege is a 9-byte stub (`AGENTS.md`); `sync.py` repairs it to a hardlink so loaders see real text.
+
+Installed homes (Gemini, project `.agents/`) bind to that canonical file or to the project's `.agents/AGENTS.md`. If `~/.claude/CLAUDE.md` is a foreign file (e.g. graphify), it is left alone; `~/.claude/AGENTS.md` is bound to `~/.agents/AGENTS.md` and a pointer is appended.
 
 Always-on injection: `USER.md` + `PROJECTS.md` only.
 Chat bodies stay in product folders. `chats-index.md` is the catalog.
-`add_memory` takes `kind`+`name` (or `project=` for a repo). Bare dumps are rejected.
 """
 
 
@@ -156,8 +254,7 @@ MEMORY_FOLDERS = (
     "entities",
     "workflows",
     "projects",
-    "notes/scratch",
-)
+) + tuple(f"notes/{name}" for name in NOTE_COLLECTIONS)
 
 
 def _copy_if_missing(src: Path, dst: Path) -> bool:
@@ -192,14 +289,6 @@ def migrate_legacy_store() -> List[str]:
         PROJECTS_MD,
         replace=not parse_projects(),
     )
-    legacy_facts = LEGACY_MEMORY / "facts.md"
-    take(
-        legacy_facts,
-        FACTS_MD,
-        replace=FACTS_MD.exists()
-        and legacy_facts.exists()
-        and FACTS_MD.stat().st_size < legacy_facts.stat().st_size,
-    )
     take(LEGACY_MEMORY / "scan.json", SCAN_JSON, replace=False)
     legacy_scan = LEGACY_MEMORY / "scan.json"
     if legacy_scan.exists():
@@ -232,6 +321,96 @@ def migrate_legacy_store() -> List[str]:
     return moved
 
 
+def _relocate(src: Path, dst: Path) -> bool:
+    if not src.exists():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if src.resolve() == dst.resolve():
+        return False
+    if dst.exists():
+        return False
+    shutil.move(str(src), str(dst))
+    return True
+
+
+def ensure_project_memory_tree(mem: Path) -> None:
+    for folder in PROJECT_MEMORY_TOP:
+        (mem / folder).mkdir(parents=True, exist_ok=True)
+    for lifecycle in NOTE_LIFECYCLES:
+        for cls in NOTE_CLASSES:
+            (mem / "notes" / lifecycle / cls).mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_staging_banner(path: Path) -> None:
+    if not path.exists() or path.parent.name != "staging":
+        return
+    text = _read(path)
+    if text.lstrip().startswith("# Staging"):
+        return
+    _write(path, STAGING_HEADER + "\n" + text.lstrip())
+
+
+def _merge_relocate(src: Path, dest: Path) -> None:
+    if not src.exists():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.resolve() == dest.resolve():
+        _ensure_staging_banner(dest)
+        return
+    if not dest.exists():
+        _relocate(src, dest)
+        _ensure_staging_banner(dest)
+        return
+    for line in _read(src).splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            _append_bullet(dest, stripped[2:].strip())
+    src.unlink()
+    _ensure_staging_banner(dest)
+
+
+def migrate_taxonomy() -> None:
+    """Folders instead of dump files. Safe to re-run."""
+    projects_root = USER_MEMORY / "projects"
+    if projects_root.is_dir():
+        for src in list(projects_root.glob("*.md")):
+            if src.name.lower() == "readme.md":
+                continue
+            _relocate(src, projects_root / src.stem / "README.md")
+    notes_root = USER_MEMORY / "notes"
+    known = {p.slug for p in parse_projects()} if PROJECTS_MD.exists() else set()
+    if projects_root.is_dir():
+        for child in projects_root.iterdir():
+            if child.is_dir():
+                known.add(child.name)
+    collections = set(NOTE_COLLECTIONS)
+    if notes_root.is_dir():
+        for child in list(notes_root.iterdir()):
+            if not child.is_dir() or child.name in collections:
+                continue
+            if child.name in known:
+                _relocate(child, notes_root / "projects" / child.name)
+            if child.is_dir() and child.exists() and not any(child.iterdir()):
+                child.rmdir()
+    if FACTS_MD.exists():
+        dest = notes_root / "programming" / "chat-stores.md"
+        if _relocate(FACTS_MD, dest) is False and dest.exists():
+            FACTS_MD.unlink()
+    for p in parse_projects():
+        mem = p.memory_dir
+        if not mem.is_dir():
+            continue
+        ensure_project_memory_tree(mem)
+        _merge_relocate(mem / "facts.md", mem / "staging" / "captured.md")
+        _merge_relocate(mem / "notes" / "captured.md", mem / "staging" / "captured.md")
+        _merge_relocate(mem / "from-chats.md", mem / "staging" / "from-chats.md")
+        _merge_relocate(mem / "research" / "from-chats.md", mem / "staging" / "from-chats.md")
+        if not p.detail_path.exists():
+            _write(p.detail_path, stub_project_md(p))
+        if not p.user_link_path.exists():
+            _write(p.user_link_path, stub_project_md(p))
+
+
 def ensure_memory_layout() -> None:
     """Create ~/.agents/memory, migrate clone leftovers, then fill missing examples."""
     USER_MEMORY.mkdir(parents=True, exist_ok=True)
@@ -239,12 +418,25 @@ def ensure_memory_layout() -> None:
     for rel in MEMORY_FOLDERS:
         (USER_MEMORY / rel).mkdir(parents=True, exist_ok=True)
     migrate_legacy_store()
-    if not LAYOUT_MD.exists():
-        _write(LAYOUT_MD, LAYOUT_TEXT)
+    migrate_taxonomy()
+    _write(LAYOUT_MD, LAYOUT_TEXT)
+    notes_readme = USER_MEMORY / "notes" / "README.md"
+    if not notes_readme.exists():
+        _write(
+            notes_readme,
+            "# Note collections\n\n"
+            "Guide folders (not a closed set): `projects/` `interests/` "
+            "`education/` `finance/` `family/` `preferences/` `programming/` "
+            "`work/` `certifications/` `scratch/`.\n\n"
+            "Add a new folder when a fact does not fit. "
+            "`notes/projects/<slug>/` is personal notes about a project. "
+            "The project **link** is `projects/<slug>/README.md`. "
+            "Research, plans, tasks, waves, roadmap, decisions, and lifecycle notes live in "
+            "`<repo>/.agents/memory/`. `staging/` there is an inbox, not memory.\n",
+        )
     pairs = (
         (EXAMPLES / "USER.example.md", USER_MD),
         (EXAMPLES / "PROJECTS.example.md", PROJECTS_MD),
-        (EXAMPLES / "facts.example.md", FACTS_MD),
         (EXAMPLES / "scan.example.json", SCAN_JSON),
     )
     for src, dst in pairs:
@@ -699,23 +891,26 @@ def stub_project_md(p: Project) -> str:
         f"---\n\n"
         f"# {p.slug}\n\n"
         f"{p.role}\n\n"
-        f"**Path:** `{p.path}`  \n"
-        f"**Stack:** {p.stack}\n\n"
-        f"## Captured\n\n"
-        f"- (none yet)\n"
+        f"**Path:** `{p.path}`\n\n"
+        f"In-tree: `{p.path}/.agents/memory/` "
+        f"(staging, research, plans, tasks, waves, roadmap, decisions, "
+        f"notes/proposed|implemented|rejected).\n"
+        f"User notes: `notes/projects/{p.slug}/`.\n"
     )
 
 
 def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
     dest = p.detail_path
     dest.parent.mkdir(parents=True, exist_ok=True)
+    ensure_project_memory_tree(p.memory_dir)
     if p.path_obj.is_dir():
         gi = dest.parent / ".gitignore"
         if not gi.exists():
             _write(gi, "*\n!.gitignore\n")
-    if dest.exists() and not overwrite_empty:
-        return
-    _write(dest, stub_project_md(p))
+    if overwrite_empty or not dest.exists():
+        _write(dest, stub_project_md(p))
+    if overwrite_empty or not p.user_link_path.exists():
+        _write(p.user_link_path, stub_project_md(p))
 
 
 def register_project(
@@ -772,7 +967,11 @@ def project_agents_text(p: Project) -> str:
         f"{MARKER}\n\n"
         f"# Project: {p.slug}\n\n"
         f"User memory: `{USER_MEMORY}`.\n"
-        "Project memory: `.agents/memory/facts.md`.\n"
+        "Project memory: `.agents/memory/` "
+        "(staging, research, plans, tasks, waves, roadmap, decisions, "
+        "notes/proposed|implemented|rejected).\n"
+        "Instruction files: `.agents/AGENTS.md` (this slice). "
+        "`CLAUDE.md` is bound to it. User always-on: `~/.agents/AGENTS.md`.\n"
         "Zed personal: `%APPDATA%/Zed/AGENTS.md` (Windows) or `~/.config/zed/AGENTS.md`.\n"
         "Retrieval is overarching (MCP `search_memory`). This file is the local slice.\n\n"
         f"{details}\n"
@@ -803,7 +1002,7 @@ def repo_pointer_rule_text() -> str:
         "---\n\n"
         f"{MARKER}\n\n"
         f"User memory: `{USER_MEMORY}` (identity, project map, chat index).\n"
-        "This repo: `.agents/memory/facts.md`.\n"
+        "This repo: `.agents/memory/` (staging / research / plans / tasks / waves / roadmap / decisions).\n"
         "Search both via MCP `agent-memory` / `search_memory`.\n\n"
         f"- New folder under {roots_txt} -> skill `memory-sync` or "
         "`register_project`. Do not leave it unlisted.\n"
@@ -860,6 +1059,180 @@ def purge_legacy_rules_everywhere() -> List[str]:
     return removed
 
 
+def _is_git_symlink_stub(path: Path) -> bool:
+    """True when a Windows checkout turned a git symlink into a 9-byte path file."""
+    try:
+        if path.is_symlink():
+            return False
+    except OSError:
+        pass
+    if not path.exists() or path.stat().st_size > 64:
+        return False
+    return _read(path).strip() in {"AGENTS.md", "CLAUDE.md"}
+
+
+def _is_foreign_instruction_file(path: Path) -> bool:
+    """True if the file exists and is not ours to overwrite."""
+    if not path.exists() and not path.is_symlink():
+        return False
+    if _is_git_symlink_stub(path):
+        return False
+    if MARKER in _read(path) or _should_overwrite_agents(path):
+        return False
+    return True
+
+
+def _ensure_claude_pointer(path: Path) -> None:
+    text = _read(path)
+    if POINTER_MARK in text:
+        return
+    extra = (
+        f"\n\n{POINTER_MARK}\n"
+        "Also read `AGENTS.md` in this folder (bound to `~/.agents/AGENTS.md`) "
+        "for user memory.\n"
+    )
+    path.write_text(text.rstrip() + extra + ("\n" if not extra.endswith("\n") else ""), encoding="utf-8")
+
+
+def _bound_to(link: Path, target: Path) -> bool:
+    if not target.exists():
+        return False
+    try:
+        if link.is_symlink():
+            got = Path(os.readlink(str(link)))
+            if not got.is_absolute():
+                got = (link.parent / got)
+            return got.resolve() == target.resolve()
+        if not link.exists():
+            return False
+        ls, ts = link.stat(), target.stat()
+        return ls.st_ino == ts.st_ino and ls.st_dev == ts.st_dev
+    except OSError:
+        return False
+
+
+def bind_to(link: Path, target: Path) -> str:
+    """Point `link` at `target`: symlink, else hardlink, else copy.
+
+    Hardlink is the Windows-without-privilege path so the two names cannot drift.
+    """
+    target = Path(target)
+    if not target.exists():
+        raise FileNotFoundError(target)
+    link = Path(link)
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if _bound_to(link, target):
+        return str(link)
+    if link.exists() or link.is_symlink():
+        if _is_foreign_instruction_file(link) and not _is_git_symlink_stub(link):
+            try:
+                same = target.exists() and _read(link) == _read(target)
+            except OSError:
+                same = False
+            if not same:
+                return ""
+        link.unlink()
+    rel = os.path.relpath(str(target), start=str(link.parent))
+    try:
+        os.symlink(rel, str(link))
+        return str(link)
+    except OSError:
+        pass
+    try:
+        os.link(str(target), str(link))
+        return str(link)
+    except OSError:
+        shutil.copy2(str(target), str(link))
+        return str(link)
+
+
+def write_instruction_pair(directory: Path, body: str) -> List[str]:
+    """Write AGENTS.md, then bind CLAUDE.md to it.
+
+    If CLAUDE.md is foreign, leave it and append a pointer. If AGENTS.md is
+    foreign, skip the directory.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    agents = directory / "AGENTS.md"
+    claude = directory / "CLAUDE.md"
+    if _is_foreign_instruction_file(agents):
+        return []
+    _write(agents, body)
+    written = [str(agents)]
+    if _is_foreign_instruction_file(claude):
+        _ensure_claude_pointer(claude)
+        written.append(str(claude))
+        return written
+    bound = bind_to(claude, agents)
+    if bound:
+        written.append(bound)
+    return written
+
+
+def bind_dir_to_canonical(directory: Path, canonical: Path) -> List[str]:
+    """AGENTS.md and CLAUDE.md in `directory` bound to the canonical user file."""
+    directory.mkdir(parents=True, exist_ok=True)
+    agents = directory / "AGENTS.md"
+    claude = directory / "CLAUDE.md"
+    if _is_foreign_instruction_file(agents):
+        return []
+    written = [bind_to(agents, canonical)]
+    if _is_foreign_instruction_file(claude):
+        _ensure_claude_pointer(claude)
+        written.append(str(claude))
+        return [w for w in written if w]
+    bound = bind_to(claude, agents if agents.exists() else canonical)
+    if bound:
+        written.append(bound)
+    return [w for w in written if w]
+
+
+def bind_claude_home(canonical: Path) -> List[str]:
+    """~/.claude/AGENTS.md → canonical. Foreign CLAUDE.md gets a pointer, not a replace."""
+    CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
+    written: List[str] = []
+    dest_agents = CLAUDE_HOME / "AGENTS.md"
+    dest_claude = CLAUDE_HOME / "CLAUDE.md"
+    if not _is_foreign_instruction_file(dest_agents):
+        written.append(bind_to(dest_agents, canonical))
+    if _is_foreign_instruction_file(dest_claude):
+        _ensure_claude_pointer(dest_claude)
+        written.append(str(dest_claude))
+    elif dest_agents.exists():
+        bound = bind_to(dest_claude, dest_agents)
+        if bound:
+            written.append(bound)
+    elif not _is_foreign_instruction_file(dest_claude):
+        bound = bind_to(dest_claude, canonical)
+        if bound:
+            written.append(bound)
+    return [w for w in written if w]
+
+
+def repair_instruction_stub(directory: Path) -> List[str]:
+    """Replace a 9-byte git-symlink checkout (or an identical copy) with a bind to AGENTS.md.
+
+    The engine repo root always binds: CLAUDE.md is the DeepSeek alias of AGENTS.md.
+    """
+    agents = directory / "AGENTS.md"
+    claude = directory / "CLAUDE.md"
+    if not agents.exists():
+        return []
+    force = directory.resolve() == ROOT.resolve()
+    same = False
+    try:
+        same = claude.exists() and not claude.is_symlink() and _read(claude) == _read(agents)
+    except OSError:
+        same = False
+    stub = _is_git_symlink_stub(claude)
+    if _is_foreign_instruction_file(claude) and not stub and not same and not force:
+        return []
+    if force and (claude.exists() or claude.is_symlink()) and not _bound_to(claude, agents):
+        claude.unlink()
+    bound = bind_to(claude, agents)
+    return [bound] if bound else []
+
+
 def inject_into_repo(p: Project) -> List[str]:
     written: List[str] = []
     repo = p.path_obj
@@ -867,14 +1240,12 @@ def inject_into_repo(p: Project) -> List[str]:
         return written
     ensure_project_file(p)
     written.append(str(p.detail_path))
+    written.append(str(p.user_link_path))
     rule = repo / ".cursor" / "rules" / cursor_rule_name()
     _write(rule, repo_pointer_rule_text())
     written.append(str(rule))
     written.extend(purge_legacy_rules(repo / ".cursor" / "rules"))
-    agents = repo / ".agents" / "AGENTS.md"
-    if _should_overwrite_agents(agents):
-        _write(agents, project_agents_text(p))
-        written.append(str(agents))
+    written.extend(write_instruction_pair(repo / ".agents", project_agents_text(p)))
     return written
 
 
@@ -941,17 +1312,20 @@ def install_skills() -> List[str]:
 def sync_injection(include_repos: bool = True) -> List[str]:
     ensure_memory_layout()
     written: List[str] = []
-    _write(INJECTION_GEMINI, gemini_agents_text())
-    written.append(str(INJECTION_GEMINI))
-    zed_agents = zed_agents_path()
-    _write(zed_agents, gemini_agents_text())
-    written.append(str(zed_agents))
+    body = gemini_agents_text()
+    AGENTS_HOME.mkdir(parents=True, exist_ok=True)
+    _write(HOME_AGENTS, body)
+    written.append(str(HOME_AGENTS))
+    written.extend(repair_instruction_stub(AGENTS_HOME))
+    written.extend(bind_dir_to_canonical(INJECTION_GEMINI.parent, HOME_AGENTS))
+    written.extend(bind_dir_to_canonical(zed_config_dir(), HOME_AGENTS))
+    written.extend(bind_claude_home(HOME_AGENTS))
+    written.extend(bind_dir_to_canonical(ROOT / ".agents", HOME_AGENTS))
+    written.extend(repair_instruction_stub(ROOT))
     cursor_user = injection_cursor_user()
     _write(cursor_user, cursor_rule_text())
     written.append(str(cursor_user))
     written.extend(purge_legacy_rules_everywhere())
-    _write(INJECTION_AGENTS_MD, gemini_agents_text())
-    written.append(str(INJECTION_AGENTS_MD))
     written.extend(install_skills())
     written.extend(mirror_skills_to_zed())
     written.append(merge_zed_mcp())
@@ -1076,13 +1450,15 @@ KIND_FOLDERS = {
     "entities": "entities",
     "workflow": "workflows",
     "workflows": "workflows",
-    "project": "projects",
-    "projects": "projects",
 }
 
 KIND_HELP = (
-    "add_memory needs kind=concept|entity|workflow|project|note|scratch and name=, "
-    "or project=<slug> to write <repo>/.agents/memory/facts.md"
+    "add_memory needs kind=concept|entity|workflow|project|note|scratch|"
+    "research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|"
+    "staging plus name=. collection= is a notes/ folder or a note class "
+    "(feature, bug-fix, simplification, architecture, process, testing). "
+    "plans/tasks/waves/roadmap/decisions are 001-topic.md. "
+    "project= alone writes <repo>/.agents/memory/staging/captured.md (inbox, distill it)"
 )
 
 
@@ -1096,26 +1472,122 @@ def slugify_name(name: str) -> str:
     return name
 
 
+def next_seq(folder: Path) -> int:
+    n = 0
+    if folder.is_dir():
+        for path in folder.glob("*.md"):
+            match = SEQ_RE.match(path.stem)
+            if match:
+                n = max(n, int(match.group(1)))
+    return n + 1
+
+
+def sequential_path(folder: Path, name: str) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    slug = slugify_name(name)
+    numbered = SEQ_RE.match(slug)
+    if numbered and "-" in slug:
+        return folder / f"{slug}.md"
+    existing = sorted(folder.glob(f"*-{slug}.md")) if folder.is_dir() else []
+    plain = folder / f"{slug}.md"
+    if plain.exists():
+        return plain
+    if existing:
+        return existing[0]
+    return folder / f"{next_seq(folder):03d}-{slug}.md"
+    name = (name or "").strip().replace("\\", "/").split("/")[-1]
+    if name.lower().endswith(".md"):
+        name = name[:-3]
+    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-._").lower()
+    if not name:
+        raise ValueError("empty name")
+    return name
+
+
 def _heading_from_stem(stem: str) -> str:
     return stem.replace("-", " ").replace("_", " ").strip().title()
 
 
-def memory_file_for(kind: str = "", name: str = "", project: str = "") -> Path:
-    """Resolve where a fact belongs. User taxonomy or a registered repo facts.md."""
+def memory_file_for(
+    kind: str = "",
+    name: str = "",
+    project: str = "",
+    collection: str = "",
+) -> Path:
+    """Resolve where a fact belongs."""
     kind = (kind or "").strip().lower()
     name = (name or "").strip()
     project = (project or "").strip()
+    collection = (collection or "").strip().lower()
     if kind in {"notes"}:
         kind = "note"
 
-    if kind == "scratch":
+    if kind == "scratch" or collection == "scratch":
         return USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
 
+    if kind in NOTE_LIFECYCLES:
+        if not project:
+            raise ValueError("proposed/implemented/rejected need project=")
+        p = projects_by_slug().get(project)
+        if not p:
+            raise ValueError(f"unknown project '{project}' — register it first")
+        ensure_project_file(p)
+        cls = collection or "architecture"
+        if cls not in NOTE_CLASSES:
+            cls = slugify_name(cls)
+        folder = p.memory_dir / "notes" / kind / cls
+        return sequential_path(folder, name or "note")
+
+    if kind in PROJECT_ARTIFACTS:
+        slug = project or name
+        p = projects_by_slug().get(slug)
+        if not p:
+            raise ValueError(f"unknown project '{slug}' — register it first")
+        ensure_project_file(p)
+        folder_name = PROJECT_ARTIFACTS[kind]
+        dest_dir = p.memory_dir / folder_name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        if folder_name == "staging":
+            stem = slugify_name(name) if name and name != slug else "captured"
+            if stem in {"from-chats", "chats"}:
+                stem = "from-chats"
+            return dest_dir / f"{stem}.md"
+        stem = slugify_name(name) if name and name != slug else folder_name.rstrip("s")
+        if folder_name in SEQUENTIAL_FOLDERS:
+            return sequential_path(dest_dir, stem)
+        return dest_dir / f"{stem}.md"
+
     if kind == "note":
+        registered = projects_by_slug()
+        stem = slugify_name(name) if name else "captured"
+        if collection:
+            coll = collection.strip()
+            if coll in registered:
+                return (
+                    USER_MEMORY
+                    / "notes"
+                    / "projects"
+                    / slugify_name(coll)
+                    / f"{stem}.md"
+                )
+            return USER_MEMORY / "notes" / slugify_name(coll) / f"{stem}.md"
         if project:
-            stem = slugify_name(name) if name else "captured"
-            return USER_MEMORY / "notes" / slugify_name(project) / f"{stem}.md"
-        return USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+            return (
+                USER_MEMORY
+                / "notes"
+                / "projects"
+                / slugify_name(project)
+                / f"{stem}.md"
+            )
+        return USER_MEMORY / "notes" / "scratch" / f"{stem}.md"
+
+    if kind in {"project", "projects"}:
+        slug = slugify_name(name or project)
+        p = projects_by_slug().get(slug)
+        if p:
+            ensure_project_file(p)
+            return p.user_link_path
+        return USER_MEMORY / "projects" / slug / "README.md"
 
     if kind in KIND_FOLDERS:
         stem = slugify_name(name or project)
@@ -1126,7 +1598,7 @@ def memory_file_for(kind: str = "", name: str = "", project: str = "") -> Path:
         if not p:
             raise ValueError(f"unknown project '{project}' — register it first")
         ensure_project_file(p)
-        return p.detail_path
+        return p.memory_dir / "staging" / "captured.md"
 
     raise ValueError(KIND_HELP)
 
@@ -1152,8 +1624,10 @@ def _append_bullet(path: Path, fact: str) -> str:
             body += "\n"
         _write(path, body + f"\n{bullet}\n")
         return file_id(path)
-    _write(path, f"# {_heading_from_stem(path.stem)}\n\n{bullet}\n")
-    return file_id(path)
+    if not path.exists():
+        header = STAGING_HEADER if path.parent.name == "staging" else f"# {_heading_from_stem(path.stem)}\n"
+        _write(path, f"{header}\n{bullet}\n")
+        return file_id(path)
 
 
 def _append_repo_captured(path: Path, fact: str) -> str:
@@ -1178,14 +1652,20 @@ def _append_repo_captured(path: Path, fact: str) -> str:
     return file_id(path)
 
 
-def add_memory(fact: str, kind: str = "", name: str = "", project: str = "") -> str:
-    """File a durable fact. kind+name → user taxonomy; project= alone → repo facts.md."""
+def add_memory(
+    fact: str,
+    kind: str = "",
+    name: str = "",
+    project: str = "",
+    collection: str = "",
+) -> str:
+    """File a durable fact. kind+name → taxonomy; project= alone → staging/captured.md (inbox)."""
     fact = fact.strip()
     if not fact:
         raise ValueError("empty fact")
-    path = memory_file_for(kind=kind, name=name, project=project)
-    if not kind and project and path.name == "facts.md":
-        return _append_repo_captured(path, fact)
+    path = memory_file_for(
+        kind=kind, name=name, project=project, collection=collection
+    )
     return _append_bullet(path, fact)
 
 
@@ -1211,7 +1691,10 @@ def get_project_memories(project: str) -> str:
 
 def delete_memory(memory_id: str) -> str:
     if ":" not in memory_id:
-        raise ValueError("id must look like 'user/facts.md:12' or 'project/slug/facts.md:8'")
+        raise ValueError(
+            "id must look like 'user/notes/programming/chat-stores.md:12' "
+            "or 'project/slug/staging/captured.md:8'"
+        )
     rel, _, line_s = memory_id.rpartition(":")
     line_no = int(line_s)
     path = resolve_memory_path(rel)

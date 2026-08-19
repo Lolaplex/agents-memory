@@ -1,7 +1,7 @@
 # Agent profile
 
 Live store: `~/.agents/memory` (user) and `<repo>/.agents/memory` (project).
-Projects: `PROJECTS.md`. Details: `<repo>/.agents/memory/facts.md`.
+Projects: `PROJECTS.md`. Links: `projects/<slug>/`. In-tree: `.agents/memory/` (staging inbox, sequential work, decisions, lifecycle notes).
 MCP: `agent-memory`. Skill: `memory-sync`.
 
 ## Who
@@ -17,7 +17,9 @@ MCP: `agent-memory`. Skill: `memory-sync`.
 
 ## Memory (local, not cloud)
 - Identity + project map live in `~/.agents/memory`. They are synced into Cursor rules and `~/.gemini/config/AGENTS.md`.
-- Capture durable facts with `add_memory` (MCP). Project facts go to `<repo>/.agents/memory/facts.md`.
+- Capture with `add_memory` (kind + name + collection). No `facts.md`.
+- Project-local research/plans/tasks/waves/roadmap/decisions live in `<repo>/.agents/memory/`. Staging is inbox only.
+- `AGENTS.md` is the real instruction file; `CLAUDE.md` is bound to it.
 - Chat titles: `ingest_chats.py` → `chats-index.md`. Bodies stay in product folders.
 - New repo under `scan.json` roots → skill `memory-sync` or MCP `register_project`. Unlisted projects make this map useless.
 - Periodic audit: skill `memory-sync` / `inventory.py`.

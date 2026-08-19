@@ -10,10 +10,11 @@ memory/PROJECTS.md
 memory/facts.md
 memory/chats-index.md
 memory/scan.json
-memory/projects/*.md
+memory/projects/
 !memory/projects/.gitkeep
 memory-bootstrap/
 
 # Generated injection (memory-sync)
 .agents/AGENTS.md
+.agents/CLAUDE.md
 .cursor/rules/*.mdc

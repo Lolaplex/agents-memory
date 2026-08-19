@@ -17,18 +17,20 @@ Same split as skills: one user folder, one folder per repo, one search across bo
 | `~/.agents/memory/concepts/` | Reusable ideas |
 | `~/.agents/memory/entities/` | Named people, orgs, products, machines |
 | `~/.agents/memory/workflows/` | Procedures |
-| `~/.agents/memory/projects/` | Overarching project cards |
-| `~/.agents/memory/notes/scratch/` | Throw-away |
-| `~/.agents/memory/notes/<slug>/` | Notes linked to a project |
+| `~/.agents/memory/projects/<slug>/` | Link to a real tree (README has `path`) |
+| `~/.agents/memory/notes/<collection>/` | Personal notes (projects, interests, education, finance, family, preferences, programming, work, certifications, scratch) |
 | `~/.agents/memory/chats-index.md` | Chat titles + paths (not bodies) |
-| `<repo>/.agents/memory/` | In-tree project slice |
-| `mcp_server.py` | MCP: search / add (kind+name) / register / inventory / sync |
+| `<repo>/.agents/memory/` | `staging/` (inbox); research; `plans/` `tasks/` `waves/` `roadmap/` `decisions/` as `001-topic.md`; `notes/proposed\|implemented\|rejected/<class>/` |
+| `~/.agents/AGENTS.md` | Canonical always-on. `CLAUDE.md` is bound to it. |
+| `mcp_server.py` | MCP: search / add (kind+name+collection) / register / inventory / sync |
 | `ingest_chats.py` | Rebuild the chat title index |
 | `extract_openai.py` | Unzip ChatGPT export; keep durable user lines only |
 | `inventory.py` | Disk vs `PROJECTS.md` |
-| `sync.py` | Rewrite Cursor rules + Gemini/Zed `AGENTS.md` + Zed MCP |
+| `sync.py` | Canonical `~/.agents/AGENTS.md`, bound `CLAUDE.md` siblings, Cursor rules, Zed MCP |
 
-Retrieval is overarching: `search_memory` unions the user store and every registered project's `.agents/memory`. Always-on injection stays short (USER + PROJECTS only).
+Retrieval is overarching: `search_memory` unions the user store and every registered project's `.agents/memory`. Always-on injection stays short (USER + PROJECTS only). `projects/<slug>/` is a **link** to the real tree, not a second copy. Note collections under `notes/` are a guide, not a closed set.
+
+`AGENTS.md` is the real instruction file. `CLAUDE.md` is bound to it (git symlink in this repo; installed: symlink, else hardlink, else copy). Staging files are an inbox, not memory.
 
 Chat *bodies* stay in Cursor / VS Code / Antigravity / Pi / ChatGPT export folders.
 
@@ -59,7 +61,7 @@ python extract_openai.py
 
 If you edit `USER.md` after `--init`, run `python sync.py` again. Reload Cursor / Zed.
 
-Project facts are gitignored inside each repo (`.agents/memory/.gitignore`) so they stay local unless you force-add them.
+In-tree project memory is gitignored (`.agents/memory/.gitignore`) so it stays local unless you force-add it.
 
 ## Scripts
 

@@ -2,6 +2,8 @@
 
 You are installing **local agent memory** for the human. Do every step yourself. Do not dump a command list for them to run.
 
+`CLAUDE.md` at this repo root **git-symlinks** this file (DeepSeek pattern). Edit `AGENTS.md` only. On Windows without symlink privilege the checkout is a 9-byte stub; `python sync.py` binds `CLAUDE.md` to this file (hardlink) so loaders see real text. Installed always-on lives at `~/.agents/AGENTS.md`; Gemini/project `.agents/` bind to it. If `~/.claude/CLAUDE.md` already belongs to something else, it is left alone, `~/.claude/AGENTS.md` is bound to `~/.agents/AGENTS.md`, and a pointer is appended.
+
 Live store is **`~/.agents/memory`** (user) plus **`<repo>/.agents/memory`** (project). Never commit those live files. This clone's `memory/*.example.*` are templates only.
 
 ## Procedure
@@ -19,8 +21,8 @@ Live store is **`~/.agents/memory`** (user) plus **`<repo>/.agents/memory`** (pr
 4. Write `~/.agents/memory/USER.md` (real identity, not empty `Name:`) and `scan.json` (`roots` must exist on disk). `cursor_rule_name` default `user-rules.mdc` is fine.
 5. Run `python sync.py --init` from this repo root.
    - Copies examples only if live files are missing (never overwrites filled `USER.md`).
-   - Writes Cursor user rule + `~/.gemini/config/AGENTS.md` + `%APPDATA%/Zed/AGENTS.md` + `memory-sync` skill (Cursor + `~/.agents/skills`).
-   - Ensures each registered repo has `.agents/memory/facts.md`.
+   - Writes Cursor user rule + canonical `~/.agents/AGENTS.md` with `CLAUDE.md` bound to it (Gemini, `~/.claude/AGENTS.md`, this clone `.agents/`) + `memory-sync` skill.
+   - Ensures each registered repo has `.agents/memory/` (staging, research, sequential plans/tasks/waves/roadmap/decisions, lifecycle notes) and `projects/<slug>/README.md` as a link.
    - Merges `agent-memory` into `~/.cursor/mcp.json` using **this** Python (`sys.executable`). Other MCP servers stay.
    - Copies Cursor + Antigravity MCP servers into Zed `context_servers` and mirrors user skills into `~/.agents/skills`.
 6. Run `python inventory.py`. For each **unknown** folder: register (slug, path, role, stack) or `--ignore`. For **missing**: ask before deleting.

@@ -12,7 +12,7 @@ One persistent identity, shared across **Claude Code**, **Cursor**, **Antigravit
 
 ---
 
-## ⚡ Why agent-memory?
+## Why agent-memory?
 
 Without a shared memory layout, **every AI tool lives in its own silo**:
 - Each vendor locks chat history in proprietary local databases or remote clouds.
@@ -27,7 +27,7 @@ Without a shared memory layout, **every AI tool lives in its own silo**:
 
 ---
 
-## 🏛️ Architecture & Flow
+## Architecture & Flow
 
 ```text
  ┌─────────────────────────────────────────────────────────────┐
@@ -58,7 +58,7 @@ Without a shared memory layout, **every AI tool lives in its own silo**:
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1. Installation
 
@@ -85,7 +85,7 @@ Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Relo
 
 ---
 
-## 🛠️ CLI Reference
+## CLI Reference
 
 | Command | Purpose |
 |---------|---------|
@@ -99,7 +99,7 @@ Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Relo
 
 ---
 
-## 🧩 Supported Ecosystem
+## Supported Ecosystem
 
 - **Claude Code:** Bound via symlink / canonical `AGENTS.md` and MCP server.
 - **Google Antigravity:** Integrated via `.gemini/config` rules and `agent-memory` MCP.
@@ -109,7 +109,7 @@ Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Relo
 
 ---
 
-## 📐 Open ABI Specification
+## Open ABI Specification
 
 The formal, implementation-agnostic layout specification lives in [`abi/`](abi/):
 
@@ -122,7 +122,7 @@ The formal, implementation-agnostic layout specification lives in [`abi/`](abi/)
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
 Run the comprehensive test suite and distillation benchmark:
 
@@ -132,6 +132,6 @@ python tests/run_all_tests.py
 
 ---
 
-## 📄 License
+## License
 
 MIT License. See [LICENSE](LICENSE) for details.

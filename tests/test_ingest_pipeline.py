@@ -28,15 +28,15 @@ class IngestPipelineTests(unittest.TestCase):
         self.ingest_json = self.user / "ingest.json"
         self.sources = [
             {
-                "id": "agent-transcripts",
+                "id": "cursor",
                 "kind": "agent-jsonl",
-                "label": "Agent Transcripts",
+                "label": "Cursor",
                 "paths": [str(FIXTURES / "agent-jsonl")],
             },
             {
                 "id": "openai-export",
                 "kind": "openai-export",
-                "label": "ChatGPT Export",
+                "label": "Open AI — GDPR export",
                 "paths": [str(FIXTURES / "openai-export")],
             },
             {

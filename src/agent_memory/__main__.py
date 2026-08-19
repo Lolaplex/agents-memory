@@ -1,7 +1,10 @@
-"""Unified CLI: python -m agent_memory <command> …"""
-from __future__ import annotations
-
 import sys
+from pathlib import Path
+
+# Bootstrap src/ on sys.path if invoked without editable install
+_SRC_DIR = str(Path(__file__).resolve().parent.parent)
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
 
 USAGE = """Usage: python -m agent_memory COMMAND [args]
 

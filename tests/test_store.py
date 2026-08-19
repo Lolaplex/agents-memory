@@ -1,7 +1,12 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+_SRC = str(Path(__file__).resolve().parent.parent / "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 from agent_memory import store
 
@@ -136,6 +141,50 @@ class AddMemoryTests(unittest.TestCase):
         store.add_memory("same", kind="entity", name="lars")
         text = (self.user / "entities" / "lars.md").read_text(encoding="utf-8")
         self.assertEqual(text.count("- same"), 1)
+
+    def test_promote_bullet_removes_from_staging(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        captured = staging / "captured.md"
+        captured.write_text("# Staging\n\n- fact to promote\n- other fact\n", encoding="utf-8")
+
+        loc, removed = store.promote_bullet(
+            "fact to promote",
+            kind="concept",
+            name="promoted-concept",
+        )
+        self.assertTrue(removed)
+        self.assertIn("promoted-concept.md", loc)
+        concept_file = self.user / "concepts" / "promoted-concept.md"
+        self.assertTrue(concept_file.exists())
+        self.assertIn("fact to promote", concept_file.read_text(encoding="utf-8"))
+        captured_text = captured.read_text(encoding="utf-8")
+        self.assertNotIn("fact to promote", captured_text)
+        self.assertIn("other fact", captured_text)
+
+    def test_search_memory_caching(self):
+        store.clear_memory_cache()
+        doc = self.user / "concepts" / "cached-doc.md"
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text("# Cached Doc\n\n- search_term_unique_123\n", encoding="utf-8")
+
+        hits1 = store.search_memory("search_term_unique_123")
+        self.assertEqual(len(hits1), 1)
+
+        self.assertIn(str(doc.resolve()), store._MEMORY_FILE_CACHE)
+
+        hits2 = store.search_memory("search_term_unique_123")
+        self.assertEqual(len(hits2), 1)
+
+    def test_compact_always_on(self):
+        scan_cfg = {"roots": [str(self.root)], "compact_always_on": True}
+        with patch.object(store, "load_scan", lambda: scan_cfg), patch.object(
+            store, "USER_MD", self.user / "USER.md"
+        ):
+            (self.user / "USER.md").write_text("Name: Tester\n", encoding="utf-8")
+            body = store.always_on_body()
+            self.assertIn("# Projects (Compact)", body)
+            self.assertIn("| demo | test | py | active |", body)
 
     def test_instruction_pair_replaces_symlink_stub(self):
         d = self.root / "pair"

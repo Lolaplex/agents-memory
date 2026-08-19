@@ -46,6 +46,38 @@
       "extract": true
     },
     {
+      "id": "windsurf",
+      "label": "Windsurf",
+      "paths": ["~/.codeium/windsurf/workspaceStorage/*/chatSessions"],
+      "kind": "copilot-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "roo-code",
+      "label": "Roo Code",
+      "paths": [
+        "%APPDATA%/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+        "~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+        "~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks"
+      ],
+      "kind": "agent-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "cline",
+      "label": "Cline",
+      "paths": [
+        "%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+        "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+        "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/tasks"
+      ],
+      "kind": "agent-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
       "id": "pi",
       "label": "Pi",
       "paths": ["~/.pi/agent/sessions"],

@@ -14,6 +14,7 @@ from .store import (
     inject_into_repo,
     inventory_report,
     parse_projects,
+    promote_bullet as store_promote,
     register_project as store_register,
     search_memory as store_search,
     sync_injection,
@@ -67,6 +68,34 @@ def add_memory(
         return f"Saved to {loc}"
     except Exception as e:
         return f"Error saving memory: {e}"
+
+
+@mcp.tool()
+def promote_bullet(
+    bullet: str,
+    kind: str,
+    name: str,
+    project: str = "",
+    collection: str = "",
+    source_path: str = "",
+) -> str:
+    """Promote a staging bullet into a typed memory file (kind+name) and delete it from staging.
+
+    Example: promote_bullet("prefer dark mode", kind="note", name="ui", collection="preferences")
+    """
+    try:
+        loc, removed = store_promote(
+            bullet=bullet,
+            kind=kind,
+            name=name,
+            project=project,
+            collection=collection,
+            source_path=source_path,
+        )
+        status = "and removed from staging" if removed else "(staging bullet not found to delete)"
+        return f"Promoted to {loc} {status}"
+    except Exception as e:
+        return f"Error promoting bullet: {e}"
 
 
 @mcp.tool()

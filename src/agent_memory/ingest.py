@@ -14,22 +14,31 @@ from .store import ensure_memory_layout
 
 def cmd_catalog(_args: argparse.Namespace) -> int:
     result = run_catalog()
-    print(f"catalog: {result['chats_index']} ({result['sources']} sources)")
+    print(f"catalog: {result['chats_index']}")
     return 0
 
 
 def cmd_extract(args: argparse.Namespace) -> int:
     result = run_extract(source_id=args.source or "")
+    active = 0
     for sid, info in result.get("sources", {}).items():
-        print(f"extract {sid}: {info['count']} bullets -> {info['staging']}")
+        if info.get("count", 0) > 0:
+            print(f"extract {sid}: {info['count']} bullets -> {info['staging']}")
+            active += 1
+    if active == 0:
+        print("extract: no new bullets extracted from active sources")
     return 0
 
 
 def cmd_run(_args: argparse.Namespace) -> int:
     run_catalog()
     result = run_extract()
-    total = sum(v["count"] for v in result.get("sources", {}).values())
-    print(f"run: catalog refreshed, {total} staging bullets across {len(result.get('sources', {}))} sources")
+    active_sources = [v for v in result.get("sources", {}).values() if v.get("count", 0) > 0]
+    total = sum(v["count"] for v in active_sources)
+    if total > 0:
+        print(f"run: catalog refreshed, {total} staging bullets across {len(active_sources)} sources")
+    else:
+        print("run: catalog refreshed, no new staging bullets found")
     return 0
 
 

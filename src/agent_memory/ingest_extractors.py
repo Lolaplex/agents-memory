@@ -146,22 +146,50 @@ def extract_agent_jsonl(src: dict) -> List[str]:
 def extract_copilot_jsonl(src: dict) -> List[str]:
     lines: List[str] = []
     for root in resolve_source_roots(src):
-        for session in sorted(root.glob("*/chatSessions/*.jsonl")):
+        if not root.is_dir():
+            continue
+        if root.name == "chatSessions":
+            sessions = sorted(root.glob("*.jsonl"))
+        elif (root / "chatSessions").is_dir():
+            sessions = sorted((root / "chatSessions").glob("*.jsonl"))
+        else:
+            sessions = sorted(root.glob("*/chatSessions/*.jsonl"))
+            if not sessions:
+                sessions = sorted(root.rglob("*.jsonl"))
+
+        for session in sessions:
+            title = session.stem[:12]
 
             def parse(obj, _session=session):
+                nonlocal title
+                if obj.get("kind") == 1 and obj.get("k") == ["customTitle"] and obj.get("v"):
+                    title = str(obj["v"])
+                    return title, ""
+                # Parse v -> inputText or requests
+                v = obj.get("v")
+                if isinstance(v, dict):
+                    input_text = v.get("inputText") or ""
+                    if input_text.strip():
+                        return title, input_text
+                    for req in v.get("requests") or []:
+                        if isinstance(req, dict):
+                            msg_text = req.get("message", {}).get("text") or req.get("inputText") or ""
+                            if msg_text.strip():
+                                return title, msg_text
+                # Fallback standard role
                 role = obj.get("role") or (obj.get("message") or {}).get("role")
-                if role != "user":
-                    return _session.stem, ""
-                msg = obj.get("message") or obj
-                content = msg.get("content")
-                blob = content if isinstance(content, str) else ""
-                if isinstance(content, list):
-                    blob = " ".join(
-                        p.get("text") or ""
-                        for p in content
-                        if isinstance(p, dict) and p.get("type") == "text"
-                    )
-                return _session.stem, blob
+                if role == "user":
+                    msg = obj.get("message") or obj
+                    content = msg.get("content")
+                    blob = content if isinstance(content, str) else ""
+                    if isinstance(content, list):
+                        blob = " ".join(
+                            p.get("text") or ""
+                            for p in content
+                            if isinstance(p, dict) and p.get("type") == "text"
+                        )
+                    return title, blob
+                return title, ""
 
             for t, raw in _jsonl_user_lines(session, parse):
                 text = scrub(raw)

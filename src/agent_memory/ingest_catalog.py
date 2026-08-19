@@ -94,16 +94,45 @@ def agent_transcript_rows(root: Path) -> List[Row]:
 
 def copilot_rows(root: Path) -> List[Row]:
     rows: List[Row] = []
-    for session in sorted(root.glob("*/chatSessions/*.jsonl")):
+    if not root.is_dir():
+        return rows
+    if root.name == "chatSessions":
+        sessions = sorted(root.glob("*.jsonl"))
+    elif (root / "chatSessions").is_dir():
+        sessions = sorted((root / "chatSessions").glob("*.jsonl"))
+    else:
+        sessions = sorted(root.glob("*/chatSessions/*.jsonl"))
+        if not sessions:
+            sessions = sorted(root.rglob("*.jsonl"))
+
+    for session in sessions:
         folder = "?"
-        wj = session.parents[1] / "workspace.json"
-        if wj.exists():
-            try:
-                raw = json.loads(wj.read_text(encoding="utf-8")).get("folder") or "?"
-                folder = raw.replace("file:///", "").replace("%3A", ":")
-            except json.JSONDecodeError:
-                pass
+        for parent in (session.parent, session.parent.parent, session.parent.parent.parent):
+            wj = parent / "workspace.json"
+            if wj.exists():
+                try:
+                    raw = json.loads(wj.read_text(encoding="utf-8")).get("folder") or "?"
+                    folder = raw.replace("file:///", "").replace("%3A", ":")
+                    break
+                except (json.JSONDecodeError, OSError):
+                    pass
         title = session.stem[:8]
+        try:
+            with session.open(encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if not line.strip():
+                        continue
+                    obj = json.loads(line)
+                    if obj.get("kind") == 1 and obj.get("k") == ["customTitle"] and obj.get("v"):
+                        title = clip(str(obj["v"]), 90)
+                        break
+                    v = obj.get("v") or {}
+                    if isinstance(v, dict):
+                        input_text = v.get("inputText") or ""
+                        if input_text.strip():
+                            title = clip(input_text, 90)
+        except (OSError, json.JSONDecodeError):
+            pass
         rows.append((folder, title, str(session)))
     return rows
 
@@ -250,14 +279,15 @@ def build_index(cfg: dict | None = None) -> Path:
     openai_src = get_source("openai-export", cfg)
     if openai_src and openai_src.get("catalog", True):
         catalog_source(openai_src)
-        map_rows.append(
-            (
-                str(openai_src.get("label") or "ChatGPT export"),
-                str(exports[0]) if exports else "(configure ingest.json)",
-                str(len(openai)),
-                "openai-export",
+        if len(openai) > 0:
+            map_rows.append(
+                (
+                    str(openai_src.get("label") or "ChatGPT export"),
+                    str(exports[0]) if exports else "",
+                    str(len(openai)),
+                    "openai-export",
+                )
             )
-        )
 
     for src in list_sources(cfg):
         if (src.get("kind") or "") == "openai-export":
@@ -266,16 +296,23 @@ def build_index(cfg: dict | None = None) -> Path:
             continue
         rows = collect_source_rows(src)
         catalog_source(src)
-        source_tables.append((str(src.get("label") or src.get("id")), rows))
-        roots = resolve_source_roots(src)
-        map_rows.append(
-            (
-                str(src.get("label") or src.get("id")),
-                ", ".join(str(p) for p in roots[:2]) or "(not found)",
-                str(len(rows)),
-                str(src.get("kind") or ""),
+        if rows:
+            source_tables.append((str(src.get("label") or src.get("id")), rows))
+            roots = resolve_source_roots(src)
+            map_rows.append(
+                (
+                    str(src.get("label") or src.get("id")),
+                    ", ".join(str(p) for p in roots[:2]),
+                    str(len(rows)),
+                    str(src.get("kind") or ""),
+                )
             )
-        )
+
+    map_section = (
+        render_table(["source", "path", "count", "kind"], map_rows)
+        if map_rows
+        else "*(no chat stores found on disk yet; configure sources in ingest.json)*"
+    )
 
     parts = [
         "# Chat index",
@@ -286,7 +323,7 @@ def build_index(cfg: dict | None = None) -> Path:
         "",
         "## Store map",
         "",
-        render_table(["source", "path", "count", "kind"], map_rows),
+        map_section,
         "",
     ]
     if openai:

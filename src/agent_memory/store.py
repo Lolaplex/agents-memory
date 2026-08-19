@@ -536,10 +536,14 @@ def scan_roots() -> List[str]:
 
 
 def mcp_entry() -> dict:
-    return {
+    entry: dict = {
         "command": sys.executable,
         "args": ["-m", "agent_memory.mcp_server"],
     }
+    src_dir = ROOT / "src"
+    if src_dir.is_dir():
+        entry["env"] = {"PYTHONPATH": str(src_dir.resolve())}
+    return entry
 
 
 def mcp_snippet() -> str:
@@ -550,29 +554,135 @@ def cursor_mcp_path() -> Path:
     return Path.home() / ".cursor" / "mcp.json"
 
 
+def claude_desktop_config_path() -> Path:
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(appdata) / "Claude" / "claude_desktop_config.json"
+    if sys.platform == "darwin":
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Claude"
+            / "claude_desktop_config.json"
+        )
+    return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
+def known_host_mcp_paths() -> List[Path]:
+    """All known agent and IDE MCP configuration file paths across operating systems."""
+    home = Path.home()
+    paths: List[Path] = [
+        # Cursor
+        home / ".cursor" / "mcp.json",
+        # Windsurf
+        home / ".codeium" / "windsurf" / "mcp_config.json",
+        # Claude Desktop
+        claude_desktop_config_path(),
+        # Antigravity / Gemini CLI
+        home / ".gemini" / "antigravity-ide" / "mcp_config.json",
+        home / ".gemini" / "config" / "mcp_config.json",
+        home / ".gemini" / "config" / "mcp.json",
+        # OpenAI / Codex
+        home / ".codex" / "mcp.json",
+        home / ".codex" / "config.json",
+        home / ".openai" / "mcp.json",
+    ]
+
+    # Roo Code & Cline (VS Code, VS Code Insiders, VSCodium)
+    vscode_roots: List[Path] = []
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA") or str(home / "AppData" / "Roaming")
+        vscode_roots.extend(
+            [
+                Path(appdata) / "Code" / "User",
+                Path(appdata) / "Code - Insiders" / "User",
+                Path(appdata) / "VSCodium" / "User",
+            ]
+        )
+    elif sys.platform == "darwin":
+        vscode_roots.extend(
+            [
+                home / "Library" / "Application Support" / "Code" / "User",
+                home / "Library" / "Application Support" / "Code - Insiders" / "User",
+                home / "Library" / "Application Support" / "VSCodium" / "User",
+            ]
+        )
+    else:
+        vscode_roots.extend(
+            [
+                home / ".config" / "Code" / "User",
+                home / ".config" / "Code - Insiders" / "User",
+                home / ".config" / "VSCodium" / "User",
+            ]
+        )
+
+    for vroot in vscode_roots:
+        paths.extend(
+            [
+                vroot
+                / "globalStorage"
+                / "rooveterinaryinc.roo-cline"
+                / "settings"
+                / "cline_mcp_settings.json",
+                vroot
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json",
+                vroot
+                / "globalStorage"
+                / "claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json",
+            ]
+        )
+
+    return paths
+
+
 def user_profile_looks_blank() -> bool:
     return bool(re.search(r"^- Name:\s*$", _read(USER_MD), re.M))
 
 
-def merge_agent_mcp() -> str:
-    """Insert/update the agent-memory server in ~/.cursor/mcp.json. Other servers untouched."""
-    path = cursor_mcp_path()
+def _merge_mcp_server_into_file(path: Path) -> str:
+    if not path.parent.exists():
+        return ""
     if path.exists():
         raw = _read(path)
         try:
             data = json.loads(raw) if raw.strip() else {}
         except json.JSONDecodeError as e:
-            return f"FAIL {path}: invalid JSON ({e}). Merge skipped. Add:\n{mcp_snippet()}"
+            return f"FAIL {path}: invalid JSON ({e})."
         if not isinstance(data, dict):
-            return f"FAIL {path}: root is not an object. Merge skipped."
+            return f"FAIL {path}: root is not an object."
     else:
         data = {}
     servers = data.setdefault("mcpServers", {})
     if not isinstance(servers, dict):
-        return f"FAIL {path}: mcpServers is not an object. Merge skipped."
+        return f"FAIL {path}: mcpServers is not an object."
     servers["agent-memory"] = mcp_entry()
     _write(path, json.dumps(data, indent=2, ensure_ascii=False))
     return f"OK {path}"
+
+
+def merge_agent_mcp() -> str:
+    """Insert/update the agent-memory server in all installed host MCP configs."""
+    cursor_p = cursor_mcp_path()
+    cursor_p.parent.mkdir(parents=True, exist_ok=True)
+    targets = known_host_mcp_paths()
+    results: List[str] = []
+    seen: set[str] = set()
+    for target in targets:
+        key = str(target.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if target.parent.exists() or target == cursor_p:
+            res = _merge_mcp_server_into_file(target)
+            if res:
+                results.append(res)
+    return "; ".join(results) if results else f"OK {cursor_p}"
 
 
 def zed_config_dir() -> Path:
@@ -675,22 +785,21 @@ def _mcp_servers_from_file(path: Path) -> Dict[str, dict]:
 
 def collect_mcp_servers() -> Dict[str, dict]:
     """Union of your Agent host MCP configs. Later files fill missing fields only."""
-    home = Path.home()
-    sources = [
-        home / ".cursor" / "mcp.json",
-        home / ".gemini" / "config" / "mcp_config.json",
-        home / ".gemini" / "config" / "mcp.json",
-        home / ".gemini" / "antigravity-ide" / "mcp_config.json",
-    ]
+    sources = known_host_mcp_paths()
     merged: Dict[str, dict] = {}
+    seen: set[str] = set()
     for path in sources:
+        key = str(path.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
         for name, spec in _mcp_servers_from_file(path).items():
             if name not in merged:
                 merged[name] = dict(spec)
                 continue
-            for key, val in spec.items():
-                if key not in merged[name] or merged[name][key] in (None, "", {}, []):
-                    merged[name][key] = val
+            for k, val in spec.items():
+                if k not in merged[name] or merged[name][k] in (None, "", {}, []):
+                    merged[name][k] = val
     merged["agent-memory"] = mcp_entry()
     return merged
 
@@ -994,9 +1103,31 @@ def ignore_slug(slug: str) -> None:
         save_scan(cfg)
 
 
+def is_compact_always_on() -> bool:
+    cfg = load_scan()
+    return bool(cfg.get("compact_always_on", False))
+
+
+def compact_projects_text(projects: List[Project]) -> str:
+    lines = [
+        "# Projects (Compact)",
+        "",
+        "Use MCP `get_project_memories(project=slug)` or `search_memory` for details.",
+        "",
+        "| slug | role | stack | status |",
+        "| --- | --- | --- | --- |",
+    ]
+    for p in projects:
+        lines.append(f"| {p.slug} | {p.role} | {p.stack} | {p.status} |")
+    return "\n".join(lines) + "\n"
+
+
 def always_on_body() -> str:
     user = _read(USER_MD).strip()
-    projects = _read(PROJECTS_MD).strip()
+    if is_compact_always_on():
+        projects = compact_projects_text(parse_projects()).strip()
+    else:
+        projects = _read(PROJECTS_MD).strip()
     return f"{user}\n\n---\n\n{projects}\n"
 
 
@@ -1379,6 +1510,7 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     written.extend(purge_legacy_rules_everywhere())
     written.extend(install_skills())
     written.extend(mirror_skills_to_zed())
+    written.append(merge_agent_mcp())
     written.append(merge_zed_mcp())
     if include_repos:
         for p in parse_projects():
@@ -1472,12 +1604,35 @@ def iter_memory_files(project: str = "") -> List[Path]:
     return out
 
 
+_MEMORY_FILE_CACHE: dict[str, Tuple[float, List[str]]] = {}
+
+
+def clear_memory_cache() -> None:
+    _MEMORY_FILE_CACHE.clear()
+
+
+def _read_cached_lines(path: Path) -> List[str]:
+    key = str(path.resolve())
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return []
+    cached = _MEMORY_FILE_CACHE.get(key)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+    text = _read(path)
+    lines = text.splitlines()
+    _MEMORY_FILE_CACHE[key] = (mtime, lines)
+    return lines
+
+
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
     q = query.lower().strip()
     files = iter_memory_files(project=project)
     hits: List[dict] = []
     for path in files:
-        for i, line in enumerate(_read(path).splitlines(), 1):
+        lines = _read_cached_lines(path)
+        for i, line in enumerate(lines, 1):
             if not q or q not in line.lower():
                 continue
             ident = file_id(path)
@@ -1765,3 +1920,69 @@ def delete_memory(memory_id: str) -> str:
     removed = lines.pop(line_no - 1)
     _write(path, "\n".join(lines))
     return removed
+
+
+def promote_bullet(
+    bullet: str,
+    kind: str,
+    name: str,
+    project: str = "",
+    collection: str = "",
+    source_path: str = "",
+) -> Tuple[str, bool]:
+    """Promote a staging bullet into a typed memory file and remove it from staging.
+
+    Returns (saved_location, removed_from_staging).
+    """
+    clean_bullet = bullet.strip().lstrip("-").strip()
+    if not clean_bullet:
+        raise ValueError("empty bullet")
+
+    loc = add_memory(
+        clean_bullet,
+        kind=kind,
+        name=name,
+        project=project,
+        collection=collection,
+    )
+
+    removed = False
+    candidate_paths: List[Path] = []
+    if source_path:
+        candidate_paths.append(resolve_memory_path(source_path))
+    if project:
+        p = projects_by_slug().get(project)
+        if p:
+            candidate_paths.append(p.memory_dir / "staging" / "captured.md")
+            candidate_paths.append(p.memory_dir / "staging" / "from-chats.md")
+
+    candidate_paths.extend(
+        [
+            USER_MEMORY / "staging" / "captured.md",
+            USER_MEMORY / "staging" / "from-chats.md",
+        ]
+    )
+    if (USER_MEMORY / "staging").is_dir():
+        for f in (USER_MEMORY / "staging").glob("*.md"):
+            if f not in candidate_paths:
+                candidate_paths.append(f)
+
+    for path in candidate_paths:
+        if not path.is_file():
+            continue
+        lines = _read(path).splitlines()
+        new_lines: List[str] = []
+        file_modified = False
+        for line in lines:
+            normalized_line = line.strip().lstrip("-").strip().lower()
+            if not file_modified and normalized_line == clean_bullet.lower():
+                file_modified = True
+                removed = True
+                continue
+            new_lines.append(line)
+        if file_modified:
+            _write(path, "\n".join(new_lines))
+            _MEMORY_FILE_CACHE.pop(str(path.resolve()), None)
+            break
+
+    return loc, removed

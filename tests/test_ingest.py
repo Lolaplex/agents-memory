@@ -1,8 +1,13 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+_SRC = str(Path(__file__).resolve().parent.parent / "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 from agent_memory.ingest_config import normalize_ingest, list_sources
 from agent_memory.ingest_common import keep_user_line, scrub, write_staging

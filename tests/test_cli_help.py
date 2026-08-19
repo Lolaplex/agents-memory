@@ -12,12 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class HelpJsonTests(unittest.TestCase):
     def _run(self, *args: str) -> dict:
+        import os
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(ROOT / "src")
         proc = subprocess.run(
             [sys.executable, "-m", "agent_memory", *args],
             cwd=ROOT,
             capture_output=True,
             text=True,
             check=True,
+            env=env,
         )
         return json.loads(proc.stdout)
 

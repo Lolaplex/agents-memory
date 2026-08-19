@@ -15,4 +15,4 @@ Kinds mirror `ingest.json` extract handlers:
 | `openai-export/` | `openai-export` |
 | `claude-jsonl/` | `claude-jsonl` |
 | `pi-jsonl/` | `pi-jsonl` |
-| `antigravity-brain/` | `antigravity-brain` |
+| `antigravity-brain/` | `antigravity-brain` — `<id>/task.md`, `walkthrough.md`, `implementation_plan.md`, `.system_generated/logs/transcript.jsonl` |

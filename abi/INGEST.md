@@ -57,8 +57,27 @@ Legacy keys (`openai_export_globs`, `chat_sources`) normalize to `sources[]`.
 | `agent-jsonl` | Cursor/agent transcript jsonl | user `<user_query>` / text |
 | `copilot-jsonl` | VS Code Copilot sessions | user messages |
 | `claude-jsonl` | Claude Code project jsonl | user messages |
-| `antigravity-brain` | brain folder titles | bullet lines from task/walkthrough md |
+| `antigravity-brain` | brain folder titles | artifact bullets + `USER_INPUT` from transcript |
 | `pi-jsonl` | Pi session jsonl | user messages |
+
+### Antigravity brain layout (reference implementation)
+
+Still under the Gemini product home (not `%APPDATA%` on Windows):
+
+| Surface | Brain root |
+|---------|------------|
+| Antigravity IDE | `~/.gemini/antigravity/brain/<conversation-id>/` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/<conversation-id>/` |
+
+Per conversation:
+
+| Path | Role |
+|------|------|
+| `task.md`, `walkthrough.md`, `implementation_plan.md` | Generated artifacts (catalog title + extract bullets) |
+| `.system_generated/logs/transcript.jsonl` | Chat log (`USER_INPUT` / `<USER_REQUEST>` extract) |
+| `*.metadata.json`, `*.resolved*` | Tooling sidecars — ignored by ingest |
+
+macOS/Linux use the same `~/.gemini/...` layout; only path separators differ.
 
 Set `"catalog": false` or `"extract": false` to skip a phase per source.
 

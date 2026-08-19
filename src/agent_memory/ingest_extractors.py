@@ -11,6 +11,7 @@ from typing import Callable, Dict, List
 from . import ingest_common
 from .ingest_catalog import brain_rows
 from .ingest_common import (
+    clip,
     format_bullet,
     keep_user_line,
     record_phase,
@@ -225,25 +226,67 @@ def extract_claude_jsonl(src: dict) -> List[str]:
     return _dedupe_bullets(lines)
 
 
+BRAIN_ARTIFACTS = ("task.md", "walkthrough.md", "implementation_plan.md")
+ANTIGRAVITY_TRANSCRIPT = Path(".system_generated") / "logs" / "transcript.jsonl"
+USER_REQUEST_RE = re.compile(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", re.S)
+
+
+def _extract_brain_artifact_bullets(brain: Path, title: str) -> List[str]:
+    lines: List[str] = []
+    for name in BRAIN_ARTIFACTS:
+        md = brain / name
+        if not md.is_file():
+            continue
+        for line in md.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not (line.startswith("- ") or line.startswith("* ")):
+                continue
+            text = scrub(line[2:])
+            text = re.sub(r"^\[[xX ]\]\s*", "", text).strip()
+            if keep_user_line(title, text):
+                lines.append(format_bullet(title, text[:400], name))
+    return lines
+
+
+def _parse_antigravity_transcript_obj(obj: dict, title: str) -> tuple[str, str]:
+    if obj.get("type") != "USER_INPUT":
+        return title, ""
+    content = str(obj.get("content") or "")
+    match = USER_REQUEST_RE.search(content)
+    if not match:
+        return title, ""
+    text = match.group(1).strip()
+    if not text:
+        return title, ""
+    return clip(text, 80), text
+
+
+def _extract_antigravity_transcript(brain: Path, title: str) -> List[str]:
+    path = brain / ANTIGRAVITY_TRANSCRIPT
+    if not path.is_file():
+        return []
+
+    def parse(obj, _title=title, _path=path):
+        return _parse_antigravity_transcript_obj(obj, _title)
+
+    lines: List[str] = []
+    for t, raw in _jsonl_user_lines(path, parse):
+        text = scrub(raw)
+        if keep_user_line(t, text):
+            lines.append(format_bullet(t, text[:400], "transcript.jsonl"))
+    return lines
+
+
 def extract_antigravity_brain(src: dict) -> List[str]:
     lines: List[str] = []
     label = str(src.get("label") or src.get("id"))
     for root in resolve_source_roots(src):
         for _label, title, brain_path in brain_rows(label, root):
             brain = Path(brain_path)
-            for name in ("task.md", "walkthrough.md", "implementation_plan.md"):
-                md = brain / name
-                if not md.exists():
-                    continue
-                for line in md.read_text(encoding="utf-8", errors="replace").splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if line.startswith("- ") or line.startswith("* "):
-                        text = scrub(line[2:])
-                        if keep_user_line(title, text):
-                            lines.append(format_bullet(title, text[:400], name))
-                break
+            lines.extend(_extract_brain_artifact_bullets(brain, title))
+            lines.extend(_extract_antigravity_transcript(brain, title))
     return _dedupe_bullets(lines)
 
 

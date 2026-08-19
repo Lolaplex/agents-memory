@@ -79,8 +79,14 @@ class ExtractFilterTests(unittest.TestCase):
         )
         joined = "\n".join(lines)
         self.assertIn("MCP search", joined)
-        self.assertNotIn("Help me rewrite", joined)
-        self.assertNotIn("[ok]", joined)
+        self.assertIn("numbered markdown", joined)
+        self.assertIn("project map", joined)
+        self.assertIn("typed memory paths", joined)
+        self.assertIn("transcript.jsonl", joined)
+        self.assertNotIn("How can I rewrite", joined)
+        self.assertNotIn("stack trace", joined)
+        self.assertNotIn("auto-import", joined)
+        self.assertNotIn("configure lint", joined)
 
     def test_all_kinds_have_fixtures(self):
         expected = {

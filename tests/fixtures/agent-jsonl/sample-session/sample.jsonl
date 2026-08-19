@@ -1,0 +1,4 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nUse the disposable sandbox clone for destructive tree experiments, never the canonical repo.\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nRegister every new repo in the project map before running memory sync.\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nHow can I fix this import error in main.py?\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nok\n</user_query>"}]}}

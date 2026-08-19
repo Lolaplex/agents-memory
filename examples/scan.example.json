@@ -1,0 +1,23 @@
+{
+  "roots": ["~/Coding"],
+  "agent_rule_name": "user-rules.mdc",
+  "compact_always_on": true,
+  "ignore_dir_names": [
+    ".git",
+    ".agents",
+    ".cursor",
+    ".gemini",
+    ".github",
+    ".next",
+    ".svelte-kit",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "venv"
+  ],
+  "ignore_slugs": [],
+  "expand_children": []
+}

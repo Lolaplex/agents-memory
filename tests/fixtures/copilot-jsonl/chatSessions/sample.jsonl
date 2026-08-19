@@ -1,0 +1,4 @@
+{"kind":1,"k":["customTitle"],"v":"Dependency hygiene"}
+{"role":"user","message":{"content":"Pin lockfile SHAs after adopting a vendor stack."}}
+{"role":"user","message":{"content":"How do I run the test suite for this repo?"}}
+{"role":"user","message":{"content":"hi"}}

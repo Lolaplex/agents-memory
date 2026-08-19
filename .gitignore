@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Live store is ~/.agents/memory and <repo>/.agents/memory — never in this repo.
+.agents/
+.cursor/
+
+# Legacy clone leak paths (use examples/*.example.* only)
+memory/
+examples/USER.md
+examples/PROJECTS.md
+examples/chats-index.md
+examples/scan.json
+examples/ingest.json
+examples/projects/
+examples/orphans/
+
+# Old path name during migration
+memory-bootstrap/

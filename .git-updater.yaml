@@ -1,0 +1,4 @@
+# Machine-readable hooks for git-updater.
+version: 1
+install: python -m pip install -e .
+update: python -m pip install -e .

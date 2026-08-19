@@ -1,0 +1,40 @@
+[
+  {
+    "title": "Memory layout notes",
+    "create_time": 1710000000,
+    "mapping": {
+      "a1": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {
+            "parts": [
+              "Markdown with a path is the memory; chat logs are evidence only."
+            ]
+          }
+        }
+      },
+      "a2": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {
+            "parts": [
+              "How can I export my entire chat history into always-on inject?"
+            ]
+          }
+        }
+      },
+      "a3": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {"parts": ["sure"]}
+        }
+      },
+      "a4": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {"parts": ["Reach me at anon.user@example.com"]}
+        }
+      }
+    }
+  }
+]

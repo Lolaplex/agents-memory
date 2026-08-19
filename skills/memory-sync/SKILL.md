@@ -68,14 +68,15 @@ If you scaffold a repo under a scan root:
 - Project **link** → `add_memory(kind="project", name="slug")` writes `projects/<slug>/README.md` pointing at the real tree
 - Ordered work → `kind="plans"|"tasks"|"waves"|"roadmap"` with `project=` → `001-topic.md`
 - ADR / claimed contract → `kind="decision"|"adr"` → `decisions/001-title.md`
-- In-flight design note → `kind="proposed"|"implemented"|"rejected"`, `collection=` class (`architecture` default)
-- Research (input) → `kind="research"`
+- In-flight design note → `kind="proposed"|"implemented"|"rejected"`, `collection=` class (`architecture` default). **implemented** and **decisions** = revise the file in place when shipped reality changes; **rejected** = frozen.
+- Research (input) → `kind="research"` — revise topical file when input changes
 - Inbox → `project=` alone or `kind="staging"` → `staging/captured.md`. Distill, then delete the bullet.
 - Personal note → `add_memory(kind="note", name="stem", collection="interests"|…)` or `project="slug"` for `notes/projects/<slug>/`
 - Throw-away → `kind="scratch"`
 - No `facts.md`. Path encodes the home.
 - Chat titles → `python ingest_chats.py`. ChatGPT bodies → `python extract_openai.py` then distill out of staging
-- `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink, else hardlink, else copy). Edit `AGENTS.md`. Enable Windows Developer Mode for real symlinks. If `~/.claude/CLAUDE.md` is foreign, a pointer is appended and `~/.claude/AGENTS.md` is bound to `~/.agents/AGENTS.md`.
+- `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink → hardlink → copy). Edit `AGENTS.md`. See `memory/PLATFORM.md` for Windows vs macOS/Linux.
+- `sync.py` replaces foreign `~/.claude/CLAUDE.md` — back up first if another tool wrote it.
 - Do not copy secrets, tokens, SSH keys, emails, phones, or `.env` values into memory
 - Do not overwrite a repo root `AGENTS.md` unless it contains `<!-- agent-memory-sync -->`
 

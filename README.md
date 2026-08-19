@@ -63,6 +63,15 @@ If you edit `USER.md` after `--init`, run `python sync.py` again. Reload Cursor 
 
 In-tree project memory is gitignored (`.agents/memory/.gitignore`) so it stays local unless you force-add it.
 
+## Cross-platform
+
+See [`memory/PLATFORM.md`](memory/PLATFORM.md). Summary:
+
+- **Windows:** enable Developer Mode if you want real symlinks; otherwise `sync.py` uses hardlinks (same inode, no drift). A git clone without either may show a 9-byte `CLAUDE.md` stub — run `sync.py`.
+- **All OS:** binding order is symlink → hardlink → copy. Copy warns because it can drift.
+- **`~/.claude/CLAUDE.md`:** replaced on sync if it is not ours — back up foreign files first.
+- **`scan.json` / ingest paths** are per-machine; edit for your layout.
+
 ## Scripts
 
 From this repo root (installed skill uses absolute paths):

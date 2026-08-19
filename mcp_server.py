@@ -126,11 +126,12 @@ def register_project(
     """Add or update a project in PROJECTS.md, write `<repo>/.agents/memory/` (link + folders), inject AGENTS.md+CLAUDE.md, sync."""
     try:
         p = store_register(slug, path, role=role, stack=stack, status=status)
-        written = sync_injection(include_repos=True)
+        written, warnings = sync_injection(include_repos=True)
         extra = inject_into_repo(p)
+        warn_txt = f" Warnings: {'; '.join(warnings)}" if warnings else ""
         return (
             f"Registered {p.slug} at {p.path}. "
-            f"Synced {len(written)} files. Repo inject: {len(extra)} files."
+            f"Synced {len(written)} files. Repo inject: {len(extra)} files.{warn_txt}"
         )
     except Exception as e:
         return f"Error registering project: {e}"
@@ -150,7 +151,7 @@ def ignore_project(slug: str) -> str:
 def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") -> str:
     """Sync always-on memory into Cursor + Antigravity + Zed. Optional: also inject one repo by path or slug."""
     try:
-        written = sync_injection(include_repos=True)
+        written, warnings = sync_injection(include_repos=True)
         extra = []
         if project_slug:
             from store import projects_by_slug
@@ -171,7 +172,10 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
                     stack="—",
                 )
             )
-        return "Synced:\n" + "\n".join(written + extra)
+        out = "Synced:\n" + "\n".join(written + extra)
+        if warnings:
+            out += "\nWarnings:\n" + "\n".join(f"- {w}" for w in warnings)
+        return out
     except Exception as e:
         return f"Error syncing: {e}"
 

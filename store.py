@@ -80,6 +80,11 @@ NOTE_CLASSES = (
     "process",
     "testing",
 )
+# add_memory appends bullets. These kinds should be edited in place when facts change.
+REVISE_IN_PLACE_KINDS = frozenset(
+    {"research", "implemented", "decision", "decisions", "adr", "project", "projects"}
+)
+APPEND_INBOX_KINDS = frozenset({"staging", "captured", "scratch"})
 PROJECT_MEMORY_TOP = (
     "staging",
     "research",
@@ -229,20 +234,26 @@ Cordis: a service claims one `ctx.key`; nested fibers have their own lifecycle; 
 | `research/` | Input. Not a decision. |
 | `plans/` `tasks/` `waves/` `roadmap/` | Ordered work. Files are `001-topic.md`, `002-…`. |
 | `notes/proposed/<class>/` | In flight (fiber PENDING). |
-| `notes/implemented/<class>/` | Shipped rationale — why, alternatives, what was given up. |
-| `notes/rejected/<class>/` | Declined; keep while it prevents a remount. |
-| `decisions/` | ADRs: `001-title.md`. The claimed contract (present tense), one seam per file. Promote from `implemented/architecture` when the rule is the thing callers rely on. |
+| `notes/implemented/<class>/` | Shipped rationale — **revise in place** when code/paths change (facts track reality). |
+| `notes/rejected/<class>/` | Declined; **frozen** after reject. |
+| `decisions/` | ADRs: `001-title.md`. **Revise present tense** when the contract changes; new number when superseding. |
 
 Note classes (guide): `feature` `bug-fix` `simplification` `architecture` `process` `testing`.
+
+**Mutability:** staging/scratch = inbox (append, then distill/delete). Sequential work = new `001-` file per tranche; edit the *current* plan/tasks in place; archive superseded plans to `plans/PLAN-NNN.md`. Research = topical files you revise. Implemented notes and ADRs = edit the file when shipped reality changes — do not only append forever. Rejected = frozen. User `concepts/`/`entities/`/`workflows/` = grow by append or edit the one home.
 
 Archive a previous plan as `plans/PLAN-NNN.md` (GAIA) instead of overwriting the current one.
 
 ## Instruction files
 
 Canonical user always-on: `~/.agents/AGENTS.md` (USER.md + PROJECTS.md).
-`CLAUDE.md` next to it is **bound** to `AGENTS.md` (symlink if the OS allows, else hardlink, else copy). DeepSeek git-symlinks `CLAUDE.md` → `AGENTS.md`; this repo does that in git. A Windows checkout without symlink privilege is a 9-byte stub (`AGENTS.md`); `sync.py` repairs it to a hardlink so loaders see real text.
+`CLAUDE.md` next to it is **bound** to `AGENTS.md` (symlink → hardlink → copy). DeepSeek git-symlinks `CLAUDE.md` → `AGENTS.md` in git; this repo does too.
 
-Installed homes (Gemini, project `.agents/`) bind to that canonical file or to the project's `.agents/AGENTS.md`. If `~/.claude/CLAUDE.md` is a foreign file (e.g. graphify), it is left alone; `~/.claude/AGENTS.md` is bound to `~/.agents/AGENTS.md` and a pointer is appended.
+**Windows:** without symlink privilege, a fresh `git clone` may leave `CLAUDE.md` as a 9-byte file containing the text `AGENTS.md` — run `python sync.py` to repair (hardlink or symlink if Developer Mode is on). Without Developer Mode, hardlink is used (same inode, no drift). exFAT/network drives may force a copy — sync warns.
+
+**macOS/Linux:** git symlinks work out of the box; `sync.py` still binds installed homes the same way.
+
+Installed: `~/.agents/`, Gemini config, Zed (`%APPDATA%/Zed` on Windows, `~/.config/zed` elsewhere), `~/.claude/` — all bind to canonical unless a repo-root file is foreign (no `<!-- agent-memory-sync -->`). Foreign `~/.claude/CLAUDE.md` from another tool is replaced on sync; back it up first if you still need it.
 
 Always-on injection: `USER.md` + `PROJECTS.md` only.
 Chat bodies stay in product folders. `chats-index.md` is the catalog.
@@ -1111,10 +1122,11 @@ def _bound_to(link: Path, target: Path) -> bool:
         return False
 
 
-def bind_to(link: Path, target: Path) -> str:
+def bind_to(link: Path, target: Path, force: bool = False) -> Tuple[str, str]:
     """Point `link` at `target`: symlink, else hardlink, else copy.
 
-    Hardlink is the Windows-without-privilege path so the two names cannot drift.
+    Returns ``(path, method)`` where method is ``symlink``, ``hardlink``,
+    ``copy``, ``skip``, or ``already``.
     """
     target = Path(target)
     if not target.exists():
@@ -1122,28 +1134,32 @@ def bind_to(link: Path, target: Path) -> str:
     link = Path(link)
     link.parent.mkdir(parents=True, exist_ok=True)
     if _bound_to(link, target):
-        return str(link)
+        return str(link), "already"
     if link.exists() or link.is_symlink():
-        if _is_foreign_instruction_file(link) and not _is_git_symlink_stub(link):
+        if (
+            not force
+            and _is_foreign_instruction_file(link)
+            and not _is_git_symlink_stub(link)
+        ):
             try:
                 same = target.exists() and _read(link) == _read(target)
             except OSError:
                 same = False
             if not same:
-                return ""
+                return "", "skip"
         link.unlink()
     rel = os.path.relpath(str(target), start=str(link.parent))
     try:
         os.symlink(rel, str(link))
-        return str(link)
+        return str(link), "symlink"
     except OSError:
         pass
     try:
         os.link(str(target), str(link))
-        return str(link)
+        return str(link), "hardlink"
     except OSError:
         shutil.copy2(str(target), str(link))
-        return str(link)
+        return str(link), "copy"
 
 
 def write_instruction_pair(directory: Path, body: str) -> List[str]:
@@ -1163,50 +1179,57 @@ def write_instruction_pair(directory: Path, body: str) -> List[str]:
         _ensure_claude_pointer(claude)
         written.append(str(claude))
         return written
-    bound = bind_to(claude, agents)
+    bound, _method = bind_to(claude, agents)
     if bound:
         written.append(bound)
     return written
 
 
-def bind_dir_to_canonical(directory: Path, canonical: Path) -> List[str]:
+def bind_dir_to_canonical(directory: Path, canonical: Path) -> Tuple[List[str], List[str]]:
     """AGENTS.md and CLAUDE.md in `directory` bound to the canonical user file."""
     directory.mkdir(parents=True, exist_ok=True)
+    written: List[str] = []
+    warnings: List[str] = []
     agents = directory / "AGENTS.md"
     claude = directory / "CLAUDE.md"
     if _is_foreign_instruction_file(agents):
-        return []
-    written = [bind_to(agents, canonical)]
+        return written, warnings
+    path, method = bind_to(agents, canonical)
+    _bind_collect(path, method, written, warnings)
     if _is_foreign_instruction_file(claude):
         _ensure_claude_pointer(claude)
         written.append(str(claude))
-        return [w for w in written if w]
-    bound = bind_to(claude, agents if agents.exists() else canonical)
-    if bound:
-        written.append(bound)
-    return [w for w in written if w]
+        return written, warnings
+    path, method = bind_to(claude, agents if agents.exists() else canonical)
+    _bind_collect(path, method, written, warnings)
+    return written, warnings
 
 
-def bind_claude_home(canonical: Path) -> List[str]:
-    """~/.claude/AGENTS.md → canonical. Foreign CLAUDE.md gets a pointer, not a replace."""
+def bind_claude_home(canonical: Path) -> Tuple[List[str], List[str]]:
+    """~/.claude/AGENTS.md and CLAUDE.md → canonical (replaces foreign CLAUDE.md)."""
     CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
-    dest_agents = CLAUDE_HOME / "AGENTS.md"
-    dest_claude = CLAUDE_HOME / "CLAUDE.md"
-    if not _is_foreign_instruction_file(dest_agents):
-        written.append(bind_to(dest_agents, canonical))
-    if _is_foreign_instruction_file(dest_claude):
-        _ensure_claude_pointer(dest_claude)
-        written.append(str(dest_claude))
-    elif dest_agents.exists():
-        bound = bind_to(dest_claude, dest_agents)
-        if bound:
-            written.append(bound)
-    elif not _is_foreign_instruction_file(dest_claude):
-        bound = bind_to(dest_claude, canonical)
-        if bound:
-            written.append(bound)
-    return [w for w in written if w]
+    warnings: List[str] = []
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        dest = CLAUDE_HOME / name
+        path, method = bind_to(dest, canonical, force=True)
+        if path:
+            written.append(path)
+        if method == "copy":
+            warnings.append(
+                f"{dest}: bound by copy (symlink/hardlink failed — "
+                "edit AGENTS.md only; re-run sync.py after changes or use Developer Mode / native FS)"
+            )
+    return written, warnings
+
+
+def _bind_collect(path: str, method: str, written: List[str], warnings: List[str]) -> None:
+    if path:
+        written.append(path)
+    if method == "copy":
+        warnings.append(
+            f"{path}: bound by copy (symlink/hardlink failed — may drift; see LAYOUT.md / README)"
+        )
 
 
 def repair_instruction_stub(directory: Path) -> List[str]:
@@ -1229,7 +1252,7 @@ def repair_instruction_stub(directory: Path) -> List[str]:
         return []
     if force and (claude.exists() or claude.is_symlink()) and not _bound_to(claude, agents):
         claude.unlink()
-    bound = bind_to(claude, agents)
+    bound, method = bind_to(claude, agents)
     return [bound] if bound else []
 
 
@@ -1309,18 +1332,25 @@ def install_skills() -> List[str]:
     return written
 
 
-def sync_injection(include_repos: bool = True) -> List[str]:
+def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     ensure_memory_layout()
     written: List[str] = []
+    warnings: List[str] = []
     body = gemini_agents_text()
     AGENTS_HOME.mkdir(parents=True, exist_ok=True)
     _write(HOME_AGENTS, body)
     written.append(str(HOME_AGENTS))
     written.extend(repair_instruction_stub(AGENTS_HOME))
-    written.extend(bind_dir_to_canonical(INJECTION_GEMINI.parent, HOME_AGENTS))
-    written.extend(bind_dir_to_canonical(zed_config_dir(), HOME_AGENTS))
-    written.extend(bind_claude_home(HOME_AGENTS))
-    written.extend(bind_dir_to_canonical(ROOT / ".agents", HOME_AGENTS))
+    for fn in (
+        lambda: bind_dir_to_canonical(INJECTION_GEMINI.parent, HOME_AGENTS),
+        lambda: bind_dir_to_canonical(zed_config_dir(), HOME_AGENTS),
+    ):
+        w, warn = fn()
+        written.extend(w)
+        warnings.extend(warn)
+    claude_written, claude_warn = bind_claude_home(HOME_AGENTS)
+    written.extend(claude_written)
+    warnings.extend(claude_warn)
     written.extend(repair_instruction_stub(ROOT))
     cursor_user = injection_cursor_user()
     _write(cursor_user, cursor_rule_text())
@@ -1333,7 +1363,7 @@ def sync_injection(include_repos: bool = True) -> List[str]:
         for p in parse_projects():
             written.extend(inject_into_repo(p))
         written.extend(purge_legacy_rules_everywhere())
-    return written
+    return written, warnings
 
 
 def file_id(path: Path) -> str:
@@ -1666,7 +1696,15 @@ def add_memory(
     path = memory_file_for(
         kind=kind, name=name, project=project, collection=collection
     )
-    return _append_bullet(path, fact)
+    existed = path.exists()
+    loc = _append_bullet(path, fact)
+    k = (kind or "").strip().lower()
+    if k in REVISE_IN_PLACE_KINDS and existed:
+        return (
+            f"{loc} — revise this file in place when facts change; "
+            "do not only append bullets"
+        )
+    return loc
 
 
 def get_project_memories(project: str) -> str:

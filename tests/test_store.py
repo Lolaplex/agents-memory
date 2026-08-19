@@ -163,16 +163,19 @@ class AddMemoryTests(unittest.TestCase):
             "# someone else's file\n",
         )
 
-    def test_foreign_claude_keeps_agents(self):
-        d = self.root / "claude-home"
-        d.mkdir()
-        (d / "CLAUDE.md").write_text("# graphify\n", encoding="utf-8")
-        body = f"{store.MARKER}\n\n# test\n"
-        written = store.write_instruction_pair(d, body)
-        self.assertTrue((d / "AGENTS.md").exists())
-        self.assertIn("graphify", (d / "CLAUDE.md").read_text(encoding="utf-8"))
-        self.assertIn(store.POINTER_MARK, (d / "CLAUDE.md").read_text(encoding="utf-8"))
-        self.assertTrue(any("AGENTS.md" in w for w in written))
+    def test_foreign_claude_replaced_in_claude_home(self):
+        claude_home = self.root / "claude"
+        with patch.object(store, "CLAUDE_HOME", claude_home):
+            claude_home.mkdir()
+            (claude_home / "CLAUDE.md").write_text("# graphify\n", encoding="utf-8")
+            canonical = claude_home / "canonical.md"
+            canonical.write_text(f"{store.MARKER}\n\n# test\n", encoding="utf-8")
+            written, warnings = store.bind_claude_home(canonical)
+            claude_text = (claude_home / "CLAUDE.md").read_text(encoding="utf-8")
+            self.assertTrue((claude_home / "AGENTS.md").exists())
+            self.assertNotIn("graphify", claude_text)
+            self.assertIn(store.MARKER, claude_text)
+            self.assertTrue(written)
 
 
 if __name__ == "__main__":

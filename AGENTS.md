@@ -2,7 +2,7 @@
 
 You are installing **local agent memory** for the human. Do every step yourself. Do not dump a command list for them to run.
 
-`CLAUDE.md` at this repo root **git-symlinks** this file (DeepSeek pattern). Edit `AGENTS.md` only. On Windows without symlink privilege the checkout is a 9-byte stub; `python sync.py` binds `CLAUDE.md` to this file (hardlink) so loaders see real text. Installed always-on lives at `~/.agents/AGENTS.md`; Gemini/project `.agents/` bind to it. If `~/.claude/CLAUDE.md` already belongs to something else, it is left alone, `~/.claude/AGENTS.md` is bound to `~/.agents/AGENTS.md`, and a pointer is appended.
+`CLAUDE.md` at this repo root **git-symlinks** this file (DeepSeek pattern). Edit `AGENTS.md` only. On Windows without symlink privilege the checkout is a 9-byte stub; `python sync.py` binds `CLAUDE.md` (hardlink or symlink with Developer Mode). Installed always-on: `~/.agents/AGENTS.md`; Gemini, Zed, and `~/.claude/` bind to it. Foreign `~/.claude/CLAUDE.md` is replaced on sync — back it up first. See `memory/PLATFORM.md`.
 
 Live store is **`~/.agents/memory`** (user) plus **`<repo>/.agents/memory`** (project). Never commit those live files. This clone's `memory/*.example.*` are templates only.
 

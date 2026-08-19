@@ -20,10 +20,12 @@ def main() -> int:
         help="copy example memory files if missing, sync injection, merge Cursor + Zed MCP",
     )
     args = parser.parse_args()
-    written = sync_injection(include_repos=not args.no_repos)
+    written, warnings = sync_injection(include_repos=not args.no_repos)
     print(f"wrote {len(written)} files")
     for w in written:
         print(w)
+    for warn in warnings:
+        print(f"WARN {warn}")
     if args.init:
         print(merge_cursor_mcp())
         print(merge_zed_mcp())

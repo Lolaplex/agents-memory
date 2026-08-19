@@ -40,7 +40,7 @@ def main() -> int:
     if args.register:
         slug, path, role, stack = args.register
         p = register_project(slug, path, role, stack)
-        written = sync_injection(include_repos=not args.no_repos)
+        written, _ = sync_injection(include_repos=not args.no_repos)
         print(f"registered {p.slug} -> {p.path}")
         print("synced:")
         for w in written:
@@ -69,7 +69,7 @@ def main() -> int:
             print("memory map matches disk.")
 
     if args.sync:
-        written = sync_injection(include_repos=not args.no_repos)
+        written, _ = sync_injection(include_repos=not args.no_repos)
         print("synced:")
         for w in written:
             print(f"  {w}")

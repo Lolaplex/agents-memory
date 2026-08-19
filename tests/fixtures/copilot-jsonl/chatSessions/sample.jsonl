@@ -1,4 +1,4 @@
-{"kind":1,"k":["customTitle"],"v":"Homelab notes"}
-{"role":"user","message":{"content":"Always pin vendor.lock SHAs after adopt."}}
-{"role":"user","message":{"content":"How do I run pytest for this repo?"}}
+{"kind":1,"k":["customTitle"],"v":"Dependency hygiene"}
+{"role":"user","message":{"content":"Pin lockfile SHAs after adopting a vendor stack."}}
+{"role":"user","message":{"content":"How do I run the test suite for this repo?"}}
 {"role":"user","message":{"content":"hi"}}

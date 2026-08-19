@@ -1,0 +1,3 @@
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Staging is an inbox; distill into typed paths before treating text as memory."}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"What is the best way to debug this flaky test?"}]}}
+{"type":"message","message":{"content":[{"type":"text","text":"yep"}],"role":"assistant"}}

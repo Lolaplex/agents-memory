@@ -33,7 +33,7 @@ Per-source parsers (`agent-jsonl`, `openai-export`, …) are extension points; *
 
 Add fixture transcripts per kind so format drift does not silently admit junk. Tests assert keep/drop behavior, not just parser smoke.
 
-Shipped: `tests/fixtures/agent-jsonl` and `tests/fixtures/copilot-jsonl` + `tests/test_extract_filters.py`.
+Shipped: all six extract kinds under `tests/fixtures/` (synthetic, anonymized) + `tests/test_extract_filters.py` keep/drop assertions.
 
 ### 4. Search later, if ever
 

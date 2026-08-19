@@ -94,6 +94,8 @@ Per-source `"extract_max_bullets"` overrides the global cap.
 
 Shared with OpenAI export filter: drop PII patterns, how-to prompts, long code dumps, duplicates. Bodies never copy wholesale into memory.
 
+Fixture transcripts: `tests/fixtures/` (one anonymized sample per extract kind). Tests: `tests/test_extract_filters.py`.
+
 ## Thin wrappers
 
 - `python -m agent_memory ingest-chats` → `ingest catalog`

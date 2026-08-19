@@ -30,6 +30,17 @@ No roff man page. Use `--help-json` instead of scraping `--help` or README.
 
 ## First install
 
+**PyPI (recommended):**
+
+```bash
+pip install agents-memory
+# fill ~/.agents/memory/USER.md and scan.json (from examples/*.example.*)
+agents-memory sync --init
+agents-memory inventory
+```
+
+**From a git clone:**
+
 ```bash
 python -m pip install -e .
 # fill ~/.agents/memory/USER.md and scan.json (from examples/*.example.*)
@@ -39,6 +50,15 @@ python -m agents_memory inventory
 ```
 
 `--init` runs layout ensure, global + per-repo `.agents` inject, skill install, MCP merge. Reload your Agent after.
+
+## Upgrade (PyPI)
+
+```bash
+pip install -U agents-memory
+agents-memory sync
+```
+
+Replaces the wheel (including bundled ABI docs, examples, and skill templates). Sync refreshes injection, skills, and copied layout files. Filled `USER.md` and live memory under `~/.agents/memory/` are never overwritten.
 
 ## `python -m agents_memory sync`
 

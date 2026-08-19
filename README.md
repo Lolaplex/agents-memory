@@ -62,33 +62,18 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 
 ## Quickstart
 
-### 1. Installation
-
-Install directly via pip:
+### 1-Step Setup
 
 ```bash
-pip install agents-memory
+pip install agents-memory && agents-memory sync --init
 ```
 
-Or install from source in editable mode:
+Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
 
-```bash
-git clone https://github.com/Lolaplex/agents-memory.git
-cd agents-memory
-pip install -e .
-```
-
-### 2. Initialize & Sync
-
-```bash
-# Scaffold initial directories and wire into host IDEs / MCP configs
-agents-memory sync --init
-
-# Audit and register local repositories
-agents-memory inventory
-```
-
-Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Reload your agent to connect to the MCP server.
+> [!TIP]
+> **🤖 Agent-Driven Setup (Zero Friction):**  
+> Simply tell your coding agent: **"Install and set up agents-memory for me."**  
+> The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
 
 ---
 
@@ -97,7 +82,7 @@ Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Relo
 | Command | Purpose |
 |---------|---------|
 | `agents-memory sync` | Updates canonical `AGENTS.md`, host rules, and MCP registrations |
-| `agents-memory sync --init` | First-time scaffolding and host discovery |
+| `agents-memory sync --init` | First-time scaffolding, example creation, and host discovery |
 | `agents-memory inventory` | Discovers unregistered local repositories across workspace roots |
 | `agents-memory inventory --register SLUG PATH ROLE STACK` | Registers a new repository |
 | `agents-memory ingest catalog` | Indexes local chat transcripts across all supported providers |
@@ -113,6 +98,8 @@ Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Relo
 - **Cursor:** Automatically injects rules and configures `.cursor/mcp.json`.
 - **Zed:** Configures `context_servers` and mirrors assistant skills.
 - **VS Code / Copilot:** Ingests session history from local state databases.
+
+**Also compatible with:** Windsurf, Cline, Roo-Code, Aider, Continue.dev, OpenAI ChatGPT, Pi, Goose, and any MCP-compliant AI assistant.
 
 ---
 

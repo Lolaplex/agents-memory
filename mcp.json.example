@@ -2,7 +2,7 @@
   "mcpServers": {
     "agent-memory": {
       "command": "python",
-      "args": ["C:\\path\\to\\agent-memory\\mcp_server.py"]
+      "args": ["-m", "agent_memory.mcp_server"]
     }
   }
 }

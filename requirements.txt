@@ -1,1 +1,2 @@
-mcp>=1.0.0
+# Install the package from this clone (src/ layout).
+-e .

@@ -5,14 +5,12 @@ Two layers, one retrieval:
 - User: ``~/.agents/memory`` — identity, project map, concepts/entities/workflows,
   project **links**, personal notes, chat index.
 - Project: ``<repo>/.agents/memory`` — staging (inbox), research, sequential
-  plans/tasks/waves/roadmap, decisions (ADRs), lifecycle notes.
+  plans/tasks/waves/roadmap, decisions, lifecycle notes.
 
 Search unions both. Always-on injection stays short (USER.md + PROJECTS.md).
 Chat bodies stay in product folders; only titles/paths are ingested.
 `add_memory` requires kind+name (user taxonomy) or project= (in-tree notes).
-AGENTS.md is the real instruction file. CLAUDE.md is bound to it (git symlink in
-this repo; installed homes symlink, else hardlink, else copy). Windows without
-symlink privilege uses a hardlink so the two names cannot drift.
+AGENTS.md is the instruction file. CLAUDE.md is bound to it (symlink, else hardlink, else copy).
 """
 from __future__ import annotations
 
@@ -25,16 +23,31 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-ROOT = Path(__file__).resolve().parent
-EXAMPLES = ROOT / "memory"
+from . import ROOT
+
+
+def is_engine_repo(repo: Path) -> bool:
+    """True for this engine clone — no in-tree ``.agents/`` or ``.cursor/``."""
+    try:
+        return repo.resolve() == ROOT.resolve()
+    except OSError:
+        return False
+
+
+ABI_DIR = ROOT / "abi"
+ABI_LAYOUT = ABI_DIR / "LAYOUT.md"
+EXAMPLES = ROOT / "examples"
+CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
 AGENTS_HOME = Path.home() / ".agents"
+AGENTS_RULES = AGENTS_HOME / "rules"
 USER_MEMORY = AGENTS_HOME / "memory"
 MEMORY = USER_MEMORY
 ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
 PROJECTS_MD = USER_MEMORY / "PROJECTS.md"
 SCAN_JSON = USER_MEMORY / "scan.json"
+INGEST_JSON = USER_MEMORY / "ingest.json"
 FACTS_MD = USER_MEMORY / "facts.md"
 CHATS_INDEX = USER_MEMORY / "chats-index.md"
 LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
@@ -117,7 +130,6 @@ SKIP_SKILL_NAMES = {
 }
 
 INJECTION_GEMINI = Path.home() / ".gemini" / "config" / "AGENTS.md"
-INJECTION_AGENTS_MD = ROOT / ".agents" / "AGENTS.md"
 
 SKIP_DIR_DEFAULT = {
     ".git",
@@ -200,72 +212,17 @@ def _default_roots() -> List[str]:
 def default_scan() -> dict:
     return {
         "roots": _default_roots(),
-        "cursor_rule_name": DEFAULT_RULE_NAME,
+        "agent_rule_name": DEFAULT_RULE_NAME,
         "ignore_dir_names": sorted(SKIP_DIR_DEFAULT),
         "ignore_slugs": [],
         "expand_children": [],
     }
 
 
-LAYOUT_TEXT = """# Agent memory layout
-
-User store `~/.agents/memory` plus `<repo>/.agents/memory`. Search unions all markdown.
-
-One home per fact. Path encodes where it belongs. No dump files (`facts.md`, `MEMORY.md`).
-
-## User (`~/.agents/memory`)
-
-| Folder | Holds |
-|--------|--------|
-| `concepts/` `entities/` `workflows/` | Cross-cutting ideas, named things, procedures |
-| `projects/<slug>/` | **Link** to a real tree (`path` in README). Not a second copy of the repo. |
-| `notes/<collection>/` | Personal notes. Guide collections below — add a folder when a fact does not fit. |
-
-Note collection **guides** (not a closed set): `projects/` `interests/` `education/` `finance/` `family/` `preferences/` `programming/` `work/` `certifications/` `scratch/`.
-`notes/projects/<slug>/` is personal notes *about* a project.
-
-## Project (`<repo>/.agents/memory`) — Cordis layering
-
-Cordis: a service claims one `ctx.key`; nested fibers have their own lifecycle; registrations are reversible; serial work has an order.
-
-| Folder | Role |
-|--------|------|
-| `staging/` | **Inbox only.** `captured.md` / `from-chats.md`. Distill, then empty. |
-| `research/` | Input. Not a decision. |
-| `plans/` `tasks/` `waves/` `roadmap/` | Ordered work. Files are `001-topic.md`, `002-…`. |
-| `notes/proposed/<class>/` | In flight (fiber PENDING). |
-| `notes/implemented/<class>/` | Shipped rationale — **revise in place** when code/paths change (facts track reality). |
-| `notes/rejected/<class>/` | Declined; **frozen** after reject. |
-| `decisions/` | ADRs: `001-title.md`. **Revise present tense** when the contract changes; new number when superseding. |
-
-Note classes (guide): `feature` `bug-fix` `simplification` `architecture` `process` `testing`.
-
-**Mutability:** staging/scratch = inbox (append, then distill/delete). Sequential work = new `001-` file per tranche; edit the *current* plan/tasks in place; archive superseded plans to `plans/PLAN-NNN.md`. Research = topical files you revise. Implemented notes and ADRs = edit the file when shipped reality changes — do not only append forever. Rejected = frozen. User `concepts/`/`entities/`/`workflows/` = grow by append or edit the one home.
-
-Archive a previous plan as `plans/PLAN-NNN.md` (GAIA) instead of overwriting the current one.
-
-## Instruction files
-
-Canonical user always-on: `~/.agents/AGENTS.md` (USER.md + PROJECTS.md).
-`CLAUDE.md` next to it is **bound** to `AGENTS.md` (symlink → hardlink → copy). DeepSeek git-symlinks `CLAUDE.md` → `AGENTS.md` in git; this repo does too.
-
-**Windows:** without symlink privilege, a fresh `git clone` may leave `CLAUDE.md` as a 9-byte file containing the text `AGENTS.md` — run `python sync.py` to repair (hardlink or symlink if Developer Mode is on). Without Developer Mode, hardlink is used (same inode, no drift). exFAT/network drives may force a copy — sync warns.
-
-**macOS/Linux:** git symlinks work out of the box; `sync.py` still binds installed homes the same way.
-
-Installed: `~/.agents/`, Gemini config, Zed (`%APPDATA%/Zed` on Windows, `~/.config/zed` elsewhere), `~/.claude/` — all bind to canonical unless a repo-root file is foreign (no `<!-- agent-memory-sync -->`). Foreign `~/.claude/CLAUDE.md` from another tool is replaced on sync; back it up first if you still need it.
-
-Always-on injection: `USER.md` + `PROJECTS.md` only.
-Chat bodies stay in product folders. `chats-index.md` is the catalog.
-"""
-
-
-MEMORY_FOLDERS = (
-    "concepts",
-    "entities",
-    "workflows",
-    "projects",
-) + tuple(f"notes/{name}" for name in NOTE_COLLECTIONS)
+def shipped_layout_text() -> str:
+    if not ABI_LAYOUT.is_file():
+        raise FileNotFoundError(f"Missing shipped layout contract: {ABI_LAYOUT}")
+    return _read(ABI_LAYOUT)
 
 
 def _copy_if_missing(src: Path, dst: Path) -> bool:
@@ -276,60 +233,108 @@ def _copy_if_missing(src: Path, dst: Path) -> bool:
     return True
 
 
-def migrate_legacy_store() -> List[str]:
-    """Copy clone `memory/` live files into ~/.agents/memory once.
+def _is_scaffold_file(path: Path) -> bool:
+    name = path.name
+    return ".example." in name or name.endswith(".example.json") or name == "orphans.example.md"
 
-    Prefer the clone if the user store is still an empty example.
-    """
+
+def consolidate_repo_leaks() -> List[str]:
+    """Move live markdown from the engine clone into ~/.agents/memory; delete clone copies."""
     moved: List[str] = []
-    if not LEGACY_MEMORY.is_dir():
-        return moved
+    orphans_doc = ORPHANS / "README.md"
+    if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
+        _write(orphans_doc, _read(EXAMPLES / "orphans.example.md"))
 
-    def take(src: Path, dst: Path, replace: bool) -> None:
-        if not src.exists():
+    def relocate(src: Path, dest: Path) -> None:
+        if not src.is_file() or _is_scaffold_file(src):
             return
-        if dst.exists() and not replace:
+        if dest.exists() and dest.stat().st_size > 0:
+            if src.resolve() != dest.resolve():
+                orphan = ORPHANS / src.name
+                orphan.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, orphan)
+                moved.append(f"orphan copy {src} -> {orphan}")
+            src.unlink()
+            moved.append(f"removed clone leak {src}")
             return
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dst)
-        moved.append(str(dst))
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dest))
+        moved.append(str(dest))
 
-    take(LEGACY_MEMORY / "USER.md", USER_MD, replace=user_profile_looks_blank())
-    take(
-        LEGACY_MEMORY / "PROJECTS.md",
-        PROJECTS_MD,
-        replace=not parse_projects(),
-    )
-    take(LEGACY_MEMORY / "scan.json", SCAN_JSON, replace=False)
-    legacy_scan = LEGACY_MEMORY / "scan.json"
-    if legacy_scan.exists():
-        dest_ok = False
-        if SCAN_JSON.exists():
-            try:
-                dest_ok = any(
-                    Path(r).expanduser().is_dir()
-                    for r in (json.loads(_read(SCAN_JSON)).get("roots") or [])
-                )
-            except json.JSONDecodeError:
-                dest_ok = False
-        take(legacy_scan, SCAN_JSON, replace=not dest_ok)
-    take(LEGACY_MEMORY / "chats-index.md", CHATS_INDEX, replace=not CHATS_INDEX.exists())
-
-    by_slug = {p.slug: p for p in parse_projects()}
-    legacy_projects = LEGACY_MEMORY / "projects"
-    if legacy_projects.is_dir():
-        for src in sorted(legacy_projects.glob("*.md")):
-            slug = src.stem
-            p = by_slug.get(slug)
-            dest = p.detail_path if p else ORPHANS / src.name
-            take(src, dest, replace=False)
-            orphan = ORPHANS / src.name
-            if p and p.path_obj.is_dir() and orphan.exists() and dest != orphan:
-                take(orphan, dest, replace=False)
-                if dest.exists():
-                    orphan.unlink()
-                    moved.append(f"removed orphan {orphan}")
+    for clone_root in CLONE_LEAK_DIRS:
+        if not clone_root.is_dir():
+            continue
+        relocate(clone_root / "USER.md", USER_MD)
+        relocate(clone_root / "PROJECTS.md", PROJECTS_MD)
+        relocate(clone_root / "scan.json", SCAN_JSON)
+        relocate(clone_root / "chats-index.md", CHATS_INDEX)
+        relocate(clone_root / "ingest.json", INGEST_JSON)
+        facts = clone_root / "facts.md"
+        if facts.is_file() and not _is_scaffold_file(facts):
+            dest = ORPHANS / "facts.md"
+            if dest.exists():
+                for line in _read(facts).splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("- "):
+                        _append_bullet(dest, stripped[2:].strip())
+            else:
+                relocate(facts, dest)
+            if facts.exists():
+                facts.unlink()
+                moved.append(f"removed clone leak {facts}")
+        projects = clone_root / "projects"
+        if projects.is_dir():
+            for src in sorted(projects.glob("*.md")):
+                slug = src.stem
+                dest = USER_MEMORY / "projects" / slug / "README.md"
+                relocate(src, dest)
+        for child in sorted(clone_root.rglob("*"), reverse=True):
+            if child.is_dir() and not any(child.iterdir()):
+                try:
+                    child.rmdir()
+                    moved.append(f"removed empty {child}")
+                except OSError:
+                    pass
+    migrate_taxonomy()
+    moved.extend(purge_engine_repo_injection())
     return moved
+
+
+def _relocate_engine_staging(captured: Path) -> None:
+    if not captured.is_file():
+        return
+    bullets = [
+        ln.strip()[2:].strip()
+        for ln in _read(captured).splitlines()
+        if ln.strip().startswith("- ")
+    ]
+    if not bullets:
+        return
+    dest = USER_MEMORY / "staging" / "captured.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if not dest.exists():
+        _write(dest, STAGING_HEADER + "\n")
+    for bullet in bullets:
+        _append_bullet(dest, bullet)
+
+
+def purge_engine_repo_injection() -> List[str]:
+    """Remove ``.agents/`` and ``.cursor/`` from the engine clone (never project memory here)."""
+    moved: List[str] = []
+    captured = ROOT / ".agents" / "memory" / "staging" / "captured.md"
+    _relocate_engine_staging(captured)
+    for name in (".agents", ".cursor"):
+        path = ROOT / name
+        if not path.exists():
+            continue
+        shutil.rmtree(path)
+        moved.append(f"removed engine {path}")
+    return moved
+
+
+def migrate_legacy_store() -> List[str]:
+    """Deprecated alias. Use consolidate_repo_leaks()."""
+    return consolidate_repo_leaks()
 
 
 def _relocate(src: Path, dst: Path) -> bool:
@@ -344,12 +349,11 @@ def _relocate(src: Path, dst: Path) -> bool:
     return True
 
 
-def ensure_project_memory_tree(mem: Path) -> None:
-    for folder in PROJECT_MEMORY_TOP:
-        (mem / folder).mkdir(parents=True, exist_ok=True)
-    for lifecycle in NOTE_LIFECYCLES:
-        for cls in NOTE_CLASSES:
-            (mem / "notes" / lifecycle / cls).mkdir(parents=True, exist_ok=True)
+def ensure_staging_inbox(mem: Path) -> None:
+    """Bootstrap project memory with files only — no empty folder tree."""
+    captured = mem / "staging" / "captured.md"
+    if not captured.exists():
+        _write(captured, STAGING_HEADER + "\n")
 
 
 def _ensure_staging_banner(path: Path) -> None:
@@ -408,10 +412,14 @@ def migrate_taxonomy() -> None:
         if _relocate(FACTS_MD, dest) is False and dest.exists():
             FACTS_MD.unlink()
     for p in parse_projects():
+        if is_engine_repo(p.path_obj):
+            if not p.user_link_path.exists():
+                _write(p.user_link_path, stub_project_md(p))
+            continue
         mem = p.memory_dir
         if not mem.is_dir():
             continue
-        ensure_project_memory_tree(mem)
+        ensure_staging_inbox(mem)
         _merge_relocate(mem / "facts.md", mem / "staging" / "captured.md")
         _merge_relocate(mem / "notes" / "captured.md", mem / "staging" / "captured.md")
         _merge_relocate(mem / "from-chats.md", mem / "staging" / "from-chats.md")
@@ -423,14 +431,12 @@ def migrate_taxonomy() -> None:
 
 
 def ensure_memory_layout() -> None:
-    """Create ~/.agents/memory, migrate clone leftovers, then fill missing examples."""
+    """Create ~/.agents/memory and copy example scaffolding if missing."""
     USER_MEMORY.mkdir(parents=True, exist_ok=True)
-    ORPHANS.mkdir(parents=True, exist_ok=True)
-    for rel in MEMORY_FOLDERS:
-        (USER_MEMORY / rel).mkdir(parents=True, exist_ok=True)
-    migrate_legacy_store()
-    migrate_taxonomy()
-    _write(LAYOUT_MD, LAYOUT_TEXT)
+    _write(LAYOUT_MD, shipped_layout_text())
+    orphans_doc = ORPHANS / "README.md"
+    if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
+        _write(orphans_doc, _read(EXAMPLES / "orphans.example.md"))
     notes_readme = USER_MEMORY / "notes" / "README.md"
     if not notes_readme.exists():
         _write(
@@ -449,6 +455,7 @@ def ensure_memory_layout() -> None:
         (EXAMPLES / "USER.example.md", USER_MD),
         (EXAMPLES / "PROJECTS.example.md", PROJECTS_MD),
         (EXAMPLES / "scan.example.json", SCAN_JSON),
+        (EXAMPLES / "ingest.example.json", INGEST_JSON),
     )
     for src, dst in pairs:
         if dst.exists() or not src.exists():
@@ -463,8 +470,8 @@ def load_scan() -> dict:
         save_scan(cfg)
         return cfg
     cfg = json.loads(_read(SCAN_JSON))
-    if not cfg.get("cursor_rule_name"):
-        cfg["cursor_rule_name"] = DEFAULT_RULE_NAME
+    if not cfg.get("agent_rule_name"):
+        cfg["agent_rule_name"] = cfg.get("cursor_rule_name") or DEFAULT_RULE_NAME
     if not cfg.get("roots"):
         cfg["roots"] = _default_roots()
     if "ignore_dir_names" not in cfg:
@@ -476,15 +483,45 @@ def load_scan() -> dict:
     return cfg
 
 
-def cursor_rule_name() -> str:
-    name = str(load_scan().get("cursor_rule_name") or DEFAULT_RULE_NAME).strip()
+def agent_rule_name() -> str:
+    cfg = load_scan()
+    name = str(cfg.get("agent_rule_name") or cfg.get("cursor_rule_name") or DEFAULT_RULE_NAME).strip()
     if not name.endswith(".mdc"):
         name += ".mdc"
     return name
 
 
-def injection_cursor_user() -> Path:
-    return Path.home() / ".cursor" / "rules" / cursor_rule_name()
+def canonical_agent_rule() -> Path:
+    return AGENTS_RULES / agent_rule_name()
+
+
+def injection_agent_rule() -> Path:
+    """Canonical always-on rule path (provider-agnostic)."""
+    return canonical_agent_rule()
+
+
+HOST_RULE_DIRS = (
+    Path.home() / ".cursor" / "rules",
+)
+
+
+def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
+    """Bind every ``~/.agents/rules/*.mdc`` into host rule slots (e.g. ``~/.cursor/rules/``)."""
+    written: List[str] = []
+    warnings: List[str] = []
+    AGENTS_RULES.mkdir(parents=True, exist_ok=True)
+    sources = sorted(AGENTS_RULES.glob("*.mdc"), key=lambda p: p.name.lower())
+    if canonical.exists() and canonical not in sources:
+        sources.insert(0, canonical)
+    for rules_dir in HOST_RULE_DIRS:
+        rules_dir.mkdir(parents=True, exist_ok=True)
+        for src in sources:
+            dest = rules_dir / src.name
+            if dest.resolve() == src.resolve():
+                continue
+            path, method = bind_to(dest, src)
+            _bind_collect(path, method, written, warnings)
+    return written, warnings
 
 
 def profile_title() -> str:
@@ -501,7 +538,7 @@ def scan_roots() -> List[str]:
 def mcp_entry() -> dict:
     return {
         "command": sys.executable,
-        "args": [str(ROOT / "mcp_server.py")],
+        "args": ["-m", "agent_memory.mcp_server"],
     }
 
 
@@ -517,7 +554,7 @@ def user_profile_looks_blank() -> bool:
     return bool(re.search(r"^- Name:\s*$", _read(USER_MD), re.M))
 
 
-def merge_cursor_mcp() -> str:
+def merge_agent_mcp() -> str:
     """Insert/update the agent-memory server in ~/.cursor/mcp.json. Other servers untouched."""
     path = cursor_mcp_path()
     if path.exists():
@@ -637,7 +674,7 @@ def _mcp_servers_from_file(path: Path) -> Dict[str, dict]:
 
 
 def collect_mcp_servers() -> Dict[str, dict]:
-    """Union of Cursor + Antigravity MCP configs. Later files fill missing fields only."""
+    """Union of your Agent host MCP configs. Later files fill missing fields only."""
     home = Path.home()
     sources = [
         home / ".cursor" / "mcp.json",
@@ -693,7 +730,7 @@ def mcp_spec_to_zed(spec: dict) -> dict:
 
 
 def merge_zed_mcp() -> str:
-    """Upsert Cursor/AG MCP servers into Zed settings.json context_servers."""
+    """Upsert merged MCP servers into Zed settings.json context_servers."""
     path = zed_settings_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
@@ -736,7 +773,7 @@ def zed_skills_root() -> Path:
 
 
 def mirror_skills_to_zed() -> List[str]:
-    """Copy user skills from Cursor/AG/Claude into ~/.agents/skills (Zed global)."""
+    """Copy user skills from agent host folders into ~/.agents/skills (Zed global)."""
     dest_root = zed_skills_root()
     dest_root.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
@@ -793,7 +830,7 @@ def render_projects_table(projects: Iterable[Project]) -> str:
     rows = [
         "# Projects",
         "",
-        "Canonical map. Change via `inventory.py`, MCP `register_project`, or skill `memory-sync`.",
+        "Canonical map. Change via `python -m agent_memory inventory`, MCP `register_project`, or skill `memory-sync`.",
         "",
         "| slug | path | role | stack | status |",
         "|------|------|------|-------|--------|",
@@ -911,13 +948,19 @@ def stub_project_md(p: Project) -> str:
 
 
 def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
+    if is_engine_repo(p.path_obj):
+        p.user_link_path.parent.mkdir(parents=True, exist_ok=True)
+        if overwrite_empty or not p.user_link_path.exists():
+            _write(p.user_link_path, stub_project_md(p))
+        return
     dest = p.detail_path
     dest.parent.mkdir(parents=True, exist_ok=True)
-    ensure_project_memory_tree(p.memory_dir)
-    if p.path_obj.is_dir():
-        gi = dest.parent / ".gitignore"
-        if not gi.exists():
-            _write(gi, "*\n!.gitignore\n")
+    if not is_engine_repo(p.path_obj):
+        ensure_staging_inbox(p.memory_dir)
+        if p.path_obj.is_dir():
+            gi = dest.parent / ".gitignore"
+            if not gi.exists():
+                _write(gi, "*\n!.gitignore\n")
     if overwrite_empty or not dest.exists():
         _write(dest, stub_project_md(p))
     if overwrite_empty or not p.user_link_path.exists():
@@ -957,7 +1000,7 @@ def always_on_body() -> str:
     return f"{user}\n\n---\n\n{projects}\n"
 
 
-def cursor_rule_text() -> str:
+def agent_rule_text() -> str:
     return (
         "---\n"
         f"description: {profile_title()}. Always apply.\n"
@@ -1003,28 +1046,11 @@ def _should_overwrite_agents(path: Path) -> bool:
     return False
 
 
-def repo_pointer_rule_text() -> str:
-    roots = scan_roots()
-    roots_txt = ", ".join(f"`{r}`" for r in roots) if roots else "`scan.json` roots"
-    return (
-        "---\n"
-        "description: Pointer to local agent memory. Always apply.\n"
-        "alwaysApply: true\n"
-        "---\n\n"
-        f"{MARKER}\n\n"
-        f"User memory: `{USER_MEMORY}` (identity, project map, chat index).\n"
-        "This repo: `.agents/memory/` (staging / research / plans / tasks / waves / roadmap / decisions).\n"
-        "Search both via MCP `agent-memory` / `search_memory`.\n\n"
-        f"- New folder under {roots_txt} -> skill `memory-sync` or "
-        "`register_project`. Do not leave it unlisted.\n"
-    )
-
-
 def purge_legacy_rules(rules_dir: Path) -> List[str]:
     """Delete old rule filenames so alwaysApply does not double-load."""
     if not rules_dir.is_dir():
         return []
-    current = cursor_rule_name().lower()
+    current = agent_rule_name().lower()
     removed: List[str] = []
     for path in list(rules_dir.iterdir()):
         if not path.is_file():
@@ -1054,12 +1080,9 @@ def iter_rules_dirs() -> List[Path]:
         seen.add(key)
         out.append(path)
 
-    add(Path.home() / ".cursor" / "rules")
-    add(ROOT / ".cursor" / "rules")
-    for p in parse_projects():
-        add(p.path_obj / ".cursor" / "rules")
-    for _slug, path in discover_disk():
-        add(path / ".cursor" / "rules")
+    add(AGENTS_RULES)
+    for rules_dir in HOST_RULE_DIRS:
+        add(rules_dir)
     return out
 
 
@@ -1218,7 +1241,7 @@ def bind_claude_home(canonical: Path) -> Tuple[List[str], List[str]]:
         if method == "copy":
             warnings.append(
                 f"{dest}: bound by copy (symlink/hardlink failed — "
-                "edit AGENTS.md only; re-run sync.py after changes or use Developer Mode / native FS)"
+                "edit AGENTS.md only; re-run python -m agent_memory sync after changes or use Developer Mode / native FS)"
             )
     return written, warnings
 
@@ -1235,7 +1258,7 @@ def _bind_collect(path: str, method: str, written: List[str], warnings: List[str
 def repair_instruction_stub(directory: Path) -> List[str]:
     """Replace a 9-byte git-symlink checkout (or an identical copy) with a bind to AGENTS.md.
 
-    The engine repo root always binds: CLAUDE.md is the DeepSeek alias of AGENTS.md.
+    The engine repo root always binds: CLAUDE.md and AGENTS.md are the same content.
     """
     agents = directory / "AGENTS.md"
     claude = directory / "CLAUDE.md"
@@ -1259,40 +1282,35 @@ def repair_instruction_stub(directory: Path) -> List[str]:
 def inject_into_repo(p: Project) -> List[str]:
     written: List[str] = []
     repo = p.path_obj
-    if not repo.is_dir():
+    if not repo.is_dir() or is_engine_repo(repo):
         return written
     ensure_project_file(p)
     written.append(str(p.detail_path))
     written.append(str(p.user_link_path))
-    rule = repo / ".cursor" / "rules" / cursor_rule_name()
-    _write(rule, repo_pointer_rule_text())
-    written.append(str(rule))
-    written.extend(purge_legacy_rules(repo / ".cursor" / "rules"))
     written.extend(write_instruction_pair(repo / ".agents", project_agents_text(p)))
     return written
 
 
 def _machine_paths_block() -> str:
-    inv = ROOT / "inventory.py"
-    syn = ROOT / "sync.py"
-    ingest = ROOT / "ingest_chats.py"
+    py = sys.executable
     roots = ", ".join(f"`{r}`" for r in scan_roots()) or "`scan.json` roots"
     return (
         f"Install (engine): `{ROOT}`  \n"
         f"User memory: `{USER_MEMORY}`  \n"
         f"Project memory: `<repo>/.agents/memory`  \n"
-        f"Cursor rule: `{cursor_rule_name()}`  \n"
+        f"Agent rule: `{AGENTS_RULES / agent_rule_name()}`  \n"
         f"Scan roots: {roots}\n\n"
-        "Scripts (absolute, any workspace):\n\n"
+        "Scripts (any workspace, after `pip install -e` this clone):\n\n"
         "```powershell\n"
-        f"python {inv}\n"
-        f"python {inv} --json\n"
-        f"python {syn}\n"
-        f"python {ingest}\n"
+        f"{py} -m agent_memory inventory\n"
+        f"{py} -m agent_memory inventory --json\n"
+        f"{py} -m agent_memory sync\n"
+        f"{py} -m agent_memory ingest catalog\n"
+        f"{py} -m agent_memory ingest run\n"
         "```\n\n"
         "Register:\n\n"
         "```powershell\n"
-        f'python {inv} --register SLUG "C:\\path\\to\\repo" "role here" "stack here"\n'
+        f'{py} -m agent_memory inventory --register SLUG "C:\\path\\to\\repo" "role here" "stack here"\n'
         "```\n"
     )
 
@@ -1351,10 +1369,13 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     claude_written, claude_warn = bind_claude_home(HOME_AGENTS)
     written.extend(claude_written)
     warnings.extend(claude_warn)
-    written.extend(repair_instruction_stub(ROOT))
-    cursor_user = injection_cursor_user()
-    _write(cursor_user, cursor_rule_text())
-    written.append(str(cursor_user))
+    AGENTS_RULES.mkdir(parents=True, exist_ok=True)
+    rule = canonical_agent_rule()
+    _write(rule, agent_rule_text())
+    written.append(str(rule))
+    host_rules, host_warn = bind_host_rules(rule)
+    written.extend(host_rules)
+    warnings.extend(host_warn)
     written.extend(purge_legacy_rules_everywhere())
     written.extend(install_skills())
     written.extend(mirror_skills_to_zed())

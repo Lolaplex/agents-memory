@@ -1,6 +1,6 @@
 ---
 name: memory-sync
-description: Audits and updates local agent memory. Scans configured coding folders, registers or ignores new projects, writes PROJECTS.md, syncs Cursor/Antigravity/Zed injection. Use when the user says Bestandaufnahme, memory sync, neues Projekt, inventory, Projekte updaten, register project, or wants agents to know a new repo path.
+description: Audits and updates local agent memory. Scans configured coding folders, registers or ignores new projects, writes PROJECTS.md, syncs your Agent injection. Use when the user says Bestandaufnahme, memory sync, neues Projekt, inventory, Projekte updaten, register project, or wants agents to know a new repo path.
 ---
 
 # memory-sync
@@ -26,20 +26,21 @@ User memory: `~/.agents/memory`. Project memory: `<repo>/.agents/memory`.
 | `<repo>/.agents/memory/` | research (input); `plans/` `tasks/` `waves/` `roadmap/` `decisions/` as `001-topic.md`; `notes/proposed\|implemented\|rejected/<class>/` |
 | `~/.agents/AGENTS.md` | Canonical always-on (USER + PROJECTS). `CLAUDE.md` is bound to it. |
 | `~/.agents/memory/chats-index.md` | Chat title catalog |
-| `~/.agents/memory/scan.json` | Roots, ignore list, Cursor rule name |
+| `~/.agents/memory/scan.json` | Roots, ignore list (includes `.agents`, `.cursor`), agent rule name |
+| `~/.agents/rules/*.mdc` | Personal always-on rules (canonical). Sync binds them into `~/.cursor/rules/`. Example: `run-commands.mdc` |
 
-MCP server `agent-memory`: `inventory_projects`, `register_project`, `ignore_project`, `add_memory` (kind+name, collection=, or project=), `search_memory`, `get_project_memories`, `sync_local_agents_md`, `list_projects`.
+MCP server `agent-memory`: see [`abi/MCP.md`](../../abi/MCP.md). CLI/injection: `python -m agent_memory --help-json`.
 
 ## When this skill fires
 
 - User asks for Bestandaufnahme / inventory / memory sync / Projekte updaten
 - User (or you) created a **new folder** under a `scan.json` root
 - A path in `PROJECTS.md` is wrong or missing
-- After editing `USER.md` or `PROJECTS.md` by hand → always `sync.py`
+- After editing `USER.md` or `PROJECTS.md` by hand → always `python -m agent_memory sync`
 
 ## Bestandaufnahme workflow
 
-1. Run `inventory.py` (or MCP `inventory_projects`).
+1. Run `python -m agent_memory inventory` (or MCP `inventory_projects`).
 2. Show the user a tight list:
    - **unknown**: on disk, not in memory
    - **missing**: in memory, path gone
@@ -47,10 +48,10 @@ MCP server `agent-memory`: `inventory_projects`, `register_project`, `ignore_pro
    - **add** → role + stack (one line each)
    - **ignore** → never list again (`ignore_project` / `--ignore SLUG`)
    - **skip** → leave for later
-4. Register adds write `PROJECTS.md`, `projects/<slug>/README.md` (link), and `<repo>/.agents/memory/` folders, then sync injection (`AGENTS.md` with `CLAUDE.md` bound to it).
+4. Register adds write `PROJECTS.md`, `projects/<slug>/README.md` (link), and `<repo>/.agents/memory/` **files** (`README.md`, `staging/captured.md`), then sync inject. No empty folders. No repo `.cursor/`.
 5. For **missing**: confirm delete from `PROJECTS.md` or fix the path. Do not guess a new path.
-6. Run `sync.py` if you edited markdown by hand.
-7. Tell the user: Cursor / Antigravity / Zed pick up MCP + rules after reload if the server name changed.
+6. Run `python -m agent_memory sync` if you edited markdown by hand.
+7. Tell the user: your Agent picks up MCP + rules after reload if the server name changed.
 
 ## New project while coding (no full audit)
 
@@ -62,21 +63,21 @@ If you scaffold a repo under a scan root:
 
 ## Edit rules
 
-- Durable identity → `~/.agents/memory/USER.md` then `sync.py`
+- Durable identity → `~/.agents/memory/USER.md` then `python -m agent_memory sync`
 - Idea → MCP `add_memory(kind="concept"|"entity", name="stem")`
 - Procedure → `add_memory(kind="workflow", name="stem")`
 - Project **link** → `add_memory(kind="project", name="slug")` writes `projects/<slug>/README.md` pointing at the real tree
 - Ordered work → `kind="plans"|"tasks"|"waves"|"roadmap"` with `project=` → `001-topic.md`
-- ADR / claimed contract → `kind="decision"|"adr"` → `decisions/001-title.md`
+- Decision / claimed contract → `kind="decision"|"adr"` → `decisions/001-title.md`
 - In-flight design note → `kind="proposed"|"implemented"|"rejected"`, `collection=` class (`architecture` default). **implemented** and **decisions** = revise the file in place when shipped reality changes; **rejected** = frozen.
 - Research (input) → `kind="research"` — revise topical file when input changes
 - Inbox → `project=` alone or `kind="staging"` → `staging/captured.md`. Distill, then delete the bullet.
 - Personal note → `add_memory(kind="note", name="stem", collection="interests"|…)` or `project="slug"` for `notes/projects/<slug>/`
 - Throw-away → `kind="scratch"`
 - No `facts.md`. Path encodes the home.
-- Chat titles → `python ingest_chats.py`. ChatGPT bodies → `python extract_openai.py` then distill out of staging
-- `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink → hardlink → copy). Edit `AGENTS.md`. See `memory/PLATFORM.md` for Windows vs macOS/Linux.
-- `sync.py` replaces foreign `~/.claude/CLAUDE.md` — back up first if another tool wrote it.
+- Chat titles → `python -m agent_memory ingest catalog`. Extract → `python -m agent_memory ingest extract` then distill staging bullets with `add_memory`. See `abi/INGEST.md`.
+- `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink → hardlink → copy). Edit `AGENTS.md`. See `abi/PLATFORM.md` for Windows vs macOS/Linux.
+- `python -m agent_memory sync` replaces foreign `~/.claude/CLAUDE.md` — back up first if another tool wrote it.
 - Do not copy secrets, tokens, SSH keys, emails, phones, or `.env` values into memory
 - Do not overwrite a repo root `AGENTS.md` unless it contains `<!-- agent-memory-sync -->`
 

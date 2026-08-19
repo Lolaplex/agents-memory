@@ -1,15 +1,15 @@
 import unittest
 
-from extract_openai import keep_message, scrub
+from agent_memory.extract_openai import keep_message, scrub
 
 
 class FilterTests(unittest.TestCase):
-    def test_drops_howto_without_signal(self):
+    def test_drops_short_howto(self):
         self.assertFalse(
-            keep_message("Regex for Quoted Strings", "How can I match quoted strings in Python?")
+            keep_message("Regex", "How can I match quoted strings in Python?")
         )
 
-    def test_keeps_signal(self):
+    def test_keeps_substantive(self):
         self.assertTrue(
             keep_message(
                 "Koru fragments",
@@ -17,11 +17,11 @@ class FilterTests(unittest.TestCase):
             )
         )
 
-    def test_drops_blender_howto(self):
+    def test_drops_long_code_dump(self):
         self.assertFalse(
             keep_message(
                 "Blender Python Custom Enum",
-                "In Blender Python, how can I use template_ID for a custom enum",
+                "def foo():\n" + "    pass\n" * 40,
             )
         )
 

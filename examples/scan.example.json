@@ -1,6 +1,6 @@
 {
   "roots": ["~/Coding"],
-  "cursor_rule_name": "user-rules.mdc",
+  "agent_rule_name": "user-rules.mdc",
   "ignore_dir_names": [
     ".git",
     ".agents",

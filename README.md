@@ -1,87 +1,83 @@
 # agent-memory
 
-Local markdown memory for coding agents. MCP server + Cursor / Antigravity / Zed injection. No cloud.
+**Local markdown memory for coding agents — any provider, any tool.**
 
-Live files live under **`~/.agents/memory`** (user) and **`<repo>/.agents/memory`** (project). This repo ships the engine and `memory/*.example.*` templates.
+Your memory lives in folders you own: `~/.agents/memory` (identity + project map) and `<repo>/.agents/memory` (per-project work). Your Agent — or any host that reads markdown and optional MCP — uses the same layout.
 
-**Coding agents:** follow [`AGENTS.md`](AGENTS.md). That file is the install spec. This README is the map.
+Markdown is the **source of truth**. The Python MCP in this repo is the **reference implementation**, not a proprietary backend.
 
-## Layout
+## ABI (stable contract)
 
-Same split as skills: one user folder, one folder per repo, one search across both.
+Shipped under [`abi/`](abi/) — versioned, documented, implementation-agnostic:
+
+| Doc | What |
+|-----|------|
+| [`abi/README.md`](abi/README.md) | Overview + conformance |
+| [`abi/LAYOUT.md`](abi/LAYOUT.md) | Folder taxonomy |
+| [`abi/KINDS.md`](abi/KINDS.md) | Where facts go |
+| [`abi/MCP.md`](abi/MCP.md) | Tool contract |
+| [`abi/INJECTION.md`](abi/INJECTION.md) | AGENTS / CLAUDE binding |
+| [`abi/PLATFORM.md`](abi/PLATFORM.md) | Windows, symlinks, per-machine paths |
+| [`abi/INSTALL.md`](abi/INSTALL.md) | Sync, injection, scan.json, `--help-json` |
+| [`abi/INGEST.md`](abi/INGEST.md) | Catalog / extract / distill pipeline |
+
+Install copies `abi/LAYOUT.md` → `~/.agents/memory/LAYOUT.md`. Injection and CLI flags: [`abi/INSTALL.md`](abi/INSTALL.md). Machine-readable: `python -m agent_memory --help-json`.
+
+## Reference implementation (this repo)
+
+Python lives in `src/agent_memory/` (`pip install -e .` from the clone).
+
+| Piece | Role |
+|-------|------|
+| `agent_memory.mcp_server` | MCP: search / add / register / inventory / sync / ingest |
+| `agent_memory.store` | Layout engine, taxonomy, injection |
+| `python -m agent_memory sync` | Canonical `~/.agents/AGENTS.md`, bound `CLAUDE.md`, host inject |
+| `python -m agent_memory inventory` | Disk vs `PROJECTS.md` (skips `.agents`, `.cursor`) |
+| `python -m agent_memory ingest` | Chat catalog + extract pipeline |
+| `skills/memory-sync/` | Agent install skill |
+
+Templates only in git: `examples/*.example.*`. Live store: `~/.agents/memory`. Run `python -m agent_memory consolidate` if markdown leaked into this clone.
+
+**Coding agents:** follow [`AGENTS.md`](AGENTS.md) for install.
+
+## Layout (summary)
 
 | Path | What |
 |------|------|
 | `~/.agents/memory/USER.md` | Always-on identity |
 | `~/.agents/memory/PROJECTS.md` | slug / path / role / stack / status |
-| `~/.agents/memory/concepts/` | Reusable ideas |
-| `~/.agents/memory/entities/` | Named people, orgs, products, machines |
-| `~/.agents/memory/workflows/` | Procedures |
-| `~/.agents/memory/projects/<slug>/` | Link to a real tree (README has `path`) |
-| `~/.agents/memory/notes/<collection>/` | Personal notes (projects, interests, education, finance, family, preferences, programming, work, certifications, scratch) |
-| `~/.agents/memory/chats-index.md` | Chat titles + paths (not bodies) |
-| `<repo>/.agents/memory/` | `staging/` (inbox); research; `plans/` `tasks/` `waves/` `roadmap/` `decisions/` as `001-topic.md`; `notes/proposed\|implemented\|rejected/<class>/` |
-| `~/.agents/AGENTS.md` | Canonical always-on. `CLAUDE.md` is bound to it. |
-| `mcp_server.py` | MCP: search / add (kind+name+collection) / register / inventory / sync |
-| `ingest_chats.py` | Rebuild the chat title index |
-| `extract_openai.py` | Unzip ChatGPT export; keep durable user lines only |
-| `inventory.py` | Disk vs `PROJECTS.md` |
-| `sync.py` | Canonical `~/.agents/AGENTS.md`, bound `CLAUDE.md` siblings, Cursor rules, Zed MCP |
+| `~/.agents/memory/concepts/` … | Cross-cutting typed memory (created on first write) |
+| `~/.agents/memory/projects/<slug>/` | Link to real tree (not a copy) |
+| `<repo>/.agents/memory/` | Files only when used — staging inbox, then typed paths on write |
+| `~/.agents/AGENTS.md` | Short inject; `CLAUDE.md` bound to it |
 
-Retrieval is overarching: `search_memory` unions the user store and every registered project's `.agents/memory`. Always-on injection stays short (USER + PROJECTS only). `projects/<slug>/` is a **link** to the real tree, not a second copy. Note collections under `notes/` are a guide, not a closed set.
-
-`AGENTS.md` is the real instruction file. `CLAUDE.md` is bound to it (git symlink in this repo; installed: symlink, else hardlink, else copy). Staging files are an inbox, not memory.
-
-Chat *bodies* stay in Cursor / VS Code / Antigravity / Pi / ChatGPT export folders.
+Search unions user + all registered project trees. Chat *bodies* stay in product folders; `chats-index.md` is titles + paths only.
 
 ## Setup
 
 Same interpreter for pip and MCP:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install -e .
+python -m agent_memory sync --init
+python -m agent_memory inventory
 ```
 
-Fill `~/.agents/memory/USER.md` and `scan.json` (copied from `memory/*.example.*` on first run), then:
+Fill `~/.agents/memory/USER.md` and `scan.json` (from `examples/*.example.*` on first run). Reload your Agent after MCP merge.
 
-```bash
-python sync.py --init
-python inventory.py
-python ingest_chats.py
-python extract_openai.py
-```
-
-`--init` does not overwrite an existing `USER.md`. It does:
-
-- copy examples → `~/.agents/memory` **only if missing**
-- migrate a leftover clone `memory/` live store into `~/.agents/memory` once
-- write Cursor + Gemini + Zed injection and the `memory-sync` skill
-- merge `agent-memory` into `~/.cursor/mcp.json` (other servers untouched; command = this Python)
-- merge Cursor + Antigravity MCP servers into Zed `context_servers`
-
-If you edit `USER.md` after `--init`, run `python sync.py` again. Reload Cursor / Zed.
-
-In-tree project memory is gitignored (`.agents/memory/.gitignore`) so it stays local unless you force-add it.
-
-## Cross-platform
-
-See [`memory/PLATFORM.md`](memory/PLATFORM.md). Summary:
-
-- **Windows:** enable Developer Mode if you want real symlinks; otherwise `sync.py` uses hardlinks (same inode, no drift). A git clone without either may show a 9-byte `CLAUDE.md` stub — run `sync.py`.
-- **All OS:** binding order is symlink → hardlink → copy. Copy warns because it can drift.
-- **`~/.claude/CLAUDE.md`:** replaced on sync if it is not ours — back up foreign files first.
-- **`scan.json` / ingest paths** are per-machine; edit for your layout.
+See [`abi/PLATFORM.md`](abi/PLATFORM.md) for Windows symlink stubs and hardlink fallback.
 
 ## Scripts
 
-From this repo root (installed skill uses absolute paths):
-
 ```bash
-python inventory.py
-python inventory.py --json
-python inventory.py --register SLUG "/path/to/repo" "role" "stack"
-python inventory.py --ignore SLUG
-python ingest_chats.py
-python extract_openai.py
-python sync.py
+python -m agent_memory inventory
+python -m agent_memory inventory --json
+python -m agent_memory inventory --register SLUG "/path/to/repo" "role" "stack"
+python -m agent_memory sync
+python -m agent_memory --help-json
+python -m agent_memory sync --help-json
+python -m agent_memory inventory --help-json
+python -m agent_memory ingest catalog
 ```
+
+After install, `agent-memory` on PATH is the same as `python -m agent_memory`.

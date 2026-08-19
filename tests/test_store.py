@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import store
+from agent_memory import store
 
 
 class AddMemoryTests(unittest.TestCase):
@@ -176,6 +176,93 @@ class AddMemoryTests(unittest.TestCase):
             self.assertNotIn("graphify", claude_text)
             self.assertIn(store.MARKER, claude_text)
             self.assertTrue(written)
+
+
+class RegisterBootstrapTests(unittest.TestCase):
+    def test_register_no_empty_memory_dirs(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        repo = root / "repo"
+        user.mkdir()
+        repo.mkdir()
+        projects_md = user / "PROJECTS.md"
+        projects_md.write_text(
+            "# Projects\n\n| slug | path | role | stack | status |\n"
+            "|------|------|------|-------|--------|\n",
+            encoding="utf-8",
+        )
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "PROJECTS_MD", projects_md
+        ), patch.object(store, "ORPHANS", user / "orphans"), patch.object(
+            store, "sync_injection", lambda **k: ([], [])
+        ):
+            store.register_project("demo", str(repo), "test", "py")
+        mem = repo / ".agents" / "memory"
+        self.assertTrue((mem / "README.md").exists())
+        self.assertTrue((mem / "staging" / "captured.md").exists())
+        for child in mem.rglob("*"):
+            if child.is_dir():
+                self.assertTrue(any(child.iterdir()), f"empty dir: {child}")
+
+
+    def test_engine_repo_skips_in_tree_agents(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        engine = root / "engine-clone"
+        user.mkdir()
+        engine.mkdir()
+        projects_md = user / "PROJECTS.md"
+        projects_md.write_text(
+            "# Projects\n\n"
+            "| slug | path | role | stack | status |\n"
+            "|------|------|------|-------|--------|\n"
+            f"| engine-clone | `{engine}` | engine | py | active |\n",
+            encoding="utf-8",
+        )
+        with patch.object(store, "ROOT", engine), patch.object(
+            store, "USER_MEMORY", user
+        ), patch.object(store, "PROJECTS_MD", projects_md), patch.object(
+            store, "ORPHANS", user / "orphans"
+        ), patch.object(store, "sync_injection", lambda **k: ([], [])):
+            store.register_project("engine-clone", str(engine), "engine", "py")
+            written = store.inject_into_repo(
+                store.Project("engine-clone", str(engine), "engine", "py")
+            )
+        self.assertFalse((engine / ".agents").exists())
+        self.assertEqual(written, [])
+
+    def test_purge_engine_repo_injection(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        engine = root / "engine-clone"
+        user.mkdir()
+        engine.mkdir()
+        agents = engine / ".agents" / "memory" / "staging"
+        agents.mkdir(parents=True)
+        (agents / "captured.md").write_text("# Staging\n\n- stray fact\n", encoding="utf-8")
+        (engine / ".cursor" / "skills").mkdir(parents=True)
+        with patch.object(store, "ROOT", engine), patch.object(
+            store, "USER_MEMORY", user
+        ):
+            moved = store.purge_engine_repo_injection()
+        self.assertFalse((engine / ".agents").exists())
+        self.assertFalse((engine / ".cursor").exists())
+        self.assertTrue(any("removed engine" in line for line in moved))
+        dest = user / "staging" / "captured.md"
+        self.assertIn("stray fact", dest.read_text(encoding="utf-8"))
+
+    def test_shipped_layout_exists(self):
+        self.assertTrue(store.ABI_LAYOUT.is_file())
+        text = store.shipped_layout_text()
+        self.assertIn("# Agent memory layout", text)
+        self.assertIn("staging/", text)
+        self.assertIn("No dump files", text)
 
 
 if __name__ == "__main__":

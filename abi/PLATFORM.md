@@ -1,14 +1,14 @@
-# Cross-platform notes (agent-memory)
+# Cross-platform notes
 
-Read this before installing on a new OS or sharing the tool.
+Read this before installing on a new OS or sharing a conforming implementation.
 
 ## Instruction files (`AGENTS.md` / `CLAUDE.md`)
 
-| Platform | Git clone of agent-memory | Installed homes after `sync.py` |
-|----------|---------------------------|----------------------------------|
+| Platform | Git clone of a conforming repo | Installed homes after sync |
+|----------|--------------------------------|----------------------------|
 | **macOS / Linux** | `CLAUDE.md` git-symlink works | symlink → hardlink → copy |
 | **Windows + Developer Mode** | symlink works after clone | same |
-| **Windows without symlink privilege** | `CLAUDE.md` may be a **9-byte stub** (`AGENTS.md`) — run `sync.py` | hardlink to `~/.agents/AGENTS.md` (no drift) |
+| **Windows without symlink privilege** | `CLAUDE.md` may be a **9-byte stub** (`AGENTS.md`) — run sync | hardlink to `~/.agents/AGENTS.md` (no drift) |
 | **exFAT / network drives** | stub risk as above | may fall back to **copy** — sync prints `WARN`; edits to AGENTS.md alone |
 
 Binding order: **symlink → hardlink → copy**. Copy is last resort and can drift if you edit only one file.
@@ -22,9 +22,9 @@ Binding order: **symlink → hardlink → copy**. Copy is last resort and can dr
 - VS Code Copilot chats: `%APPDATA%/Code/...` on Windows, `~/.config/Code/...` on Linux.
 - `scan.json` roots: use paths that exist on **that** machine (absolute or `~/...`).
 
-## Chat ingest (`ingest_chats.py`)
+## Chat ingest (reference implementation)
 
-Machine-specific paths (Cursor, VS Code, Antigravity, OpenAI export zip) are hardcoded for Fabian's layout. On another machine, edit `ingest_chats.py` / export path or rely on MCP `add_memory` after manual distill.
+The Python reference ships `python -m agent_memory ingest` with machine-specific paths (your Agent transcript folders, VS Code, OpenAI export zip). On another machine, edit those paths or rely on MCP `add_memory` after manual distill. Ingest is **not** part of the core ABI — only the resulting `chats-index.md` shape is.
 
 ## Memory mutability (all platforms)
 

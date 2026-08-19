@@ -5,7 +5,8 @@ import argparse
 import json
 import sys
 
-from store import (
+from .cli_help import emit_help_json
+from .store import (
     ignore_slug,
     inventory_report,
     register_project,
@@ -13,9 +14,10 @@ from store import (
 )
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bestandaufnahme: disk vs local agent memory"
+        description="Bestandaufnahme: disk vs local agent memory",
+        epilog="Machine-readable: python -m agent_memory inventory --help-json. Full spec: python -m agent_memory --help-json.",
     )
     parser.add_argument("--json", action="store_true", help="machine-readable report")
     parser.add_argument(
@@ -28,14 +30,28 @@ def main() -> int:
     parser.add_argument(
         "--sync",
         action="store_true",
-        help="rewrite Cursor + Antigravity + Zed injection files",
+        help="rewrite your Agent injection files",
     )
     parser.add_argument(
         "--no-repos",
         action="store_true",
         help="with --sync, only write global injection (not per-repo rules)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--help-json",
+        action="store_true",
+        help="print machine-readable CLI spec as JSON and exit",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(argv if argv is not None else sys.argv[1:])
+    if "--help-json" in argv:
+        emit_help_json(argv, build_parser(), name="inventory")
+        return 0
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     if args.register:
         slug, path, role, stack = args.register

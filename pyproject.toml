@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-memory"
+version = "1.0.0"
+description = "Local markdown memory for coding agents — ABI in abi/, Python MCP reference implementation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.0.0"]
+
+[project.scripts]
+agent-memory = "agent_memory.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

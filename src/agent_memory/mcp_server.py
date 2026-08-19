@@ -1,17 +1,11 @@
-"""Local markdown memory MCP. Replaces Mem0 Cloud."""
+"""Local markdown memory MCP — reference implementation of abi/MCP.md."""
 from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 from mcp.server.fastmcp import FastMCP
 
-from store import (
+from .store import (
     add_memory as store_add,
     delete_memory as store_delete,
     ensure_memory_layout,
@@ -149,18 +143,18 @@ def ignore_project(slug: str) -> str:
 
 @mcp.tool()
 def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") -> str:
-    """Sync always-on memory into Cursor + Antigravity + Zed. Optional: also inject one repo by path or slug."""
+    """Sync always-on memory into your Agent hosts. Optional: also inject one repo by path or slug."""
     try:
         written, warnings = sync_injection(include_repos=True)
         extra = []
         if project_slug:
-            from store import projects_by_slug
+            from .store import projects_by_slug
 
             p = projects_by_slug().get(project_slug)
             if p:
                 extra = inject_into_repo(p)
         elif project_folder_path:
-            from store import Project, inject_into_repo as inj
+            from .store import Project, inject_into_repo as inj
             from pathlib import Path as P
 
             slug = project_slug or P(project_folder_path).name
@@ -180,6 +174,64 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
         return f"Error syncing: {e}"
 
 
-if __name__ == "__main__":
+@mcp.tool()
+def ingest_catalog() -> str:
+    """Rebuild chats-index.md and entity reference cards from ingest.json (catalog phase)."""
+    try:
+        from .ingest_catalog import run_catalog
+
+        result = run_catalog()
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error running ingest catalog: {e}"
+
+
+@mcp.tool()
+def ingest_extract(source_id: str = "") -> str:
+    """Extract durable user lines into staging/ingest/<id>/captured.md (extract phase)."""
+    try:
+        from .ingest_extractors import run_extract
+
+        result = run_extract(source_id=source_id)
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error running ingest extract: {e}"
+
+
+@mcp.tool()
+def ingest_status() -> str:
+    """Show ingest/state.json summary for configured sources."""
+    try:
+        from .ingest_common import ingest_state_path, load_state
+        from .ingest_config import list_sources, load_ingest
+
+        cfg = load_ingest()
+        state = load_state()
+        rows = []
+        for src in list_sources(cfg):
+            sid = str(src["id"])
+            entry = state.get("sources", {}).get(sid, {})
+            rows.append(
+                {
+                    "id": sid,
+                    "kind": src.get("kind"),
+                    "last_catalog": entry.get("last_catalog"),
+                    "last_extract": entry.get("last_extract"),
+                    "catalog_count": entry.get("catalog_count"),
+                    "extract_count": entry.get("extract_count"),
+                    "staging": entry.get("staging"),
+                }
+            )
+        return json.dumps({"state_file": str(ingest_state_path()), "sources": rows}, indent=2)
+    except Exception as e:
+        return f"Error reading ingest status: {e}"
+
+
+def main() -> int:
     print("Starting local agent-memory MCP on stdio...", file=sys.stderr)
     mcp.run()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

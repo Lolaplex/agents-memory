@@ -1,9 +1,10 @@
-# agent-memory
+# agents-memory
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agent-memory/releases"><img src="https://img.shields.io/badge/version-0.42-blue.svg?style=flat-square" alt="Version 0.42"></a>
+  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Version 1.0.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
+  <a href="https://pypi.org/project/agents-memory/"><img src="https://img.shields.io/pypi/v/agents-memory.svg?style=flat-square" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License"></a>
 </p>
 
@@ -12,14 +13,15 @@ One persistent identity, shared across **Claude Code**, **Cursor**, **Antigravit
 
 ---
 
-## Why agent-memory?
+## Why `.agents/memory`?
 
-Without a shared memory layout, **every AI tool lives in its own silo**:
-- Each vendor locks chat history in proprietary local databases or remote clouds.
-- Switching IDEs or agents means starting from scratch and repeating preferences.
-- Vector DBs and RAG solutions add infrastructure complexity, drift out of date, and are not human-editable.
+The name **`agents-memory`** comes directly from its universal storage standard: **`.agents/memory`**.
+- **Global:** `~/.agents/memory/` stores your persistent identity, stack defaults, durable concepts, and project index.
+- **Repository:** `<repo>/.agents/memory/` stores repo-specific facts, architecture ADRs, and staging inboxes.
 
-`agent-memory` solves this with a **pure Markdown-first architecture**:
+While AI vendors fragment their configuration across proprietary stores, `.agents/` provides a single, open, vendor-neutral filesystem hub for all agent configurations and shared intelligence.
+
+`agents-memory` delivers this with a **pure Markdown-first architecture**:
 - **Local & Offline:** Your identity and repo memory live in plain files (`~/.agents/memory/` and `<repo>/.agents/memory/`).
 - **Human-Readable & Git-Friendly:** Edit with any text editor, diff with git, commit when you want.
 - **Universal MCP Server:** Exposes memory tools (`search_memory`, `add_memory`, `get_project_memories`, `distill_batch`) to all modern agents.
@@ -62,23 +64,28 @@ Without a shared memory layout, **every AI tool lives in its own silo**:
 
 ### 1. Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/Lolaplex/agent-memory.git
-cd agent-memory
+Install directly via pip:
 
-# Install in editable mode
-python -m pip install -e .
+```bash
+pip install agents-memory
+```
+
+Or install from source in editable mode:
+
+```bash
+git clone https://github.com/Lolaplex/agents-memory.git
+cd agents-memory
+pip install -e .
 ```
 
 ### 2. Initialize & Sync
 
 ```bash
 # Scaffold initial directories and wire into host IDEs / MCP configs
-agent-memory sync --init
+agents-memory sync --init
 
 # Audit and register local repositories
-agent-memory inventory
+agents-memory inventory
 ```
 
 Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Reload your agent to connect to the MCP server.
@@ -89,20 +96,20 @@ Fill in `~/.agents/memory/USER.md` with your profile and stack preferences. Relo
 
 | Command | Purpose |
 |---------|---------|
-| `agent-memory sync` | Updates canonical `AGENTS.md`, host rules, and MCP registrations |
-| `agent-memory sync --init` | First-time scaffolding and host discovery |
-| `agent-memory inventory` | Discovers unregistered local repositories across workspace roots |
-| `agent-memory inventory --register SLUG PATH ROLE STACK` | Registers a new repository |
-| `agent-memory ingest catalog` | Indexes local chat transcripts across all supported providers |
-| `agent-memory ingest extract` | Runs heuristic filters to extract durable facts into staging |
-| `agent-memory consolidate` | Ensures no private state leaked into working repository |
+| `agents-memory sync` | Updates canonical `AGENTS.md`, host rules, and MCP registrations |
+| `agents-memory sync --init` | First-time scaffolding and host discovery |
+| `agents-memory inventory` | Discovers unregistered local repositories across workspace roots |
+| `agents-memory inventory --register SLUG PATH ROLE STACK` | Registers a new repository |
+| `agents-memory ingest catalog` | Indexes local chat transcripts across all supported providers |
+| `agents-memory ingest extract` | Runs heuristic filters to extract durable facts into staging |
+| `agents-memory consolidate` | Ensures no private state leaked into working repository |
 
 ---
 
 ## Supported Ecosystem
 
 - **Claude Code:** Bound via symlink / canonical `AGENTS.md` and MCP server.
-- **Google Antigravity:** Integrated via `.gemini/config` rules and `agent-memory` MCP.
+- **Google Antigravity:** Integrated via `.gemini/config` rules and `agents-memory` MCP.
 - **Cursor:** Automatically injects rules and configures `.cursor/mcp.json`.
 - **Zed:** Configures `context_servers` and mirrors assistant skills.
 - **VS Code / Copilot:** Ingests session history from local state databases.

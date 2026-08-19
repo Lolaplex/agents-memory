@@ -35,7 +35,7 @@ class CLIComprehensiveTests(unittest.TestCase):
 
     def _run_cli(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, "-m", "agent_memory", *args],
+            [sys.executable, "-m", "agents_memory", *args],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -46,7 +46,7 @@ class CLIComprehensiveTests(unittest.TestCase):
     def test_root_help(self):
         res = self._run_cli("-h")
         self.assertEqual(res.returncode, 0)
-        self.assertIn("Usage: python -m agent_memory COMMAND", res.stdout)
+        self.assertIn("Usage: python -m agents_memory COMMAND", res.stdout)
         self.assertIn("sync", res.stdout)
         self.assertIn("inventory", res.stdout)
         self.assertIn("distill", res.stdout)
@@ -60,7 +60,7 @@ class CLIComprehensiveTests(unittest.TestCase):
         res = self._run_cli("help-json")
         self.assertEqual(res.returncode, 0)
         data = json.loads(res.stdout)
-        self.assertEqual(data["name"], "agent-memory")
+        self.assertEqual(data["name"], "agents-memory")
         self.assertIn("scripts", data)
         self.assertIn("injection", data)
 

@@ -12,7 +12,7 @@ from .store import consolidate_repo_leaks, merge_agent_mcp, merge_zed_mcp, sync_
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Rewrite always-on injection for your Agent.",
-        epilog="Machine-readable: python -m agent_memory sync --help-json. Full spec: python -m agent_memory --help-json.",
+        epilog="Machine-readable: python -m agents_memory sync --help-json. Full spec: python -m agents_memory --help-json.",
     )
     parser.add_argument(
         "--no-repos",
@@ -57,9 +57,9 @@ def main(argv: list[str] | None = None) -> int:
         if user_profile_looks_blank():
             print(
                 "\nUSER.md still blank (Name:). Fill ~/.agents/memory/USER.md + scan.json, "
-                "then run: python -m agent_memory sync"
+                "then run: python -m agents_memory sync"
             )
-        print("\nReload your Agent so MCP `agent-memory` appears.")
+        print("\nReload your Agent so MCP `agents-memory` appears.")
     return 0
 
 

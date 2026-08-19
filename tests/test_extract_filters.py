@@ -8,9 +8,9 @@ _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from agent_memory import ingest_common
-from agent_memory.ingest_config import normalize_ingest
-from agent_memory.ingest_extractors import (
+from agents_memory import ingest_common
+from agents_memory.ingest_config import normalize_ingest
+from agents_memory.ingest_extractors import (
     EXTRACTORS,
     extract_agent_jsonl,
     extract_copilot_jsonl,

@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "extract_max_bullets": 100,
+  "staging_nag_threshold": 50,
+  "sources": [
+    {
+      "id": "openai-export",
+      "kind": "openai-export",
+      "label": "Open AI — GDPR export",
+      "paths": [],
+      "globs": ["~/Downloads/*chatgpt*", "~/Downloads/*openai*export*"],
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "paths": ["~/.cursor/projects/*/agent-transcripts"],
+      "kind": "agent-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "vscode-copilot",
+      "label": "VS Code Copilot",
+      "paths": [
+        "~/.config/Code/User/workspaceStorage/*/chatSessions",
+        "%APPDATA%/Code/User/workspaceStorage/*/chatSessions"
+      ],
+      "kind": "copilot-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "paths": ["~/.claude/projects"],
+      "kind": "claude-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "antigravity",
+      "label": "Antigravity",
+      "paths": [
+        "~/.gemini/antigravity/brain",
+        "~/.gemini/antigravity-ide/brain",
+        "~/.gemini/antigravity-cli/brain"
+      ],
+      "kind": "antigravity-brain",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "windsurf",
+      "label": "Windsurf",
+      "paths": ["~/.codeium/windsurf/workspaceStorage/*/chatSessions"],
+      "kind": "copilot-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "roo-code",
+      "label": "Roo Code",
+      "paths": [
+        "%APPDATA%/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+        "~/.config/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks",
+        "~/Library/Application Support/Code/User/globalStorage/rooveterinaryinc.roo-cline/tasks"
+      ],
+      "kind": "agent-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "cline",
+      "label": "Cline",
+      "paths": [
+        "%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+        "~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/tasks",
+        "~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/tasks"
+      ],
+      "kind": "agent-jsonl",
+      "catalog": true,
+      "extract": true
+    },
+    {
+      "id": "pi",
+      "label": "Pi",
+      "paths": ["~/.pi/agent/sessions"],
+      "kind": "pi-jsonl",
+      "catalog": true,
+      "extract": true
+    }
+  ]
+}

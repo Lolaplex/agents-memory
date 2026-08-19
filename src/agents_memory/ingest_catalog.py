@@ -319,7 +319,7 @@ def build_index(cfg: dict | None = None) -> Path:
         "",
         "Catalog of **where chats already live**. Not a transcript dump.",
         "Configure sources in `~/.agents/memory/ingest.json`. "
-        "Run `python -m agent_memory ingest catalog` to refresh.",
+        "Run `python -m agents_memory ingest catalog` to refresh.",
         "",
         "## Store map",
         "",

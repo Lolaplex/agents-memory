@@ -9,7 +9,7 @@ _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from agent_memory import mcp_server, store
+from agents_memory import mcp_server, store
 
 
 class MCPServerTests(unittest.TestCase):

@@ -16,7 +16,7 @@ class HelpJsonTests(unittest.TestCase):
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT / "src")
         proc = subprocess.run(
-            [sys.executable, "-m", "agent_memory", *args],
+            [sys.executable, "-m", "agents_memory", *args],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -42,7 +42,7 @@ class HelpJsonTests(unittest.TestCase):
 
     def test_full_spec(self) -> None:
         spec = self._run("--help-json")
-        self.assertEqual(spec["name"], "agent-memory")
+        self.assertEqual(spec["name"], "agents-memory")
         self.assertIn("sync", spec["scripts"])
         self.assertIn("injection", spec)
         self.assertIn("generated_on_sync", spec["injection"])

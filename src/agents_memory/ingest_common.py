@@ -153,7 +153,7 @@ def write_entity_card(source: dict, paths: List[Path], catalog_count: int) -> Pa
         f"**Catalog count:** {catalog_count}  \n"
         f"**Paths:**\n{path_lines}\n\n"
         f"Bodies stay on disk. Titles in `chats-index.md`. "
-        f"Extract: `python -m agent_memory ingest extract --source {sid}` -> "
+        f"Extract: `python -m agents_memory ingest extract --source {sid}` -> "
         f"`staging/ingest/{sid}/captured.md`. "
         f"Distill with MCP `add_memory`, then clear staging.\n"
     )

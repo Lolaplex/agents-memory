@@ -12,7 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-USAGE = """Usage: python -m agent_memory COMMAND [args]
+USAGE = """Usage: python -m agents_memory COMMAND [args]
 
 Commands:
   sync             Rewrite always-on injection

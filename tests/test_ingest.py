@@ -9,8 +9,8 @@ _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from agent_memory.ingest_config import normalize_ingest, list_sources
-from agent_memory.ingest_common import keep_user_line, scrub, write_staging
+from agents_memory.ingest_config import normalize_ingest, list_sources
+from agents_memory.ingest_common import keep_user_line, scrub, write_staging
 
 
 class NormalizeTests(unittest.TestCase):
@@ -60,8 +60,8 @@ class NormalizeTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            with patch("agent_memory.store.USER_MEMORY", mem):
-                from agent_memory.ingest_config import migrate_ingest_legacy_ids
+            with patch("agents_memory.store.USER_MEMORY", mem):
+                from agents_memory.ingest_config import migrate_ingest_legacy_ids
 
                 notes = migrate_ingest_legacy_ids()
             self.assertTrue((mem / "staging" / "ingest" / "cursor" / "captured.md").is_file())
@@ -84,7 +84,7 @@ class StagingTests(unittest.TestCase):
     def test_write_staging_markdown(self):
         with tempfile.TemporaryDirectory() as tmp:
             mem = Path(tmp)
-            with patch("agent_memory.ingest_common.USER_MEMORY", mem):
+            with patch("agents_memory.ingest_common.USER_MEMORY", mem):
                 path = write_staging("test-src", "Test", ["[t] fact one"])
                 text = path.read_text(encoding="utf-8")
                 self.assertIn("ingest: test-src", text)

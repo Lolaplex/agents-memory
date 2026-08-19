@@ -52,7 +52,7 @@ def user_messages(conv: dict) -> List[str]:
 
 
 def unzip_export(src: Path, dest: Path | None = None) -> Path:
-    dest = dest or Path(tempfile.gettempdir()) / "agent-memory-openai-export"
+    dest = dest or Path(tempfile.gettempdir()) / "agents-memory-openai-export"
     dest.mkdir(parents=True, exist_ok=True)
     if src.suffix.lower() == ".zip" and src.is_file():
         with zipfile.ZipFile(src) as zf:

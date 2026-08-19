@@ -79,7 +79,7 @@ def injection_spec() -> dict[str, Any]:
             {
                 "path": "~/.agents/AGENTS.md",
                 "from": ["~/.agents/memory/USER.md", "~/.agents/memory/PROJECTS.md"],
-                "edit": "Edit USER.md / PROJECTS.md, then re-run python -m agent_memory sync",
+                "edit": "Edit USER.md / PROJECTS.md, then re-run python -m agents_memory sync",
             },
             {
                 "path": "~/.agents/CLAUDE.md",
@@ -94,7 +94,7 @@ def injection_spec() -> dict[str, Any]:
             {
                 "path": "<repo>/.agents/AGENTS.md + CLAUDE.md",
                 "when": "registered project with path on disk",
-                "marker": "<!-- agent-memory-sync -->",
+                "marker": "<!-- agents-memory-sync -->",
                 "note": "No <repo>/.cursor/ — scan skips .cursor; no empty memory subfolders",
             },
             {
@@ -107,13 +107,13 @@ def injection_spec() -> dict[str, Any]:
             },
         ],
         "merged_on_init": [
-            {"path": "~/.cursor/mcp.json", "key": "mcpServers.agent-memory"},
+            {"path": "~/.cursor/mcp.json", "key": "mcpServers.agents-memory"},
             {"path": "Zed settings.json", "key": "context_servers"},
         ],
         "copied_not_generated": [
             {"path": "~/.agents/memory/LAYOUT.md", "source": "abi/LAYOUT.md in engine clone"},
         ],
-        "marker": "<!-- agent-memory-sync -->",
+        "marker": "<!-- agents-memory-sync -->",
     }
 
 
@@ -122,7 +122,7 @@ def full_spec() -> dict[str, Any]:
     from .inventory import build_parser as inventory_parser
 
     return {
-        "name": "agent-memory",
+        "name": "agents-memory",
         "abi_version": ABI_VERSION,
         "scripts": {
             "sync": cli_spec(sync_parser(), name="sync", description="Rewrite always-on injection for your Agent."),
@@ -139,7 +139,7 @@ def full_spec() -> dict[str, Any]:
             "mcp": "MCP stdio server. Tools: see abi/MCP.md.",
         },
         "injection": injection_spec(),
-        "discover": "python -m agent_memory --help-json | python -m agent_memory sync --help-json | python -m agent_memory inventory --help-json",
+        "discover": "python -m agents_memory --help-json | python -m agents_memory sync --help-json | python -m agents_memory inventory --help-json",
     }
 
 
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     if "--help-json" in args:
         print(json.dumps(full_spec(), indent=2, ensure_ascii=False))
         return 0
-    print("Usage: python -m agent_memory --help-json", file=sys.stderr)
+    print("Usage: python -m agents_memory --help-json", file=sys.stderr)
     return 2
 
 

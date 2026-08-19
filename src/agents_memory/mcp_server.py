@@ -22,7 +22,7 @@ from .store import (
 
 ensure_memory_layout()
 
-mcp = FastMCP("agent-memory")
+mcp = FastMCP("agents-memory")
 
 
 @mcp.tool()
@@ -304,7 +304,7 @@ def ingest_status() -> str:
 
 
 def main() -> int:
-    print("Starting local agent-memory MCP on stdio...", file=sys.stderr)
+    print("Starting local agents-memory MCP on stdio...", file=sys.stderr)
     mcp.run()
     return 0
 

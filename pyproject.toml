@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-memory"
-version = "0.42"
+name = "agents-memory"
+version = "1.0.0"
 description = "Local markdown memory for coding agents — ABI in abi/, Python MCP reference implementation"
 readme = "README.md"
 authors = [
@@ -12,10 +12,16 @@ authors = [
     { name = "Fabian Schindler" },
 ]
 requires-python = ">=3.10"
-dependencies = ["mcp>=1.0.0"]
+dependencies = ["mcp>=1.0.0,<2"]
 
 [project.scripts]
-agent-memory = "agent_memory.__main__:main"
+agents-memory = "agents_memory.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"agents_memory" = [
+    "bundled/**/*",
+    "bundled/**",
+]

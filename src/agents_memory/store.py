@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from . import ROOT
+from . import PACKAGE_DIR, ROOT
 
 
 def is_engine_repo(repo: Path) -> bool:
@@ -34,9 +34,9 @@ def is_engine_repo(repo: Path) -> bool:
         return False
 
 
-ABI_DIR = ROOT / "abi"
+ABI_DIR = ROOT / "abi" if (ROOT / "abi").is_dir() else PACKAGE_DIR / "bundled" / "abi"
 ABI_LAYOUT = ABI_DIR / "LAYOUT.md"
-EXAMPLES = ROOT / "examples"
+EXAMPLES = ROOT / "examples" if (ROOT / "examples").is_dir() else PACKAGE_DIR / "bundled" / "examples"
 CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
 AGENTS_HOME = Path.home() / ".agents"
@@ -108,7 +108,7 @@ PROJECT_MEMORY_TOP = (
     "decisions",
 )
 SEQ_RE = re.compile(r"^(\d{2,4})(?:-|$)")
-POINTER_MARK = "<!-- agent-memory-sync-pointer -->"
+POINTER_MARK = "<!-- agents-memory-sync-pointer -->"
 STAGING_HEADER = (
     "# Staging\n\n"
     "Not memory. Distill each bullet into a typed file "
@@ -117,12 +117,16 @@ STAGING_HEADER = (
     "then delete it here.\n"
 )
 
-MARKER = "<!-- agent-memory-sync -->"
-PATHS_BEGIN = "<!-- agent-memory-paths -->"
-PATHS_END = "<!-- /agent-memory-paths -->"
+MARKER = "<!-- agents-memory-sync -->"
+PATHS_BEGIN = "<!-- agents-memory-paths -->"
+PATHS_END = "<!-- /agents-memory-paths -->"
 DEFAULT_RULE_NAME = "user-rules.mdc"
 LEGACY_RULE_STEMS = ("felix-always",)
-SKILL_TEMPLATE = ROOT / "skills" / "memory-sync" / "SKILL.md"
+SKILL_TEMPLATE = (
+    (ROOT / "skills" / "memory-sync" / "SKILL.md")
+    if (ROOT / "skills" / "memory-sync" / "SKILL.md").is_file()
+    else (PACKAGE_DIR / "bundled" / "skills" / "memory-sync" / "SKILL.md")
+)
 SKIP_SKILL_NAMES = {
     "antigravity_guide",
     "agy-customizations",
@@ -538,7 +542,7 @@ def scan_roots() -> List[str]:
 def mcp_entry() -> dict:
     entry: dict = {
         "command": sys.executable,
-        "args": ["-m", "agent_memory.mcp_server"],
+        "args": ["-m", "agents_memory.mcp_server"],
     }
     src_dir = ROOT / "src"
     if src_dir.is_dir():
@@ -547,7 +551,7 @@ def mcp_entry() -> dict:
 
 
 def mcp_snippet() -> str:
-    return json.dumps({"agent-memory": mcp_entry()}, indent=2)
+    return json.dumps({"agents-memory": mcp_entry()}, indent=2)
 
 
 def cursor_mcp_path() -> Path:
@@ -661,13 +665,13 @@ def _merge_mcp_server_into_file(path: Path) -> str:
     servers = data.setdefault("mcpServers", {})
     if not isinstance(servers, dict):
         return f"FAIL {path}: mcpServers is not an object."
-    servers["agent-memory"] = mcp_entry()
+    servers["agents-memory"] = mcp_entry()
     _write(path, json.dumps(data, indent=2, ensure_ascii=False))
     return f"OK {path}"
 
 
 def merge_agent_mcp() -> str:
-    """Insert/update the agent-memory server in all installed host MCP configs."""
+    """Insert/update the agents-memory server in all installed host MCP configs."""
     cursor_p = cursor_mcp_path()
     cursor_p.parent.mkdir(parents=True, exist_ok=True)
     targets = known_host_mcp_paths()
@@ -800,7 +804,7 @@ def collect_mcp_servers() -> Dict[str, dict]:
             for k, val in spec.items():
                 if k not in merged[name] or merged[name][k] in (None, "", {}, []):
                     merged[name][k] = val
-    merged["agent-memory"] = mcp_entry()
+    merged["agents-memory"] = mcp_entry()
     return merged
 
 
@@ -939,7 +943,7 @@ def render_projects_table(projects: Iterable[Project]) -> str:
     rows = [
         "# Projects",
         "",
-        "Canonical map. Change via `python -m agent_memory inventory`, MCP `register_project`, or skill `memory-sync`.",
+        "Canonical map. Change via `python -m agents_memory inventory`, MCP `register_project`, or skill `memory-sync`.",
         "",
         "| slug | path | role | stack | status |",
         "|------|------|------|-------|--------|",
@@ -1364,7 +1368,7 @@ def bind_claude_home(canonical: Path) -> Tuple[List[str], List[str]]:
         if method == "copy":
             warnings.append(
                 f"{dest}: bound by copy (symlink/hardlink failed — "
-                "edit AGENTS.md only; re-run python -m agent_memory sync after changes or use Developer Mode / native FS)"
+                "edit AGENTS.md only; re-run python -m agents_memory sync after changes or use Developer Mode / native FS)"
             )
     return written, warnings
 
@@ -1425,15 +1429,15 @@ def _machine_paths_block() -> str:
         f"Scan roots: {roots}\n\n"
         "Scripts (any workspace, after `pip install -e` this clone):\n\n"
         "```powershell\n"
-        f"{py} -m agent_memory inventory\n"
-        f"{py} -m agent_memory inventory --json\n"
-        f"{py} -m agent_memory sync\n"
-        f"{py} -m agent_memory ingest catalog\n"
-        f"{py} -m agent_memory ingest run\n"
+        f"{py} -m agents_memory inventory\n"
+        f"{py} -m agents_memory inventory --json\n"
+        f"{py} -m agents_memory sync\n"
+        f"{py} -m agents_memory ingest catalog\n"
+        f"{py} -m agents_memory ingest run\n"
         "```\n\n"
         "Register:\n\n"
         "```powershell\n"
-        f'{py} -m agent_memory inventory --register SLUG "C:\\path\\to\\repo" "role here" "stack here"\n'
+        f'{py} -m agents_memory inventory --register SLUG "C:\\path\\to\\repo" "role here" "stack here"\n'
         "```\n"
     )
 
@@ -1470,7 +1474,11 @@ def install_skills() -> List[str]:
             _write(path, text)
             written.append(str(path))
 
-    distill_src = ROOT / "skills" / "memory-distill" / "SKILL.md"
+    distill_src = (
+        (ROOT / "skills" / "memory-distill" / "SKILL.md")
+        if (ROOT / "skills" / "memory-distill" / "SKILL.md").is_file()
+        else (PACKAGE_DIR / "bundled" / "skills" / "memory-distill" / "SKILL.md")
+    )
     if distill_src.is_file():
         d_text = _read(distill_src)
         d_targets = [
@@ -2155,7 +2163,7 @@ def staging_status_summary() -> dict:
     if threshold > 0 and total >= threshold:
         nag = (
             f"{total} staging bullets waiting — run memory-distill, "
-            "MCP get_staging_inbox, or `python -m agent_memory distill`"
+            "MCP get_staging_inbox, or `python -m agents_memory distill`"
         )
     return {
         "bullet_count": total,

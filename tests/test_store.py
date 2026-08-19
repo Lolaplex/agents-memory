@@ -8,7 +8,7 @@ _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from agent_memory import store
+from agents_memory import store
 
 
 class AddMemoryTests(unittest.TestCase):
@@ -204,7 +204,7 @@ class AddMemoryTests(unittest.TestCase):
         lines = "\n".join(f"- bullet {i}" for i in range(5))
         (staging / "captured.md").write_text(f"# Staging\n\n{lines}\n", encoding="utf-8")
         ingest = {"version": 1, "sources": [], "staging_nag_threshold": 3}
-        with patch("agent_memory.ingest_config.load_ingest", lambda: ingest):
+        with patch("agents_memory.ingest_config.load_ingest", lambda: ingest):
             summary = store.staging_status_summary()
         self.assertEqual(summary["bullet_count"], 5)
         self.assertIn("memory-distill", summary["nag"])

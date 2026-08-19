@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Master test runner & distill evaluation benchmark for agent-memory."""
+"""Master test runner & distill evaluation benchmark for agents-memory."""
 from __future__ import annotations
 
 import os
@@ -26,7 +26,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 def run_full_suite() -> bool:
     print("=" * 70)
-    print("  AGENT-MEMORY COMPREHENSIVE TEST SUITE & BENCHMARK")
+    print("  AGENTS-MEMORY COMPREHENSIVE TEST SUITE & BENCHMARK")
     print("=" * 70)
     print(f"Repository Root: {ROOT}")
     print(f"Python Runtime : {sys.executable} (v{sys.version.split()[0]})")

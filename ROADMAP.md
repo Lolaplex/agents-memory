@@ -49,7 +49,7 @@ Do not add heavy research/evolve/chronicle pipelines until **distill is a loop y
 
 ### 6. Engine clone honesty
 
-The agent-memory **engine repo** gets install docs at repo-root `AGENTS.md` only — no in-tree `.agents/` project memory, no copy of global USER inject. Same rule everywhere: **one global profile, per-repo slices only.**
+The agents-memory **engine repo** gets install docs at repo-root `AGENTS.md` only — no in-tree `.agents/` project memory, no copy of global USER inject. Same rule everywhere: **one global profile, per-repo slices only.**
 
 ### 7. Cross-machine portability
 

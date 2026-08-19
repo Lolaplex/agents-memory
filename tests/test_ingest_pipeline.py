@@ -9,7 +9,7 @@ _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
-from agent_memory import ingest_catalog, ingest_common, ingest_config, ingest_extractors, store
+from agents_memory import ingest_catalog, ingest_common, ingest_config, ingest_extractors, store
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 

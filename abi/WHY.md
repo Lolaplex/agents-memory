@@ -4,7 +4,7 @@ Version: see [`VERSION`](VERSION).
 
 ## The problem
 
-Coding agents leave session archives everywhere: Cursor transcripts, ChatGPT exports, Copilot logs, IDE brain folders, Pi sessions. **Without a shared layout, each vendor owns a graveyard** — Cursor transcripts, ChatGPT exports, Copilot sessions, Antigravity brains — session archives that never become durable identity unless you manually re-teach every new agent.
+Coding agents leave session archives everywhere: Cursor transcripts, Open AI (GDPR export, Codex rollouts, ChatGPT app), Copilot logs, IDE brain folders, Pi sessions. **Without a shared layout, each vendor owns a graveyard** — session archives that never become durable identity unless you manually re-teach every new agent.
 
 Those graves are searchable only inside the product that created them. Switch hosts and you lose operational continuity — not because the facts changed, but because nothing was ever filed where another tool could read it.
 

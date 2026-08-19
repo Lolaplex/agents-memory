@@ -109,11 +109,13 @@ Generated files include `<!-- agent-memory-sync -->`.
 
 | Command | Role |
 |---------|------|
-| `python -m agent_memory ingest catalog` | Rebuild `chats-index.md` (titles + paths) |
-| `python -m agent_memory ingest extract` | Filter durable lines into staging |
+| `python -m agent_memory ingest catalog` | Rebuild `chats-index.md` (titles + paths only — link for search) |
+| `python -m agent_memory ingest extract` | Filter durable user lines into staging (not typed memory) |
 | `python -m agent_memory distill` | Show grouped staging inbox (inspect before distill) |
-| `python -m agent_memory extract-openai` | ChatGPT export wrapper (`--out` = legacy JSON) |
+| `python -m agent_memory extract-openai` | Open AI GDPR export wrapper (`--out` = legacy JSON) |
 | `python -m agent_memory mcp` | stdio MCP — see [`MCP.md`](MCP.md) |
+
+Ingest contract (all providers): catalog → pointers, extract → filtered staging, distill → explicit promote. See [`INGEST.md`](INGEST.md).
 
 ## Correct usage (agents)
 

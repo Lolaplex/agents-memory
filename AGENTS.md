@@ -28,7 +28,7 @@ Python is a package: `src/agent_memory/`. After `pip install -e .`, use `python 
    - Merges `agent-memory` into host MCP config (`~/.cursor/mcp.json` when your Agent uses it) using **this** Python (`sys.executable -m agent_memory.mcp_server`). Other MCP servers stay.
    - Merges host MCP servers into Zed `context_servers` and mirrors user skills into `~/.agents/skills`.
 6. Run `python -m agent_memory inventory`. For each **unknown** folder: register (slug, path, role, stack) or `--ignore`. For **missing**: ask before deleting.
-7. Run `python -m agent_memory ingest catalog` to (re)build `~/.agents/memory/chats-index.md` from local chat stores (ChatGPT export, your Agent transcripts, VS Code, Antigravity, Pi). Titles + paths only. Optional: `python -m agent_memory ingest extract` (or `extract-openai` for the ChatGPT zip). Distill with MCP `add_memory(kind=..., name=...)`.
+7. Run `python -m agent_memory ingest catalog` to (re)build `~/.agents/memory/chats-index.md` from local chat stores (Open AI GDPR export, Cursor, VS Code, Antigravity, Pi, …). Titles + paths only. Optional: `python -m agent_memory ingest extract` (Python filters → staging). Distill with MCP `distill_batch` / skill `memory-distill`.
 8. If you edited `USER.md` / `scan.json` *after* `--init`, run `python -m agent_memory sync` again.
 9. Tell the human **one** thing: reload your Agent (MCP). You cannot do that for them.
 

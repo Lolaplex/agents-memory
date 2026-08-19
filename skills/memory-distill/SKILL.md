@@ -5,7 +5,7 @@ description: Destilliert rohe Staging-Inbox-Bullets (staging/captured.md) in ble
 
 # memory-distill
 
-Staging inbox is temporary. Distill durable facts into typed paths, discard ephemeral noise.
+Staging inbox is temporary — from **any** ingest source (`staging/ingest/<id>/captured.md`) or project/user staging. Distill durable facts into typed paths; discard ephemeral noise. Ingest never auto-promotes; catalog stays link-only (see `abi/INGEST.md` uniform contract).
 
 ## Workflow
 
@@ -23,12 +23,12 @@ Staging inbox is temporary. Distill durable facts into typed paths, discard ephe
        "kind": "note",
        "name": "stack",
        "project": "customs",
-       "source_path": "user/staging/ingest/agent-transcripts/captured.md"
+       "source_path": "user/staging/ingest/cursor/captured.md"
      },
      {
        "bullet": "Can you check line 40 of main.py",
        "discard": true,
-       "source_path": "user/staging/ingest/agent-transcripts/captured.md"
+       "source_path": "user/staging/ingest/cursor/captured.md"
      }
    ]
    ```

@@ -20,7 +20,8 @@ Binding order: **symlink → hardlink → copy**. Copy is last resort and can dr
 - Live store: `~/.agents/memory` via `Path.home()` — works everywhere.
 - Zed config: `%APPDATA%/Zed` on Windows, `$XDG_CONFIG_HOME/zed` or `~/.config/zed` elsewhere.
 - VS Code Copilot chats: `%APPDATA%/Code/...` on Windows, `~/.config/Code/...` on Linux.
-- Antigravity brains: `~/.gemini/antigravity/brain/` (IDE) and `~/.gemini/antigravity-cli/brain/` (CLI) on all platforms — not under `%APPDATA%/Antigravity`.
+- Antigravity brains (under `~/.gemini/`, not `%APPDATA%/Antigravity`): `antigravity/brain/`, `antigravity-ide/brain/`, and/or `antigravity-cli/brain/` — list every root that exists on that machine.
+- Open AI: GDPR export via `openai-export` in `ingest.json`; live Codex rollouts `~/.codex/sessions/`; ChatGPT desktop LevelDB under `%LOCALAPPDATA%/Packages/OpenAI.ChatGPT-Desktop_*/`; product memory at `~/.codex/memories/` and ChatGPT `/memories` — see [`INGEST.md`](INGEST.md).
 - `scan.json` roots: use paths that exist on **that** machine (absolute or `~/...`).
 
 ## Chat ingest (reference implementation)

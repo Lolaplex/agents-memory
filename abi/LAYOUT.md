@@ -36,4 +36,4 @@ Note classes (guide): `feature` `bug-fix` `simplification` `architecture` `proce
 ## Instruction files
 
 See [`INJECTION.md`](INJECTION.md). Always-on injection: `USER.md` + `PROJECTS.md` only.
-Chat bodies stay in product folders. `chats-index.md` is the catalog.
+Chat bodies stay in product folders. `chats-index.md` is the catalog (pointers for every configured ingest source — not a transcript dump).

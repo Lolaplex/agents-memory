@@ -10,6 +10,7 @@ Version: see [`VERSION`](VERSION).
 
 Search all local markdown: user store plus each registered project's `<repo>/.agents/memory/`.
 Returns hit lines with stable ids (`user/...` or `project/<slug>/...`) suitable for `delete_memory`.
+Does **not** search product chat/jsonl graves — use `chats-index.md` (catalog) for paths to bodies on disk.
 
 ### `add_memory(fact_or_message, kind="", name="", project="", collection="")`
 
@@ -66,11 +67,11 @@ Rewrite always-on injection (your Agent hosts, `~/.agents/`, registered repo `.a
 
 ### `ingest_catalog()`
 
-Rebuild `chats-index.md` and `entities/chat-source-*.md` from `ingest.json`. Catalog phase only — bodies stay on disk. See [`INGEST.md`](INGEST.md).
+Rebuild `chats-index.md` and `entities/chat-source-*.md` from `ingest.json`. **Catalog phase only** — pointers (titles + paths), bodies stay in product folders. Same contract for every source. See [`INGEST.md`](INGEST.md).
 
 ### `ingest_extract(source_id="")`
 
-Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. Extract phase — distill with `promote_bullet` / `distill_batch` afterward. Per-source caps apply (see [`INGEST.md`](INGEST.md)).
+Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. **Extract phase only** — staging inbox, not typed memory; distill with `promote_bullet` / `distill_batch` afterward. Per-source caps and shared filters apply (see [`INGEST.md`](INGEST.md)).
 
 ### `ingest_status()`
 

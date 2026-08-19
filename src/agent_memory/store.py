@@ -1467,17 +1467,28 @@ def machine_skill_text() -> str:
 
 def install_skills() -> List[str]:
     text = machine_skill_text()
-    if not text:
-        return []
     written: List[str] = []
-    targets = [
-        Path.home() / ".cursor" / "skills" / "memory-sync" / "SKILL.md",
-        Path.home() / ".agents" / "skills" / "memory-sync" / "SKILL.md",
-        Path.home() / ".gemini" / "config" / "skills" / "memory-sync" / "SKILL.md",
-    ]
-    for path in targets:
-        _write(path, text)
-        written.append(str(path))
+    if text:
+        targets = [
+            Path.home() / ".cursor" / "skills" / "memory-sync" / "SKILL.md",
+            Path.home() / ".agents" / "skills" / "memory-sync" / "SKILL.md",
+            Path.home() / ".gemini" / "config" / "skills" / "memory-sync" / "SKILL.md",
+        ]
+        for path in targets:
+            _write(path, text)
+            written.append(str(path))
+
+    distill_src = ROOT / "skills" / "memory-distill" / "SKILL.md"
+    if distill_src.is_file():
+        d_text = _read(distill_src)
+        d_targets = [
+            Path.home() / ".cursor" / "skills" / "memory-distill" / "SKILL.md",
+            Path.home() / ".agents" / "skills" / "memory-distill" / "SKILL.md",
+            Path.home() / ".gemini" / "config" / "skills" / "memory-distill" / "SKILL.md",
+        ]
+        for path in d_targets:
+            _write(path, d_text)
+            written.append(str(path))
     return written
 
 
@@ -1922,6 +1933,56 @@ def delete_memory(memory_id: str) -> str:
     return removed
 
 
+def remove_staging_bullet(
+    bullet: str,
+    project: str = "",
+    source_path: str = "",
+) -> bool:
+    clean_bullet = bullet.strip().lstrip("-").strip().lower()
+    if not clean_bullet:
+        return False
+    candidate_paths: List[Path] = []
+    if source_path:
+        candidate_paths.append(resolve_memory_path(source_path))
+    if project:
+        p = projects_by_slug().get(project)
+        if p:
+            candidate_paths.append(p.memory_dir / "staging" / "captured.md")
+            candidate_paths.append(p.memory_dir / "staging" / "from-chats.md")
+
+    candidate_paths.extend(
+        [
+            USER_MEMORY / "staging" / "captured.md",
+            USER_MEMORY / "staging" / "from-chats.md",
+        ]
+    )
+    if (USER_MEMORY / "staging").is_dir():
+        for f in sorted((USER_MEMORY / "staging").glob("*.md")):
+            if f not in candidate_paths:
+                candidate_paths.append(f)
+        for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
+            if f not in candidate_paths:
+                candidate_paths.append(f)
+
+    for path in candidate_paths:
+        if not path.is_file():
+            continue
+        lines = _read(path).splitlines()
+        new_lines: List[str] = []
+        file_modified = False
+        for line in lines:
+            normalized_line = line.strip().lstrip("-").strip().lower()
+            if not file_modified and normalized_line == clean_bullet:
+                file_modified = True
+                continue
+            new_lines.append(line)
+        if file_modified:
+            _write(path, "\n".join(new_lines))
+            _MEMORY_FILE_CACHE.pop(str(path.resolve()), None)
+            return True
+    return False
+
+
 def promote_bullet(
     bullet: str,
     kind: str,
@@ -1945,44 +2006,96 @@ def promote_bullet(
         project=project,
         collection=collection,
     )
+    removed = remove_staging_bullet(clean_bullet, project=project, source_path=source_path)
+    return loc, removed
 
-    removed = False
+
+def get_staging_inbox(project: str = "", limit: int = 20) -> List[dict]:
+    """Retrieve un-distilled bullet points from staging inbox files."""
     candidate_paths: List[Path] = []
-    if source_path:
-        candidate_paths.append(resolve_memory_path(source_path))
     if project:
         p = projects_by_slug().get(project)
         if p:
             candidate_paths.append(p.memory_dir / "staging" / "captured.md")
             candidate_paths.append(p.memory_dir / "staging" / "from-chats.md")
+    else:
+        candidate_paths.extend(
+            [
+                USER_MEMORY / "staging" / "captured.md",
+                USER_MEMORY / "staging" / "from-chats.md",
+            ]
+        )
+        if (USER_MEMORY / "staging").is_dir():
+            for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
+                if f not in candidate_paths:
+                    candidate_paths.append(f)
 
-    candidate_paths.extend(
-        [
-            USER_MEMORY / "staging" / "captured.md",
-            USER_MEMORY / "staging" / "from-chats.md",
-        ]
-    )
-    if (USER_MEMORY / "staging").is_dir():
-        for f in (USER_MEMORY / "staging").glob("*.md"):
-            if f not in candidate_paths:
-                candidate_paths.append(f)
-
+    bullets: List[dict] = []
+    seen: set[str] = set()
     for path in candidate_paths:
         if not path.is_file():
             continue
-        lines = _read(path).splitlines()
-        new_lines: List[str] = []
-        file_modified = False
-        for line in lines:
-            normalized_line = line.strip().lstrip("-").strip().lower()
-            if not file_modified and normalized_line == clean_bullet.lower():
-                file_modified = True
-                removed = True
+        for line in _read(path).splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(("- ", "* ")):
                 continue
-            new_lines.append(line)
-        if file_modified:
-            _write(path, "\n".join(new_lines))
-            _MEMORY_FILE_CACHE.pop(str(path.resolve()), None)
-            break
+            text = stripped[2:].strip()
+            if not text or text.lower() in seen or text == "(none yet)":
+                continue
+            seen.add(text.lower())
+            bullets.append(
+                {
+                    "bullet": text,
+                    "file": file_id(path),
+                    "project": project or "",
+                }
+            )
+            if len(bullets) >= limit:
+                return bullets
+    return bullets
 
-    return loc, removed
+
+def distill_batch(items: List[dict]) -> dict:
+    """Batch process staging bullets into typed memory or discard them.
+
+    Each item is a dict with:
+      - bullet: str (required)
+      - discard: bool (if True, removes from staging without adding to memory)
+      - kind, name, project, collection: str (for add_memory)
+    """
+    promoted = 0
+    discarded = 0
+    errors: List[str] = []
+    for item in items:
+        bullet = str(item.get("bullet") or "").strip()
+        if not bullet:
+            continue
+        proj = str(item.get("project") or "")
+        src_path = str(item.get("source_path") or item.get("file") or "")
+        if item.get("discard"):
+            if remove_staging_bullet(bullet, project=proj, source_path=src_path):
+                discarded += 1
+            continue
+        kind = str(item.get("kind") or "")
+        name = str(item.get("name") or "")
+        coll = str(item.get("collection") or "")
+        try:
+            loc, rem = promote_bullet(
+                bullet=bullet,
+                kind=kind,
+                name=name,
+                project=proj,
+                collection=coll,
+                source_path=src_path,
+            )
+            promoted += 1
+        except Exception as e:
+            errors.append(f"{bullet[:30]}...: {e}")
+
+    remaining = len(get_staging_inbox())
+    return {
+        "promoted": promoted,
+        "discarded": discarded,
+        "remaining_staging_count": remaining,
+        "errors": errors,
+    }

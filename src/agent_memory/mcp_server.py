@@ -99,6 +99,40 @@ def promote_bullet(
 
 
 @mcp.tool()
+def get_staging_inbox(project: str = "", limit: int = 20) -> str:
+    """Fetch un-distilled bullets from staging inbox files (staging/captured.md)."""
+    try:
+        from .store import get_staging_inbox as store_get_inbox
+
+        items = store_get_inbox(project=project, limit=limit)
+        if not items:
+            return "Staging inbox is empty (all caught up)."
+        return json.dumps(items, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return f"Error reading staging inbox: {e}"
+
+
+@mcp.tool()
+def distill_batch(items_json: str) -> str:
+    """Batch-process staging bullets into memory or discard them.
+
+    Pass a JSON array of objects:
+    [{"bullet": "fact text", "kind": "note", "name": "stem", "project": "slug"},
+     {"bullet": "throwaway chatter", "discard": true}]
+    """
+    try:
+        from .store import distill_batch as store_distill_batch
+
+        parsed = json.loads(items_json) if isinstance(items_json, str) else items_json
+        if not isinstance(parsed, list):
+            return "Error: expected a JSON list of items"
+        result = store_distill_batch(parsed)
+        return json.dumps(result, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return f"Error in distill_batch: {e}"
+
+
+@mcp.tool()
 def get_project_memories(project: str) -> str:
     """Return the project link plus in-tree `.agents/memory` markdown."""
     try:

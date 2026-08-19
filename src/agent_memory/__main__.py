@@ -14,6 +14,7 @@ Commands:
   ingest           Catalog / extract pipeline
   consolidate      Move clone leaks into ~/.agents/memory
   extract-openai   Filter ChatGPT export into staging
+  distill          Inspect staging inbox for distillation
   mcp              stdio MCP server
   help-json        Machine-readable CLI + injection spec
 """
@@ -41,6 +42,18 @@ def main(argv: list[str] | None = None) -> int:
         from .ingest import main as run
 
         return run(rest)
+    if cmd == "distill":
+        from .store import get_staging_inbox
+
+        inbox = get_staging_inbox(limit=15)
+        if not inbox:
+            print("Staging inbox is empty (all caught up).")
+            return 0
+        print(f"Staging inbox ({len(inbox)} items shown):")
+        for item in inbox:
+            print(f"- [{item.get('file')}] {item.get('bullet')}")
+        print("\nTo distill, tell your Agent: 'run memory-distill' or use the memory-distill skill.")
+        return 0
     if cmd in ("ingest-chats", "ingest_chats"):
         from .ingest_chats import main as run
 

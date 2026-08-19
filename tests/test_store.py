@@ -162,6 +162,31 @@ class AddMemoryTests(unittest.TestCase):
         self.assertNotIn("fact to promote", captured_text)
         self.assertIn("other fact", captured_text)
 
+    def test_get_staging_inbox(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        (staging / "captured.md").write_text("# Staging\n\n- item 1\n- item 2\n", encoding="utf-8")
+
+        inbox = store.get_staging_inbox()
+        self.assertEqual(len(inbox), 2)
+        self.assertEqual(inbox[0]["bullet"], "item 1")
+        self.assertEqual(inbox[1]["bullet"], "item 2")
+
+    def test_distill_batch(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        (staging / "captured.md").write_text("# Staging\n\n- keep me\n- throw me away\n", encoding="utf-8")
+
+        res = store.distill_batch([
+            {"bullet": "keep me", "kind": "concept", "name": "kept"},
+            {"bullet": "throw me away", "discard": True},
+        ])
+        self.assertEqual(res["promoted"], 1)
+        self.assertEqual(res["discarded"], 1)
+        self.assertEqual(res["remaining_staging_count"], 0)
+        self.assertTrue((self.user / "concepts" / "kept.md").exists())
+        self.assertIn("keep me", (self.user / "concepts" / "kept.md").read_text(encoding="utf-8"))
+
     def test_search_memory_caching(self):
         store.clear_memory_cache()
         doc = self.user / "concepts" / "cached-doc.md"

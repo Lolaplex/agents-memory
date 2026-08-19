@@ -1,5 +1,7 @@
 {
   "version": 1,
+  "extract_max_bullets": 100,
+  "staging_nag_threshold": 50,
   "sources": [
     {
       "id": "openai-export",

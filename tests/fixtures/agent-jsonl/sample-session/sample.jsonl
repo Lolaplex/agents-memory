@@ -1,0 +1,4 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nNever experiment on the canonical isa-physics tree; use isa-physics-kopie for destructive tests.\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nRegister every new repo under scan.json roots via memory-sync or MCP register_project.\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nHow can I fix this import error in main.py?\n</user_query>"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nok\n</user_query>"}]}}

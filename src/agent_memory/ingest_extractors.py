@@ -8,16 +8,16 @@ import zipfile
 from pathlib import Path
 from typing import Callable, Dict, List
 
+from . import ingest_common
 from .ingest_catalog import brain_rows
 from .ingest_common import (
-    USER_MEMORY,
     format_bullet,
     keep_user_line,
     record_phase,
     scrub,
     write_staging,
 )
-from .ingest_config import get_source, list_sources, load_ingest, resolve_source_roots
+from .ingest_config import extract_max_bullets, get_source, list_sources, load_ingest, resolve_source_roots
 
 
 def _parts_text(content: object) -> str:
@@ -283,7 +283,8 @@ EXTRACTORS: Dict[str, Callable[[dict], List[str]]] = {
 }
 
 
-def extract_source(src: dict) -> tuple[int, Path]:
+def extract_source(src: dict, cfg: dict | None = None) -> tuple[int, Path]:
+    cfg = cfg or load_ingest()
     sid = str(src["id"])
     label = str(src.get("label") or sid)
     kind = str(src.get("kind") or "")
@@ -293,12 +294,22 @@ def extract_source(src: dict) -> tuple[int, Path]:
     if not handler:
         raise ValueError(f"no extractor for kind={kind!r} (source {sid})")
     lines = handler(src)
+    total_before = len(lines)
+    max_b = extract_max_bullets(cfg, src)
+    capped = False
+    if max_b > 0 and len(lines) > max_b:
+        lines = lines[:max_b]
+        capped = True
     path = write_staging(sid, label, lines)
     record_phase(
         sid,
         "extract",
         extract_count=len(lines),
-        staging=str(path.relative_to(USER_MEMORY)).replace("\\", "/"),
+        extract_total_before_cap=total_before if capped else None,
+        extract_capped=capped,
+        staging=str(path.resolve().relative_to(ingest_common.USER_MEMORY.resolve())).replace(
+            "\\", "/"
+        ),
     )
     return len(lines), path
 
@@ -315,6 +326,6 @@ def run_extract(source_id: str = "", cfg: dict | None = None) -> dict:
     for src in targets:
         if not src.get("extract", True):
             continue
-        count, path = extract_source(src)
+        count, path = extract_source(src, cfg=cfg)
         results["sources"][str(src["id"])] = {"count": count, "staging": str(path)}
     return results

@@ -43,6 +43,8 @@ def cmd_run(_args: argparse.Namespace) -> int:
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
+    from .store import staging_status_summary
+
     cfg = load_ingest()
     state = load_state()
     rows = []
@@ -59,10 +61,19 @@ def cmd_status(_args: argparse.Namespace) -> int:
                 "last_extract": entry.get("last_extract"),
                 "catalog_count": entry.get("catalog_count"),
                 "extract_count": entry.get("extract_count"),
+                "extract_capped": entry.get("extract_capped"),
+                "extract_total_before_cap": entry.get("extract_total_before_cap"),
                 "staging": entry.get("staging"),
             }
         )
-    print(json.dumps({"state_file": str(ingest_state_path()), "sources": rows}, indent=2))
+    payload = {
+        "state_file": str(ingest_state_path()),
+        "staging": staging_status_summary(),
+        "sources": rows,
+    }
+    print(json.dumps(payload, indent=2))
+    if payload["staging"].get("nag"):
+        print(payload["staging"]["nag"], file=sys.stderr)
     return 0
 
 

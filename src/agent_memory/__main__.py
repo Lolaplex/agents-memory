@@ -46,12 +46,20 @@ def main(argv: list[str] | None = None) -> int:
         from .store import get_staging_inbox
 
         inbox = get_staging_inbox(limit=15)
-        if not inbox:
+        if inbox["total"] == 0:
             print("Staging inbox is empty (all caught up).")
             return 0
-        print(f"Staging inbox ({len(inbox)} items shown):")
-        for item in inbox:
-            print(f"- [{item.get('file')}] {item.get('bullet')}")
+        print(f"Staging inbox: {inbox['total']} bullets ({inbox['shown']} shown)")
+        for group in inbox["groups"]:
+            label = group.get("source") or group.get("file")
+            extra = ""
+            if group.get("truncated"):
+                extra = f" (showing {group['count']} of {group['count']}+)"
+            print(f"\n## {label}{extra}")
+            for item in group["bullets"]:
+                title = item.get("title") or ""
+                prefix = f"[{title}] " if title else ""
+                print(f"- {prefix}{item.get('text') or item.get('bullet')}")
         print("\nTo distill, tell your Agent: 'run memory-distill' or use the memory-distill skill.")
         return 0
     if cmd in ("ingest-chats", "ingest_chats"):

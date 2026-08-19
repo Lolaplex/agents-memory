@@ -12,10 +12,10 @@ Staging with hundreds of extract bullets is the real failure mode (inbox, not me
 
 Improvements to consider:
 
-- Cluster extract bullets by title / source before display
-- Cap bullets per source on extract
-- MCP tool: **promote bullet** — requires `kind`, `name`, optional `project`; moves one line from staging to typed path; deletes source bullet
-- Periodic `ingest status` summary (nag when staging grows)
+- ~~Cluster extract bullets by title / source before display~~ — `get_staging_inbox` groups by source file
+- ~~Cap bullets per source on extract~~ — `extract_max_bullets` in `ingest.json` (global + per-source; `0` = unlimited)
+- ~~MCP tool: **promote bullet**~~ — shipped; use `distill_batch` for batch promote/discard
+- ~~Periodic `ingest status` summary (nag when staging grows)~~ — `ingest_status` / CLI `ingest status` include `staging.nag`
 
 ### 2. Keep always-on short — **priority**
 
@@ -23,10 +23,7 @@ Improvements to consider:
 
 **Target:** one-line-per-project in always-on inject (slug, path, role — not full README bodies). Agents use `search_memory` / `get_project_memories` for detail.
 
-Related:
-
-- **Small link cards** everywhere: `projects/<slug>/README.md` and repo `.agents/AGENTS.md` stay pointers + minimal metadata, not essays
-- Per-repo inject remains a **slice** only; one global profile in `~/.agents/`
+Shipped: `compact_always_on` defaults **on** (`scan.json` may set `false` for full table). Project link cards and per-repo `.agents/AGENTS.md` are pointer slices — detail via MCP.
 
 This will matter **before embeddings do**.
 
@@ -35,6 +32,8 @@ This will matter **before embeddings do**.
 Per-source parsers (`agent-jsonl`, `openai-export`, …) are extension points; **filters** are the product (PII, how-to, length, dedupe).
 
 Add fixture transcripts per kind so format drift does not silently admit junk. Tests assert keep/drop behavior, not just parser smoke.
+
+Shipped: `tests/fixtures/agent-jsonl` and `tests/fixtures/copilot-jsonl` + `tests/test_extract_filters.py`.
 
 ### 4. Search later, if ever
 

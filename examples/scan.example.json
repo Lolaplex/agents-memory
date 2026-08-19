@@ -1,6 +1,7 @@
 {
   "roots": ["~/Coding"],
   "agent_rule_name": "user-rules.mdc",
+  "compact_always_on": true,
   "ignore_dir_names": [
     ".git",
     ".agents",

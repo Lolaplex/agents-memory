@@ -168,9 +168,46 @@ class AddMemoryTests(unittest.TestCase):
         (staging / "captured.md").write_text("# Staging\n\n- item 1\n- item 2\n", encoding="utf-8")
 
         inbox = store.get_staging_inbox()
-        self.assertEqual(len(inbox), 2)
-        self.assertEqual(inbox[0]["bullet"], "item 1")
-        self.assertEqual(inbox[1]["bullet"], "item 2")
+        self.assertEqual(inbox["total"], 2)
+        self.assertEqual(len(inbox["groups"]), 1)
+        bullets = inbox["groups"][0]["bullets"]
+        self.assertEqual(bullets[0]["bullet"], "item 1")
+        self.assertEqual(bullets[1]["bullet"], "item 2")
+        self.assertEqual(bullets[0]["source_path"], bullets[0]["file"])
+
+    def test_get_staging_inbox_groups_by_source(self):
+        ingest_a = self.user / "staging" / "ingest" / "src-a"
+        ingest_b = self.user / "staging" / "ingest" / "src-b"
+        ingest_a.mkdir(parents=True, exist_ok=True)
+        ingest_b.mkdir(parents=True, exist_ok=True)
+        (ingest_a / "captured.md").write_text("# A\n\n- shared text\n", encoding="utf-8")
+        (ingest_b / "captured.md").write_text("# B\n\n- shared text\n", encoding="utf-8")
+
+        inbox = store.get_staging_inbox(limit=0)
+        self.assertEqual(inbox["total"], 2)
+        self.assertEqual(len(inbox["groups"]), 2)
+
+    def test_get_staging_inbox_parses_title(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        line = "[Homelab @ C:/tmp/x.jsonl] Never force-reset vendor.lock"
+        (staging / "captured.md").write_text(f"# Staging\n\n- {line}\n", encoding="utf-8")
+
+        item = store.get_staging_inbox()["groups"][0]["bullets"][0]
+        self.assertEqual(item["title"], "Homelab")
+        self.assertEqual(item["origin"], "C:/tmp/x.jsonl")
+        self.assertIn("vendor.lock", item["text"])
+
+    def test_staging_status_summary_nag(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        lines = "\n".join(f"- bullet {i}" for i in range(5))
+        (staging / "captured.md").write_text(f"# Staging\n\n{lines}\n", encoding="utf-8")
+        ingest = {"version": 1, "sources": [], "staging_nag_threshold": 3}
+        with patch("agent_memory.ingest_config.load_ingest", lambda: ingest):
+            summary = store.staging_status_summary()
+        self.assertEqual(summary["bullet_count"], 5)
+        self.assertIn("memory-distill", summary["nag"])
 
     def test_distill_batch(self):
         staging = self.user / "staging"
@@ -210,6 +247,28 @@ class AddMemoryTests(unittest.TestCase):
             body = store.always_on_body()
             self.assertIn("# Projects (Compact)", body)
             self.assertIn("| demo | test | py | active |", body)
+
+    def test_compact_always_on_default(self):
+        scan_cfg = {"roots": [str(self.root)]}
+        with patch.object(store, "load_scan", lambda: scan_cfg), patch.object(
+            store, "USER_MD", self.user / "USER.md"
+        ):
+            (self.user / "USER.md").write_text("Name: Tester\n", encoding="utf-8")
+            body = store.always_on_body()
+            self.assertIn("# Projects (Compact)", body)
+
+    def test_project_agents_text_is_slice(self):
+        p = store.Project(
+            slug="demo",
+            path=str(self.root / "demo"),
+            role="test role",
+            stack="py",
+            status="active",
+        )
+        text = store.project_agents_text(p)
+        self.assertIn("Project: demo", text)
+        self.assertIn("get_project_memories", text)
+        self.assertNotIn("notes/proposed", text)
 
     def test_instruction_pair_replaces_symlink_stub(self):
         d = self.root / "pair"

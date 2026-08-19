@@ -10,11 +10,11 @@ Chat and brain stores stay on disk in product folders. Ingest turns them into **
 |-------|---------|--------|--------|
 | **Catalog** | `python -m agent_memory ingest catalog` | `chats-index.md` + `entities/chat-source-<id>.md` | Delete cards; rebuild index |
 | **Extract** | `python -m agent_memory ingest extract [--source ID]` | `staging/ingest/<id>/captured.md` | Delete staging file |
-| **Distill** | MCP `add_memory(kind=..., name=...)` | Typed markdown in `concepts/`, `notes/`, etc. | Edit or delete memory file |
+| **Distill** | MCP `promote_bullet` / `distill_batch` / skill `memory-distill` | Typed markdown in `concepts/`, `notes/`, etc. | Edit or delete memory file |
 
-Run both catalog and extract: `python -m agent_memory ingest run`. Status: `python -m agent_memory ingest status` → `ingest/state.json`.
+Run both catalog and extract: `python -m agent_memory ingest run`. Status: `python -m agent_memory ingest status` → `ingest/state.json` plus staging nag.
 
-Distill is intentional human/agent work — no auto-promotion to memory.
+Distill is intentional human/agent work — no auto-promotion to memory. Use `get_staging_inbox` (grouped by source) then `distill_batch` with `source_path` on each item.
 
 ## Config
 
@@ -23,6 +23,8 @@ Distill is intentional human/agent work — no auto-promotion to memory.
 ```json
 {
   "version": 1,
+  "extract_max_bullets": 100,
+  "staging_nag_threshold": 50,
   "sources": [
     {
       "id": "openai-export",
@@ -60,6 +62,15 @@ Legacy keys (`openai_export_globs`, `chat_sources`) normalize to `sources[]`.
 
 Set `"catalog": false` or `"extract": false` to skip a phase per source.
 
+Global options:
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `extract_max_bullets` | `100` | Max bullets written per source per extract run (0 = unlimited) |
+| `staging_nag_threshold` | `50` | `ingest_status` / MCP `ingest_status` emits `staging.nag` when inbox exceeds this |
+
+Per-source `"extract_max_bullets"` overrides the global cap.
+
 ## Layout
 
 ```
@@ -74,8 +85,10 @@ Set `"catalog": false` or `"extract": false` to skip a phase per source.
 ## MCP tools
 
 - `ingest_catalog()` — catalog phase
-- `ingest_extract(source_id="")` — extract one or all sources
-- `ingest_status()` — JSON summary from `ingest/state.json`
+- `ingest_extract(source_id="")` — extract one or all sources (respects bullet cap)
+- `ingest_status()` — JSON summary from `ingest/state.json` + staging bullet count / nag
+- `get_staging_inbox()` — grouped staging bullets for distill
+- `distill_batch()` / `promote_bullet()` — distill phase (see [`MCP.md`](MCP.md))
 
 ## Filters (extract)
 

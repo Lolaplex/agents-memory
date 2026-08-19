@@ -103,6 +103,7 @@ Generated files include `<!-- agent-memory-sync -->`.
 | `ignore_dir_names` | Skipped when scanning — includes `.agents`, `.cursor`, `.git`, `node_modules`, … |
 | `ignore_slugs` | Slugs never reported as unknown |
 | `expand_children` | Monorepo parents whose child repos are also tracked |
+| `compact_always_on` | Default `true`. One-line project table in inject; paths in `projects/<slug>/README.md`. Set `false` for full `PROJECTS.md` body in always-on. |
 
 ## Optional commands
 
@@ -110,6 +111,7 @@ Generated files include `<!-- agent-memory-sync -->`.
 |---------|------|
 | `python -m agent_memory ingest catalog` | Rebuild `chats-index.md` (titles + paths) |
 | `python -m agent_memory ingest extract` | Filter durable lines into staging |
+| `python -m agent_memory distill` | Show grouped staging inbox (inspect before distill) |
 | `python -m agent_memory extract-openai` | ChatGPT export wrapper (`--out` = legacy JSON) |
 | `python -m agent_memory mcp` | stdio MCP — see [`MCP.md`](MCP.md) |
 

@@ -15,6 +15,26 @@ Returns hit lines with stable ids (`user/...` or `project/<slug>/...`) suitable 
 
 File a durable fact. See [`KINDS.md`](KINDS.md). Returns the relative path written.
 
+### `promote_bullet(bullet, kind, name, project="", collection="", source_path="")`
+
+Promote one staging bullet into typed memory (`kind` + `name` required) and remove it from staging.
+Use `source_path` (from `get_staging_inbox`) when multiple staging files may contain similar text.
+
+### `get_staging_inbox(project="", limit=20)`
+
+Return un-distilled staging bullets **grouped by source file** (ingest id, project staging, or user inbox).
+JSON shape: `{ "total", "shown", "groups": [{ "source", "file", "ingest_id", "project", "bullets": [...] }] }`.
+Each bullet includes `source_path` for `distill_batch` / `promote_bullet`.
+
+### `distill_batch(items_json)`
+
+Batch promote or discard staging bullets. JSON array of objects:
+
+- Promote: `{ "bullet", "kind", "name", "project?", "collection?", "source_path?" }`
+- Discard: `{ "bullet", "discard": true, "source_path?" }`
+
+Returns `{ promoted, discarded, remaining_staging_count, errors }`. No auto-promotion without explicit `kind` + `name`.
+
 ### `get_project_memories(project)`
 
 Return the project link README plus in-tree `.agents/memory` markdown for one slug.
@@ -50,11 +70,11 @@ Rebuild `chats-index.md` and `entities/chat-source-*.md` from `ingest.json`. Cat
 
 ### `ingest_extract(source_id="")`
 
-Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. Extract phase — distill with `add_memory` afterward.
+Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. Extract phase — distill with `promote_bullet` / `distill_batch` afterward. Per-source caps apply (see [`INGEST.md`](INGEST.md)).
 
 ### `ingest_status()`
 
-JSON summary from `ingest/state.json` (last catalog/extract per source).
+JSON summary from `ingest/state.json` plus `staging` block: `bullet_count`, `group_count`, `threshold`, `nag` (when inbox exceeds threshold).
 
 ## Non-goals
 

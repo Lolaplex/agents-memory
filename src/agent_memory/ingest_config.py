@@ -34,10 +34,24 @@ def default_ingest() -> dict:
     return {"version": 1, "sources": []}
 
 
+def ingest_defaults(raw: dict) -> dict:
+    return {
+        "extract_max_bullets": max(0, int(raw.get("extract_max_bullets") or 100)),
+        "staging_nag_threshold": max(0, int(raw.get("staging_nag_threshold") or 50)),
+    }
+
+
+def extract_max_bullets(cfg: dict, src: dict) -> int:
+    if src.get("extract_max_bullets") is not None:
+        return max(0, int(src["extract_max_bullets"]))
+    return max(0, int(cfg.get("extract_max_bullets") or 100))
+
+
 def normalize_ingest(raw: dict) -> dict:
     """Accept legacy split keys or unified sources list."""
+    defaults = ingest_defaults(raw)
     if raw.get("sources"):
-        return {"version": int(raw.get("version") or 1), "sources": list(raw["sources"])}
+        return {"version": int(raw.get("version") or 1), "sources": list(raw["sources"]), **defaults}
     sources: List[dict] = []
     for item in raw.get("openai_export_dirs") or []:
         sources.append(
@@ -72,7 +86,7 @@ def normalize_ingest(raw: dict) -> dict:
             src.setdefault("catalog", True)
             src.setdefault("extract", True)
             sources.append(src)
-    return {"version": 1, "sources": sources}
+    return {"version": 1, "sources": sources, **defaults}
 
 
 def load_ingest(path: Path | None = None) -> dict:

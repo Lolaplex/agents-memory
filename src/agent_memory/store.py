@@ -1047,12 +1047,8 @@ def stub_project_md(p: Project) -> str:
         f"status: {p.status}\n"
         f"---\n\n"
         f"# {p.slug}\n\n"
-        f"{p.role}\n\n"
-        f"**Path:** `{p.path}`\n\n"
-        f"In-tree: `{p.path}/.agents/memory/` "
-        f"(staging, research, plans, tasks, waves, roadmap, decisions, "
-        f"notes/proposed|implemented|rejected).\n"
-        f"User notes: `notes/projects/{p.slug}/`.\n"
+        f"{p.role} · `{p.stack}` · {p.status}\n\n"
+        f"Path: `{p.path}`. MCP `get_project_memories(\"{p.slug}\")` for in-tree memory.\n"
     )
 
 
@@ -1105,7 +1101,7 @@ def ignore_slug(slug: str) -> None:
 
 def is_compact_always_on() -> bool:
     cfg = load_scan()
-    return bool(cfg.get("compact_always_on", False))
+    return bool(cfg.get("compact_always_on", True))
 
 
 def compact_projects_text(projects: List[Project]) -> str:
@@ -1147,19 +1143,15 @@ def gemini_agents_text() -> str:
 
 
 def project_agents_text(p: Project) -> str:
-    details = _read(p.detail_path).strip() if p.detail_path.exists() else stub_project_md(p).strip()
     return (
         f"{MARKER}\n\n"
         f"# Project: {p.slug}\n\n"
-        f"User memory: `{USER_MEMORY}`.\n"
-        "Project memory: `.agents/memory/` "
-        "(staging, research, plans, tasks, waves, roadmap, decisions, "
-        "notes/proposed|implemented|rejected).\n"
-        "Instruction files: `.agents/AGENTS.md` (this slice). "
-        "`CLAUDE.md` is bound to it. User always-on: `~/.agents/AGENTS.md`.\n"
-        "Zed personal: `%APPDATA%/Zed/AGENTS.md` (Windows) or `~/.config/zed/AGENTS.md`.\n"
-        "Retrieval is overarching (MCP `search_memory`). This file is the local slice.\n\n"
-        f"{details}\n"
+        f"**Path:** `{p.path}`  \n"
+        f"**Role:** {p.role}  \n"
+        f"**Stack:** {p.stack}\n\n"
+        f"In-tree memory: `.agents/memory/` (staging inbox — distill, do not hoard). "
+        f"Global profile: `~/.agents/AGENTS.md`. "
+        f"MCP `search_memory` / `get_project_memories(\"{p.slug}\")` for detail.\n"
     )
 
 
@@ -2010,8 +2002,25 @@ def promote_bullet(
     return loc, removed
 
 
-def get_staging_inbox(project: str = "", limit: int = 20) -> List[dict]:
-    """Retrieve un-distilled bullet points from staging inbox files."""
+_STAGING_BULLET_RE = re.compile(
+    r"^\[(?P<title>[^\]]+?)(?:\s@\s(?P<origin>[^\]]+))?\]\s*(?P<body>.+)$"
+)
+
+
+def parse_staging_bullet(text: str) -> dict:
+    text = text.strip()
+    match = _STAGING_BULLET_RE.match(text)
+    if match:
+        return {
+            "bullet": text,
+            "title": match.group("title").strip(),
+            "origin": (match.group("origin") or "").strip(),
+            "text": match.group("body").strip(),
+        }
+    return {"bullet": text, "title": "", "origin": "", "text": text}
+
+
+def _collect_staging_paths(project: str = "") -> List[Path]:
     candidate_paths: List[Path] = []
     if project:
         p = projects_by_slug().get(project)
@@ -2029,30 +2038,131 @@ def get_staging_inbox(project: str = "", limit: int = 20) -> List[dict]:
             for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
                 if f not in candidate_paths:
                     candidate_paths.append(f)
+    return candidate_paths
 
-    bullets: List[dict] = []
-    seen: set[str] = set()
-    for path in candidate_paths:
+
+def _staging_file_meta(path: Path) -> dict:
+    fid = file_id(path)
+    meta = {"file": fid, "ingest_id": "", "source": fid, "project": ""}
+    try:
+        rel_u = path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+    except ValueError:
+        rel_u = ""
+    if rel_u.startswith("staging/ingest/"):
+        parts = rel_u.split("/")
+        if len(parts) >= 3:
+            meta["ingest_id"] = parts[2]
+            meta["source"] = parts[2]
+    for slug, proj in projects_by_slug().items():
+        try:
+            path.resolve().relative_to(proj.memory_dir.resolve())
+            meta["project"] = slug
+            break
+        except ValueError:
+            continue
+    if meta["ingest_id"]:
+        from .ingest_config import get_source, load_ingest
+
+        src = get_source(meta["ingest_id"], load_ingest())
+        if src:
+            meta["source"] = str(src.get("label") or meta["ingest_id"])
+    return meta
+
+
+def get_staging_inbox(project: str = "", limit: int = 20) -> dict:
+    """Retrieve un-distilled bullets grouped by staging source file.
+
+    limit=0 returns all groups with no cap on shown bullets.
+    """
+    groups: List[dict] = []
+    total = 0
+    for path in _collect_staging_paths(project):
         if not path.is_file():
             continue
+        meta = _staging_file_meta(path)
+        seen_in_file: set[str] = set()
+        bullets: List[dict] = []
         for line in _read(path).splitlines():
             stripped = line.strip()
             if not stripped.startswith(("- ", "* ")):
                 continue
             text = stripped[2:].strip()
-            if not text or text.lower() in seen or text == "(none yet)":
+            if not text or text == "(none yet)":
                 continue
-            seen.add(text.lower())
-            bullets.append(
+            key = text.lower()
+            if key in seen_in_file:
+                continue
+            seen_in_file.add(key)
+            item = parse_staging_bullet(text)
+            item["file"] = meta["file"]
+            item["source_path"] = meta["file"]
+            if meta["project"]:
+                item["project"] = meta["project"]
+            if meta["ingest_id"]:
+                item["ingest_id"] = meta["ingest_id"]
+                item["source"] = meta["source"]
+            bullets.append(item)
+        if bullets:
+            groups.append(
                 {
-                    "bullet": text,
-                    "file": file_id(path),
-                    "project": project or "",
+                    "source": meta["source"],
+                    "ingest_id": meta["ingest_id"],
+                    "project": meta["project"],
+                    "file": meta["file"],
+                    "count": len(bullets),
+                    "bullets": bullets,
                 }
             )
-            if len(bullets) >= limit:
-                return bullets
-    return bullets
+            total += len(bullets)
+
+    shown = total
+    if limit > 0 and total > limit:
+        capped_groups: List[dict] = []
+        remaining = limit
+        for group in groups:
+            if remaining <= 0:
+                break
+            take = group["bullets"][:remaining]
+            if not take:
+                continue
+            capped_groups.append(
+                {
+                    **group,
+                    "bullets": take,
+                    "count": len(take),
+                    "truncated": len(take) < len(group["bullets"]),
+                }
+            )
+            remaining -= len(take)
+        groups = capped_groups
+        shown = limit
+
+    return {"total": total, "shown": shown, "groups": groups}
+
+
+def count_staging_bullets(project: str = "") -> int:
+    return int(get_staging_inbox(project=project, limit=0)["total"])
+
+
+def staging_status_summary() -> dict:
+    from .ingest_config import load_ingest
+
+    inbox = get_staging_inbox(limit=0)
+    cfg = load_ingest()
+    threshold = max(0, int(cfg.get("staging_nag_threshold") or 50))
+    total = int(inbox["total"])
+    nag = ""
+    if threshold > 0 and total >= threshold:
+        nag = (
+            f"{total} staging bullets waiting — run memory-distill, "
+            "MCP get_staging_inbox, or `python -m agent_memory distill`"
+        )
+    return {
+        "bullet_count": total,
+        "group_count": len(inbox["groups"]),
+        "threshold": threshold,
+        "nag": nag,
+    }
 
 
 def distill_batch(items: List[dict]) -> dict:
@@ -2092,7 +2202,7 @@ def distill_batch(items: List[dict]) -> dict:
         except Exception as e:
             errors.append(f"{bullet[:30]}...: {e}")
 
-    remaining = len(get_staging_inbox())
+    remaining = count_staging_bullets()
     return {
         "promoted": promoted,
         "discarded": discarded,

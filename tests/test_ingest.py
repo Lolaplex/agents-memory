@@ -28,6 +28,8 @@ class NormalizeTests(unittest.TestCase):
         raw = {"version": 1, "sources": [{"id": "x", "kind": "agent-jsonl"}]}
         cfg = normalize_ingest(raw)
         self.assertEqual(list_sources(cfg)[0]["id"], "x")
+        self.assertEqual(cfg["extract_max_bullets"], 100)
+        self.assertEqual(cfg["staging_nag_threshold"], 50)
 
 
 class StagingTests(unittest.TestCase):

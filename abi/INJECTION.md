@@ -10,6 +10,10 @@ Agents read short always-on context from markdown instruction files. The memory 
 | `~/.agents/memory/PROJECTS.md` | slug / path / role / stack / status table |
 | `~/.agents/AGENTS.md` | Generated summary of USER + PROJECTS (+ optional paths block) |
 
+### Compact always-on (`scan.json`)
+
+When `"compact_always_on": true` (default when omitted), generated inject uses a **one-line-per-project table** (slug, role, stack, status) instead of the full `PROJECTS.md` body. Paths live in `~/.agents/memory/projects/<slug>/README.md` — agents resolve detail via MCP `get_project_memories(project=slug)` or `search_memory`. Set `"compact_always_on": false` in `scan.json` to inject the full projects table including paths.
+
 Per-repo injection (when registered): `<repo>/.agents/AGENTS.md` and bound `<repo>/.agents/CLAUDE.md` with project paths and memory pointers.
 
 **Exception:** the agent-memory **engine clone** itself has install instructions at repo-root `AGENTS.md` only. Sync never writes `<engine>/.agents/` or `<engine>/.cursor/`. Project link for the engine lives at `~/.agents/memory/projects/agent-memory/README.md`.

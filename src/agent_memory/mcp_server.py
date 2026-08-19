@@ -100,14 +100,17 @@ def promote_bullet(
 
 @mcp.tool()
 def get_staging_inbox(project: str = "", limit: int = 20) -> str:
-    """Fetch un-distilled bullets from staging inbox files (staging/captured.md)."""
+    """Fetch un-distilled bullets from staging, grouped by source file.
+
+    Each bullet includes file and source_path for distill_batch.
+    """
     try:
         from .store import get_staging_inbox as store_get_inbox
 
-        items = store_get_inbox(project=project, limit=limit)
-        if not items:
+        payload = store_get_inbox(project=project, limit=limit)
+        if payload["total"] == 0:
             return "Staging inbox is empty (all caught up)."
-        return json.dumps(items, indent=2, ensure_ascii=False)
+        return json.dumps(payload, indent=2, ensure_ascii=False)
     except Exception as e:
         return f"Error reading staging inbox: {e}"
 
@@ -263,10 +266,11 @@ def ingest_extract(source_id: str = "") -> str:
 
 @mcp.tool()
 def ingest_status() -> str:
-    """Show ingest/state.json summary for configured sources."""
+    """Show ingest/state.json summary plus staging inbox depth and nag."""
     try:
         from .ingest_common import ingest_state_path, load_state
         from .ingest_config import list_sources, load_ingest
+        from .store import staging_status_summary
 
         cfg = load_ingest()
         state = load_state()
@@ -282,10 +286,19 @@ def ingest_status() -> str:
                     "last_extract": entry.get("last_extract"),
                     "catalog_count": entry.get("catalog_count"),
                     "extract_count": entry.get("extract_count"),
+                    "extract_capped": entry.get("extract_capped"),
+                    "extract_total_before_cap": entry.get("extract_total_before_cap"),
                     "staging": entry.get("staging"),
                 }
             )
-        return json.dumps({"state_file": str(ingest_state_path()), "sources": rows}, indent=2)
+        return json.dumps(
+            {
+                "state_file": str(ingest_state_path()),
+                "staging": staging_status_summary(),
+                "sources": rows,
+            },
+            indent=2,
+        )
     except Exception as e:
         return f"Error reading ingest status: {e}"
 

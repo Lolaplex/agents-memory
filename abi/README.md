@@ -2,7 +2,7 @@
 
 
 
-**Version:** [`1.0.0`](VERSION)
+**Version:** [`0.42`](VERSION)
 
 
 

@@ -1,6 +1,6 @@
 # Ingest pipeline
 
-Version: 1.0.0 (see `abi/VERSION`)
+Version: 0.42 (see `abi/VERSION`)
 
 Chat and brain stores stay on disk in product folders. Ingest turns them into **searchable references** and optional **staging bullets** for distillation into typed memory under `~/.agents/memory`.
 

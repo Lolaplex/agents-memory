@@ -32,6 +32,8 @@ Markdown on disk is the **source of truth**. Tools sit above it; they must not b
 
 | [`INSTALL.md`](INSTALL.md) | Sync, injection, scan.json, `--help-json` |
 
+| [`WHY.md`](WHY.md) | Why this exists (vs RAG, vaults, vendor graves) |
+
 | [`MCP.md`](MCP.md) | Tool names and behavior |
 | [`INGEST.md`](INGEST.md) | Chat/brain catalog → extract → distill pipeline |
 
@@ -74,6 +76,8 @@ No roff man page. Agents: use `--help-json`, not README scraping. Details: [`INS
 
 
 This repository's **Python package** (`src/agent_memory/`: MCP server, `store`, `sync`, `inventory`, `ingest`) is the reference implementation of this ABI.
+
+Future work on that package (not ABI changes): [`../ROADMAP.md`](../ROADMAP.md).
 
 
 

@@ -2,6 +2,8 @@
 
 **Local markdown memory for coding agents — any provider, any tool.**
 
+Without a shared layout, **each vendor owns a graveyard** — session archives that never become durable identity unless you re-teach every new agent. See **[`abi/WHY.md`](abi/WHY.md)** for the full rationale (vs RAG, vs vaults, vs vendor memory). Reference-implementation roadmap: [`ROADMAP.md`](ROADMAP.md).
+
 Your memory lives in folders you own: `~/.agents/memory` (identity + project map) and `<repo>/.agents/memory` (per-project work). Your Agent — or any host that reads markdown and optional MCP — uses the same layout.
 
 Markdown is the **source of truth**. The Python MCP in this repo is the **reference implementation**, not a proprietary backend.
@@ -13,6 +15,8 @@ Shipped under [`abi/`](abi/) — versioned, documented, implementation-agnostic:
 | Doc | What |
 |-----|------|
 | [`abi/README.md`](abi/README.md) | Overview + conformance |
+| [`abi/WHY.md`](abi/WHY.md) | Why this exists (vs RAG, vaults, vendor graves) |
+| [`ROADMAP.md`](ROADMAP.md) | Reference-implementation roadmap (not ABI) |
 | [`abi/LAYOUT.md`](abi/LAYOUT.md) | Folder taxonomy |
 | [`abi/KINDS.md`](abi/KINDS.md) | Where facts go |
 | [`abi/MCP.md`](abi/MCP.md) | Tool contract |

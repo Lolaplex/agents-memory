@@ -46,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     argv = list(argv if argv is not None else sys.argv[1:])
     if "--help-json" in argv:
         emit_help_json(argv, build_parser(), name="inventory")

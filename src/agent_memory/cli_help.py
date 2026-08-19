@@ -149,6 +149,11 @@ def emit_help_json(argv: list[str], parser: argparse.ArgumentParser, *, name: st
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     args = list(argv if argv is not None else sys.argv[1:])
     if "--help-json" in args:
         print(json.dumps(full_spec(), indent=2, ensure_ascii=False))

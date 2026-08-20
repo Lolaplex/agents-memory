@@ -19,13 +19,49 @@ PII = re.compile(
     r"("
     r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     r"|(\+?\d[\d\s().-]{8,}\d)"
-    r"|sk-[A-Za-z0-9]{10,}"
+    r"|sk-[A-Za-z0-9_\-]{10,}"
+    r"|sk-ant-[A-Za-z0-9_\-]{10,}"
     r"|github_pat_[A-Za-z0-9_]+"
-    r"|ghp_[A-Za-z0-9]+"
+    r"|gh[pors]_[A-Za-z0-9_]+"
+    r"|re_[A-Za-z0-9_]{15,}"
+    r"|nfp_[A-Za-z0-9_]{15,}"
     r"|xox[baprs]-[A-Za-z0-9-]+"
+    r"|Bearer\s+[A-Za-z0-9._\-]{15,}"
+    r"|AIza[0-9A-Za-z\-_]{35}"
+    r"|AKIA[0-9A-Z]{16}"
+    r"|ey[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}"
     r")",
     re.I,
 )
+SECRET_FILENAMES = frozenset({
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    ".env.staging",
+    "id_rsa",
+    "id_rsa.pub",
+    "id_ed25519",
+    "id_ed25519.pub",
+    "credentials.json",
+    "service-account.json",
+    "token.json",
+})
+SECRET_EXTENSIONS = frozenset({".pem", ".key", ".pfx", ".p12", ".kdbx"})
+
+
+def is_secret_or_env_path(path: Path | str) -> bool:
+    """Return True if path represents a secret or environment file that should never be ingested."""
+    p = Path(path)
+    name = p.name.lower()
+    if name in SECRET_FILENAMES or name.startswith(".env"):
+        return True
+    if p.suffix.lower() in SECRET_EXTENSIONS:
+        return True
+    if any(part.lower() in (".ssh", ".gnupg", "secrets") for part in p.parts):
+        return True
+    return False
+
 CODEISH = re.compile(
     r"^\s*(def |class |import |from |function |const |let |var |#include )",
     re.M,

@@ -13,12 +13,14 @@ Chat bodies stay in product folders; only titles/paths are ingested.
 AGENTS.md is the instruction file. CLAUDE.md is bound to it (symlink, else hardlink, else copy).
 """
 from __future__ import annotations
-
 import json
 import os
 import re
 import shutil
 import sys
+import threading
+import time
+import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -199,7 +201,25 @@ def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not content.endswith("\n"):
         content += "\n"
-    path.write_text(content, encoding="utf-8")
+    # Atomic write via thread-unique temp file + os.replace
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp")
+    try:
+        tmp_path.write_text(content, encoding="utf-8")
+        for attempt in range(5):
+            try:
+                os.replace(str(tmp_path), str(path))
+                break
+            except OSError:
+                if attempt == 4:
+                    path.write_text(content, encoding="utf-8")
+                time.sleep(0.02 * (attempt + 1))
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
 
 
 def _default_roots() -> List[str]:
@@ -665,6 +685,8 @@ def _merge_mcp_server_into_file(path: Path) -> str:
     servers = data.setdefault("mcpServers", {})
     if not isinstance(servers, dict):
         return f"FAIL {path}: mcpServers is not an object."
+    servers.pop("agent-memory", None)
+    servers.pop("agent_memory", None)
     servers["agents-memory"] = mcp_entry()
     _write(path, json.dumps(data, indent=2, ensure_ascii=False))
     return f"OK {path}"
@@ -804,6 +826,8 @@ def collect_mcp_servers() -> Dict[str, dict]:
             for k, val in spec.items():
                 if k not in merged[name] or merged[name][k] in (None, "", {}, []):
                     merged[name][k] = val
+    merged.pop("agent-memory", None)
+    merged.pop("agent_memory", None)
     merged["agents-memory"] = mcp_entry()
     return merged
 
@@ -857,6 +881,8 @@ def merge_zed_mcp() -> str:
     if not isinstance(servers, dict):
         servers = {}
         data["context_servers"] = servers
+    servers.pop("agent-memory", None)
+    servers.pop("agent_memory", None)
     for name, spec in collect_mcp_servers().items():
         servers[name] = mcp_spec_to_zed(spec)
     agent = data.get("agent")
@@ -971,8 +997,114 @@ def _looks_like_project(path: Path) -> bool:
         "README.md",
         "src",
         "src-tauri",
+        "go.mod",
     )
     return any((path / m).exists() for m in markers)
+
+
+def _parse_workspace_uri(uri: str) -> Optional[Path]:
+    if not uri or not isinstance(uri, str):
+        return None
+    uri = uri.strip()
+    if uri.startswith("file://"):
+        raw = urllib.parse.unquote(uri[7:])
+        if os.name == "nt" and raw.startswith("/") and len(raw) > 2 and raw[2] == ":":
+            raw = raw[1:]
+        p = Path(raw)
+        if p.is_dir():
+            return p.resolve()
+    else:
+        p = Path(uri).expanduser()
+        if p.is_dir():
+            return p.resolve()
+    return None
+
+
+def discover_ide_workspaces() -> List[Path]:
+    """Auto-discover active and historical project workspaces from IDE configs and brains without user input."""
+    discovered: List[Path] = []
+    seen: set[str] = set()
+
+    def add(p: Optional[Path]) -> None:
+        if not p or not p.is_dir():
+            return
+        key = str(p.resolve()).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        discovered.append(p.resolve())
+
+    home = Path.home()
+
+    # 1. Antigravity IDE brains (brain/*/task.md, transcript.jsonl)
+    antigravity_brains = home / ".gemini" / "antigravity-ide" / "brain"
+    if antigravity_brains.is_dir():
+        for brain in antigravity_brains.iterdir():
+            if not brain.is_dir() or brain.name.startswith("."):
+                continue
+            transcript = brain / ".system_generated" / "logs" / "transcript.jsonl"
+            if transcript.is_file():
+                try:
+                    with transcript.open(encoding="utf-8", errors="replace") as fh:
+                        for idx, line in enumerate(fh):
+                            if idx > 20:
+                                break
+                            for match in re.finditer(r"(?:[a-zA-Z]:[/\\][^\r\n<>\"'\s]+|/(?:Users|home|root)/[^\r\n<>\"'\s]+)", line):
+                                candidate = Path(match.group(0).strip().rstrip(";,.)]"))
+                                if candidate.is_dir() and _looks_like_project(candidate):
+                                    add(candidate)
+                except OSError:
+                    pass
+
+    # 2. Cursor, VS Code, VSCodium workspaceStorage
+    storage_roots: List[Path] = []
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA") or str(home / "AppData" / "Roaming")
+        for ide_name in ("Cursor", "Code", "Code - Insiders", "VSCodium"):
+            storage_roots.append(Path(appdata) / ide_name / "User" / "workspaceStorage")
+    elif sys.platform == "darwin":
+        for ide_name in ("Cursor", "Code", "Code - Insiders", "VSCodium"):
+            storage_roots.append(home / "Library" / "Application Support" / ide_name / "User" / "workspaceStorage")
+    else:
+        for ide_name in ("Cursor", "Code", "Code - Insiders", "VSCodium"):
+            storage_roots.append(home / ".config" / ide_name / "User" / "workspaceStorage")
+
+    for storage_root in storage_roots:
+        if not storage_root.is_dir():
+            continue
+        try:
+            for ws_dir in storage_root.iterdir():
+                if not ws_dir.is_dir():
+                    continue
+                ws_json = ws_dir / "workspace.json"
+                if ws_json.is_file():
+                    try:
+                        data = json.loads(_read(ws_json))
+                        folder = data.get("folder") or (data.get("configuration") or {}).get("folder")
+                        if folder:
+                            add(_parse_workspace_uri(str(folder)))
+                    except (json.JSONDecodeError, OSError):
+                        pass
+        except OSError:
+            pass
+
+    # 3. Cursor projects folder (~/.cursor/projects)
+    cursor_projects = home / ".cursor" / "projects"
+    if cursor_projects.is_dir():
+        try:
+            for proj in cursor_projects.iterdir():
+                if proj.is_dir():
+                    name = proj.name
+                    if name.startswith("c-Users-") or name.startswith("c--") or name.startswith("Users-"):
+                        parts = name.split("-")
+                        if len(parts) >= 4 and parts[0].lower() == "c" and parts[1].lower() == "users":
+                            reconstructed = Path(f"C:/{parts[2]}/{'/'.join(parts[3:])}")
+                            if reconstructed.is_dir() and _looks_like_project(reconstructed):
+                                add(reconstructed)
+        except OSError:
+            pass
+
+    return discovered
 
 
 def discover_disk() -> List[Tuple[str, Path]]:
@@ -993,24 +1125,35 @@ def discover_disk() -> List[Tuple[str, Path]]:
         seen_paths.add(key)
         found.append((slug, resolved))
 
+    # 1. Configured roots
     for root in cfg.get("roots") or []:
         root_path = Path(root).expanduser()
         if not root_path.is_dir():
             continue
-        for child in sorted(root_path.iterdir()):
-            if not child.is_dir() or child.name in ignore_names:
-                continue
-            if child.name.startswith("."):
-                continue
-            add(child.name, child)
-            if child.name in expand:
-                for nested in sorted(child.iterdir()):
-                    if not nested.is_dir() or nested.name in ignore_names:
-                        continue
-                    if nested.name.startswith("."):
-                        continue
-                    if _looks_like_project(nested):
-                        add(nested.name, nested)
+        try:
+            for child in sorted(root_path.iterdir()):
+                if not child.is_dir() or child.name in ignore_names:
+                    continue
+                if child.name.startswith("."):
+                    continue
+                add(child.name, child)
+                if child.name in expand:
+                    for nested in sorted(child.iterdir()):
+                        if not nested.is_dir() or nested.name in ignore_names:
+                            continue
+                        if nested.name.startswith("."):
+                            continue
+                        if _looks_like_project(nested):
+                            add(nested.name, nested)
+        except OSError:
+            pass
+
+    # 2. Auto-discovered IDE workspaces (Zero manual folder searching!)
+    for ws_path in discover_ide_workspaces():
+        if ws_path.name in ignore_names or ws_path.name.startswith("."):
+            continue
+        add(ws_path.name, ws_path)
+
     return found
 
 
@@ -1021,21 +1164,77 @@ def inventory_report() -> dict:
     disk = discover_disk()
     unknown = []
     known = []
+    moved = []
+    seen_moved_slugs = set()
+
     for slug, path in disk:
-        key = str(path).lower()
-        if slug in by_slug or key in by_path:
-            known.append({"slug": slug, "path": str(path), "status": "tracked"})
+        resolved = path.resolve()
+        key = str(resolved).lower()
+        if key in by_path:
+            known.append({"slug": slug, "path": str(resolved), "status": "tracked"})
+        elif slug in by_slug:
+            existing_p = by_slug[slug]
+            if existing_p.path_obj.exists():
+                unknown.append({"slug": slug, "path": str(resolved)})
+            else:
+                moved.append({
+                    "slug": slug,
+                    "old_path": existing_p.path,
+                    "new_path": str(resolved),
+                    "confidence": "high",
+                })
+                seen_moved_slugs.add(slug)
         else:
-            unknown.append({"slug": slug, "path": str(path)})
+            unknown.append({"slug": slug, "path": str(resolved)})
+
     missing = []
     for p in tracked:
         if not p.path_obj.exists():
             missing.append({"slug": p.slug, "path": p.path})
+
+    # Additional moved-repo heuristic for renamed directories
+    for m in missing:
+        if m["slug"] in seen_moved_slugs:
+            continue
+        old_slug = m["slug"].lower()
+        old_dir_name = Path(m["path"]).name.lower()
+        for u in unknown:
+            u_slug = u["slug"].lower()
+            u_path = Path(u["path"])
+            u_dir_name = u_path.name.lower()
+            is_exact = (u_slug == old_slug or u_dir_name == old_dir_name)
+            is_partial = (
+                (len(old_slug) >= 3 and (old_slug in u_slug or u_slug in old_slug))
+                or (len(old_dir_name) >= 3 and (old_dir_name in u_dir_name or u_dir_name in old_dir_name))
+            )
+            if is_exact or is_partial:
+                moved.append({
+                    "slug": m["slug"],
+                    "old_path": m["path"],
+                    "new_path": u["path"],
+                    "confidence": "high" if is_exact else "medium",
+                })
+                seen_moved_slugs.add(m["slug"])
+                break
+
+    # Disambiguate slug collisions among unknown projects
+    slug_counts: dict[str, int] = {}
+    for u in unknown:
+        s = u["slug"]
+        slug_counts[s] = slug_counts.get(s, 0) + 1
+    for u in unknown:
+        if slug_counts[u["slug"]] > 1:
+            p = Path(u["path"])
+            parent_name = p.parent.name.lower()
+            if parent_name and parent_name not in ("coding", "src", "code", "dev", "developer"):
+                u["suggested_slug"] = f"{parent_name}-{u['slug']}"
+
     cfg = load_scan()
     return {
         "tracked": [p.__dict__ for p in tracked],
         "unknown": unknown,
         "missing": missing,
+        "moved": moved,
         "ignored": cfg.get("ignore_slugs") or [],
         "known_on_disk": known,
     }
@@ -1646,14 +1845,12 @@ def iter_project_memory_files(slug: str = "") -> List[Path]:
 
 
 def iter_memory_files(project: str = "") -> List[Path]:
-    """Overarching retrieval: user store plus every (or one) project store."""
+    """Overarching retrieval: project store(s) first (higher priority), then user store."""
     seen: set[str] = set()
     out: List[Path] = []
-    chunks = iter_user_memory_files()
-    chunks.extend(iter_project_memory_files(project.strip() if project else ""))
-    if project:
-        # still include user layer so cross-cutting facts remain findable
-        pass
+    # Project-specific facts have higher priority than global user facts
+    chunks = iter_project_memory_files(project.strip() if project else "")
+    chunks.extend(iter_user_memory_files())
     for path in chunks:
         key = str(path.resolve()).lower()
         if key in seen:
@@ -1926,7 +2123,8 @@ def add_memory(
     auto_sync: bool = True,
 ) -> str:
     """File a durable fact. kind+name → taxonomy; project= alone → staging/captured.md (inbox)."""
-    fact = fact.strip()
+    from .ingest_common import scrub
+    fact = scrub(fact.strip())
     if not fact:
         raise ValueError("empty fact")
     path = memory_file_for(

@@ -87,7 +87,14 @@ def main(argv: list[str] | None = None) -> int:
     if cmd in ("extract-openai", "extract_openai"):
         from .extract_openai import main as run
 
-        return run(rest)
+    if cmd in ("reset", "clean"):
+        if "--yes" not in rest and "-y" not in rest:
+            print("WARNING: This will clear local memory caches and temporary state. Pass --yes to confirm.")
+            return 1
+        from .store import clear_memory_cache
+        clear_memory_cache()
+        print("Memory state and cache reset successfully.")
+        return 0
     if cmd in ("mcp", "mcp-server", "mcp_server"):
         from .mcp_server import main as run
 

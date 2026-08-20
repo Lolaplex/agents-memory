@@ -42,7 +42,11 @@ def _with_staging_nag(output: str) -> str:
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search typed markdown under ~/.agents/memory and registered repos. Does not search product chat/jsonl graves — use chats-index.md for body paths."""
+    """Search typed markdown under ~/.agents/memory and registered repos.
+    
+    CALL PROACTIVELY before guessing project architecture, past decisions, user preferences, or repository conventions.
+    Does not search product chat/jsonl graves — use chats-index.md for body paths.
+    """
     try:
         hits = store_search(query, project=project)
         if not hits:
@@ -66,6 +70,10 @@ def add_memory(
     collection: str = "",
 ) -> str:
     """File a durable fact in the right folder. Auto-syncs to all IDEs/CLIs.
+
+    PROACTIVE USAGE: ALWAYS call this tool immediately when the user establishes durable preferences,
+    architecture decisions (ADRs), tool/package choices, styling conventions, or corrections.
+    Do NOT wait for explicit user commands like 'save this'.
 
     kind=concept|entity|workflow|project|note|scratch|research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|staging
     plus name= (file stem). collection= for notes/ or a note class
@@ -183,7 +191,10 @@ def distill_batch(items_json: str) -> str:
 
 @mcp.tool()
 def get_project_memories(project: str) -> str:
-    """Return the project link plus in-tree `.agents/memory` markdown."""
+    """Return the project link plus in-tree `.agents/memory` markdown.
+    
+    CALL PROACTIVELY when starting work in a repository to load its architecture, facts, ADRs, and tasks.
+    """
     try:
         return _with_staging_nag(store_get_project(project))
     except Exception as e:

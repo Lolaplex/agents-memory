@@ -62,7 +62,7 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 
 ## Quickstart
 
-### 1. Standard Install (PyPI)
+### 1-Step Setup
 
 ```bash
 pip install agents-memory && agents-memory sync --init
@@ -70,20 +70,12 @@ pip install agents-memory && agents-memory sync --init
 
 Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
 
-### 2. Agent-Driven Setup (Zero Friction)
+> [!TIP]
+> **Agent-Driven Setup (Zero Friction):**  
+> Simply tell your coding agent: **"Install and set up agents-memory for me."**  
+> The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
 
-Simply tell your coding assistant: **"Install and set up agents-memory for me."**  
-The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
-
-### 3. Source Checkout via vand
-
-If you manage multi-repo checkouts with [vand](https://github.com/Lolaplex/vand), `agents-memory` includes declarative lifecycle hooks in `source.yaml`:
-
-```bash
-vand clone Lolaplex/agents-memory
-```
-
-`vand` clones the repository, executes the automated editable install defined in `source.yaml`, and keeps local dependencies synchronized on update.
+*Source checkouts can also be installed and managed using [vand](https://github.com/Lolaplex/vand) (`vand clone Lolaplex/agents-memory`).*
 
 ---
 

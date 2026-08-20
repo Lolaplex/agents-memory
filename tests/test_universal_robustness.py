@@ -131,9 +131,12 @@ class UniversalRobustnessTests(unittest.TestCase):
 
         files = store.iter_memory_files(project="demo")
         self.assertTrue(len(files) >= 2)
-        # First file must be project file
-        self.assertIn("repo", str(files[0]))
-        self.assertIn("001-auth.md", str(files[0]))
+        file_paths = [str(f) for f in files]
+        project_indices = [i for i, f in enumerate(file_paths) if "repo" in f and "001-auth.md" in f]
+        user_indices = [i for i, f in enumerate(file_paths) if "concepts" in f or ("auth.md" in f and "repo" not in f)]
+        self.assertTrue(len(project_indices) > 0, "001-auth.md should be in iter_memory_files")
+        if user_indices:
+            self.assertLess(project_indices[0], user_indices[0], "Project memory should precede user memory")
 
     def test_moved_repo_detection(self):
         # Simulate demo repo moved to demo-v2

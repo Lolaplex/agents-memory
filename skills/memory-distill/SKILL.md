@@ -1,13 +1,21 @@
 ---
 name: memory-distill
-description: Destilliert rohe Staging-Inbox-Bullets (staging/captured.md) in bleibende, getypte Memory-Dateien. Verwende diesen Skill, wenn der User 'distill', 'Staging aufräumen', 'Inbox abarbeiten', 'Memory verdichten' sagt oder nach einem Ingest-Lauf.
+description: Destilliert rohe Staging-Inbox-Bullets (staging/captured.md) in bleibende, getypte Memory-Dateien. Verwende diesen Skill, wenn der User 'distill', 'Staging aufräumen', 'Inbox abarbeiten', 'Memory verdichten' sagt oder nach einem Ingest-Lauf oder Staging-Nag.
 ---
 
 # memory-distill
 
-Staging inbox is temporary — from **any** ingest source (`staging/ingest/<id>/captured.md`) or project/user staging. Distill durable facts into typed paths; discard ephemeral noise. Ingest never auto-promotes; catalog stays link-only (see `abi/INGEST.md` uniform contract).
+Staging inbox is temporary — from **any** ingest source (`staging/ingest/<id>/captured.md`) or project/user staging. Distill durable facts into typed paths; discard ephemeral noise.
 
-## Workflow
+When staging inbox depth reaches `staging_nag_threshold` (default 50), agents automatically receive a nag alert in `AGENTS.md` and MCP tool responses to trigger distillation.
+
+## Quick Option: Auto-Distill
+
+For fast automated triage of noise and standard facts:
+- Call MCP `auto_distill(limit=50, discard_noise=true)`
+- Or CLI: `python -m agents_memory distill --auto`
+
+## Full LLM Workflow
 
 1. Call MCP `get_staging_inbox(limit=20)` — returns **groups** by source (ingest id / file).
 2. For each bullet in each group, evaluate:
@@ -33,6 +41,4 @@ Staging inbox is temporary — from **any** ingest source (`staging/ingest/<id>/
    ]
    ```
 4. Repeat until `get_staging_inbox` reports `"total": 0`.
-5. Report a short summary of promoted and discarded items to the human.
-
-Check `ingest_status()` when staging is large — it includes `staging.nag` with the current bullet count.
+5. `distill_batch` and `promote_bullet` automatically sync to all IDEs/CLIs upon completion.

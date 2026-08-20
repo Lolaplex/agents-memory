@@ -11,14 +11,23 @@ Version: see [`VERSION`](VERSION).
 Search all local markdown: user store plus each registered project's `<repo>/.agents/memory/`.
 Returns hit lines with stable ids (`user/...` or `project/<slug>/...`) suitable for `delete_memory`.
 Does **not** search product chat/jsonl graves — use `chats-index.md` (catalog) for paths to bodies on disk.
+Appends staging overflow notice if staging depth >= threshold.
 
 ### `add_memory(fact_or_message, kind="", name="", project="", collection="")`
 
-File a durable fact. See [`KINDS.md`](KINDS.md). Returns the relative path written.
+File a durable fact. See [`KINDS.md`](KINDS.md). Returns the relative path written and auto-syncs across all IDEs/CLIs.
+
+### `read_memory_file(file_id)`
+
+Read the raw text of any memory or rule file by id (e.g. `user/USER.md`, `rules/user-rules.mdc`, `user/notes/...`, `project/<slug>/...`).
+
+### `write_memory_file(file_id, content)`
+
+Write/overwrite any memory or rule file and automatically trigger sync to all IDEs/CLIs.
 
 ### `promote_bullet(bullet, kind, name, project="", collection="", source_path="")`
 
-Promote one staging bullet into typed memory (`kind` + `name` required) and remove it from staging.
+Promote one staging bullet into typed memory (`kind` + `name` required) and remove it from staging. Auto-syncs.
 Use `source_path` (from `get_staging_inbox`) when multiple staging files may contain similar text.
 
 ### `get_staging_inbox(project="", limit=20)`
@@ -34,7 +43,11 @@ Batch promote or discard staging bullets. JSON array of objects:
 - Promote: `{ "bullet", "kind", "name", "project?", "collection?", "source_path?" }`
 - Discard: `{ "bullet", "discard": true, "source_path?" }`
 
-Returns `{ promoted, discarded, remaining_staging_count, errors }`. No auto-promotion without explicit `kind` + `name`.
+Returns `{ promoted, discarded, remaining_staging_count, errors }`. Auto-syncs after batch.
+
+### `auto_distill(limit=50, discard_noise=true)`
+
+Automatically triage staging inbox: discards obvious chat chatter/questions/noise and categorizes standard preferences/facts. Auto-syncs.
 
 ### `get_project_memories(project)`
 
@@ -43,7 +56,7 @@ Return the project link README plus in-tree `.agents/memory` markdown for one sl
 ### `delete_memory(memory_id)`
 
 Delete one bullet line by id from a prior `search_memory` result
-(e.g. `user/notes/programming/chat-stores.md:3`).
+(e.g. `user/notes/programming/chat-stores.md:3`). Auto-syncs.
 
 ### `list_projects()`
 
@@ -71,7 +84,7 @@ Rebuild `chats-index.md` and `entities/chat-source-*.md` from `ingest.json`. **C
 
 ### `ingest_extract(source_id="")`
 
-Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. **Extract phase only** — staging inbox, not typed memory; distill with `promote_bullet` / `distill_batch` afterward. Per-source caps and shared filters apply (see [`INGEST.md`](INGEST.md)).
+Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. **Extract phase only** — staging inbox, not typed memory; distill with `promote_bullet` / `distill_batch` / `auto_distill` afterward. Per-source caps and shared filters apply (see [`INGEST.md`](INGEST.md)).
 
 ### `ingest_status()`
 

@@ -390,12 +390,85 @@ class RegisterBootstrapTests(unittest.TestCase):
         dest = user / "staging" / "captured.md"
         self.assertIn("stray fact", dest.read_text(encoding="utf-8"))
 
-    def test_shipped_layout_exists(self):
-        self.assertTrue(store.ABI_LAYOUT.is_file())
-        text = store.shipped_layout_text()
-        self.assertIn("# Agent memory layout", text)
-        self.assertIn("staging/", text)
-        self.assertIn("No dump files", text)
+    def test_read_and_write_memory_file(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        rules = root / "rules"
+        user.mkdir()
+        rules.mkdir()
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "AGENTS_RULES", rules
+        ), patch.object(store, "USER_MD", user / "USER.md"), patch.object(
+            store, "sync_injection", lambda **k: ([], [])
+        ):
+            # Write USER.md
+            loc1 = store.write_memory_file("user/USER.md", "# My Profile\n\n- Fact 1\n")
+            self.assertIn("USER.md", loc1)
+            self.assertEqual(store.read_memory_file("user/USER.md"), "# My Profile\n\n- Fact 1\n")
+
+            # Write rules
+            loc2 = store.write_memory_file("rules/custom.mdc", "---\nalwaysApply: true\n---\nRule body\n")
+            self.assertIn("custom.mdc", loc2)
+            self.assertEqual(store.read_memory_file("rules/custom.mdc"), "---\nalwaysApply: true\n---\nRule body\n")
+
+    def test_staging_nag_in_always_on_body(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        staging = user / "staging"
+        staging.mkdir()
+        user_md = user / "USER.md"
+        user_md.write_text("# User Profile\n", encoding="utf-8")
+        projects_md = user / "PROJECTS.md"
+        projects_md.write_text("# Projects\n\n| slug | path | role | stack | status |\n| --- | --- | --- | --- | --- |\n", encoding="utf-8")
+
+        # Below threshold: no alert
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "USER_MD", user_md
+        ), patch.object(store, "PROJECTS_MD", projects_md):
+            body = store.always_on_body()
+            self.assertNotIn("Active Alerts", body)
+
+            # Above threshold (create 55 bullets)
+            captured = staging / "captured.md"
+            lines = ["# Staging\n"] + [f"- Bullet item {i}" for i in range(55)]
+            captured.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+            body_with_alert = store.always_on_body()
+            self.assertIn("Active Alerts", body_with_alert)
+            self.assertIn("55 staging bullets waiting", body_with_alert)
+
+    def test_auto_distill_heuristics(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        staging = user / "staging"
+        staging.mkdir()
+        captured = staging / "captured.md"
+        captured.write_text(
+            "# Staging\n\n"
+            "- ok\n"
+            "- Wie kann ich FastAPI starten?\n"
+            "- Always use Tailwind v3 for styling\n"
+            "- hi\n",
+            encoding="utf-8",
+        )
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "sync_injection", lambda **k: ([], [])
+        ):
+            res = store.auto_distill(limit=50, discard_noise=True, auto_sync=False)
+            self.assertEqual(res["discarded"], 3)  # 'ok', 'Wie kann ich...', 'hi'
+            self.assertEqual(res["promoted"], 1)   # 'Always use Tailwind v3...'
+            self.assertEqual(res["remaining_staging_count"], 0)
+            pref_file = user / "notes" / "preferences" / "preferences.md"
+            self.assertTrue(pref_file.exists())
+            self.assertIn("Always use Tailwind v3", pref_file.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

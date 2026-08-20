@@ -1128,7 +1128,17 @@ def always_on_body() -> str:
         projects = compact_projects_text(parse_projects()).strip()
     else:
         projects = _read(PROJECTS_MD).strip()
-    return f"{user}\n\n---\n\n{projects}\n"
+    summary = staging_status_summary()
+    nag = summary.get("nag")
+    alert_section = ""
+    if nag:
+        alert_section = (
+            "\n\n---\n\n"
+            "# Active Alerts\n\n"
+            f"> ⚠️ **Memory Staging Action Required**: {nag}\n"
+            "> Proactively process the staging inbox using MCP `get_staging_inbox` + `distill_batch` (or `auto_distill` / skill `memory-distill`).\n"
+        )
+    return f"{user}\n\n---\n\n{projects}{alert_section}\n"
 
 
 def agent_rule_text() -> str:
@@ -1537,6 +1547,11 @@ def file_id(path: Path) -> str:
         return f"user/{rel.as_posix()}"
     except ValueError:
         pass
+    try:
+        rel = path.relative_to(AGENTS_RULES.resolve())
+        return f"rules/{rel.as_posix()}"
+    except ValueError:
+        pass
     for p in parse_projects():
         if not p.path_obj.is_dir():
             continue
@@ -1551,6 +1566,16 @@ def file_id(path: Path) -> str:
 
 def resolve_memory_path(rel: str) -> Path:
     rel = rel.replace("\\", "/").lstrip("/")
+    if rel in ("user/USER.md", "USER.md", "user.md"):
+        return USER_MD
+    if rel in ("user/PROJECTS.md", "PROJECTS.md", "projects.md"):
+        return PROJECTS_MD
+    if rel in ("user/scan.json", "scan.json"):
+        return SCAN_JSON
+    if rel in ("user/ingest.json", "ingest.json"):
+        return INGEST_JSON
+    if rel.startswith("rules/"):
+        return (AGENTS_RULES / rel[len("rules/") :]).resolve()
     if rel.startswith("user/"):
         return (USER_MEMORY / rel[len("user/") :]).resolve()
     if rel.startswith("project/"):
@@ -1570,7 +1595,30 @@ def resolve_memory_path(rel: str) -> Path:
         p = projects_by_slug().get(slug)
         if p:
             return p.detail_path
+    if "/" in rel or "." in rel:
+        return (USER_MEMORY / rel).resolve()
     raise FileNotFoundError(rel)
+
+
+def read_memory_file(file_id_or_path: str) -> str:
+    """Read the raw content of any memory or rule file by id or path."""
+    path = resolve_memory_path(file_id_or_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
+    return _read(path)
+
+
+def write_memory_file(file_id_or_path: str, content: str, auto_sync: bool = True) -> str:
+    """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs."""
+    path = resolve_memory_path(file_id_or_path)
+    _write(path, content)
+    clear_memory_cache()
+    if auto_sync:
+        try:
+            sync_injection(include_repos=True)
+        except Exception:
+            pass
+    return file_id(path)
 
 
 def _markdown_under(root: Path) -> List[Path]:
@@ -1875,6 +1923,7 @@ def add_memory(
     name: str = "",
     project: str = "",
     collection: str = "",
+    auto_sync: bool = True,
 ) -> str:
     """File a durable fact. kind+name → taxonomy; project= alone → staging/captured.md (inbox)."""
     fact = fact.strip()
@@ -1885,6 +1934,12 @@ def add_memory(
     )
     existed = path.exists()
     loc = _append_bullet(path, fact)
+    clear_memory_cache()
+    if auto_sync:
+        try:
+            sync_injection(include_repos=True)
+        except Exception:
+            pass
     k = (kind or "").strip().lower()
     if k in REVISE_IN_PLACE_KINDS and existed:
         return (
@@ -1914,7 +1969,7 @@ def get_project_memories(project: str) -> str:
     return "\n".join(parts)
 
 
-def delete_memory(memory_id: str) -> str:
+def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     if ":" not in memory_id:
         raise ValueError(
             "id must look like 'user/notes/programming/chat-stores.md:12' "
@@ -1930,6 +1985,12 @@ def delete_memory(memory_id: str) -> str:
         raise IndexError(memory_id)
     removed = lines.pop(line_no - 1)
     _write(path, "\n".join(lines))
+    clear_memory_cache()
+    if auto_sync:
+        try:
+            sync_injection(include_repos=True)
+        except Exception:
+            pass
     return removed
 
 
@@ -1990,6 +2051,7 @@ def promote_bullet(
     project: str = "",
     collection: str = "",
     source_path: str = "",
+    auto_sync: bool = True,
 ) -> Tuple[str, bool]:
     """Promote a staging bullet into a typed memory file and remove it from staging.
 
@@ -2005,8 +2067,15 @@ def promote_bullet(
         name=name,
         project=project,
         collection=collection,
+        auto_sync=False,
     )
     removed = remove_staging_bullet(clean_bullet, project=project, source_path=source_path)
+    clear_memory_cache()
+    if auto_sync:
+        try:
+            sync_injection(include_repos=True)
+        except Exception:
+            pass
     return loc, removed
 
 
@@ -2173,7 +2242,7 @@ def staging_status_summary() -> dict:
     }
 
 
-def distill_batch(items: List[dict]) -> dict:
+def distill_batch(items: List[dict], auto_sync: bool = True) -> dict:
     """Batch process staging bullets into typed memory or discard them.
 
     Each item is a dict with:
@@ -2205,10 +2274,18 @@ def distill_batch(items: List[dict]) -> dict:
                 project=proj,
                 collection=coll,
                 source_path=src_path,
+                auto_sync=False,
             )
             promoted += 1
         except Exception as e:
             errors.append(f"{bullet[:30]}...: {e}")
+
+    clear_memory_cache()
+    if auto_sync:
+        try:
+            sync_injection(include_repos=True)
+        except Exception:
+            pass
 
     remaining = count_staging_bullets()
     return {
@@ -2217,3 +2294,76 @@ def distill_batch(items: List[dict]) -> dict:
         "remaining_staging_count": remaining,
         "errors": errors,
     }
+
+
+_NOISE_LINE_PATTERNS = (
+    r"^(?:ok|okay|danke|super|perfekt|thanks|thx|hi|hallo|yes|no|ja|nein|cool|top|alles klar)\.?$",
+    r"\?$",
+    r"^(?:can you|kannst du|kann man|wie kann|what is|how do|check line|zeile|error:|syntaxerror|traceback)",
+)
+
+
+def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = True) -> dict:
+    """Automatically classify and distill staging inbox bullets into memory or discard noise."""
+    inbox = get_staging_inbox(limit=limit)
+    items_to_distill = []
+    noise_re = [re.compile(pat, re.IGNORECASE) for pat in _NOISE_LINE_PATTERNS]
+
+    for group in inbox.get("groups", []):
+        for item in group.get("bullets", []):
+            raw_text = item.get("text") or item.get("bullet") or ""
+            bullet_text = item.get("bullet") or raw_text
+            src_path = item.get("source_path") or item.get("file") or ""
+            proj = item.get("project") or ""
+
+            # Check noise
+            is_noise = False
+            for r in noise_re:
+                if r.search(raw_text.strip()):
+                    is_noise = True
+                    break
+
+            if len(raw_text.strip()) < 8:
+                is_noise = True
+
+            if is_noise:
+                if discard_noise:
+                    items_to_distill.append({
+                        "bullet": bullet_text,
+                        "discard": True,
+                        "project": proj,
+                        "source_path": src_path,
+                    })
+                continue
+
+            # Check for stack/preferences
+            lower = raw_text.lower()
+            if any(k in lower for k in ("always ", "never ", "prefer ", "immer ", "nie ", "bevorzuge ", "stack:", "stack defaults")):
+                items_to_distill.append({
+                    "bullet": bullet_text,
+                    "kind": "note",
+                    "name": "preferences",
+                    "collection": "preferences",
+                    "project": proj,
+                    "source_path": src_path,
+                })
+            elif proj:
+                items_to_distill.append({
+                    "bullet": bullet_text,
+                    "kind": "note",
+                    "name": "facts",
+                    "project": proj,
+                    "source_path": src_path,
+                })
+
+    if not items_to_distill:
+        return {
+            "promoted": 0,
+            "discarded": 0,
+            "remaining_staging_count": count_staging_bullets(),
+            "errors": [],
+            "message": "No obvious rules or noise auto-classified; manual distillation required for remaining items.",
+        }
+
+    res = distill_batch(items_to_distill, auto_sync=auto_sync)
+    return res

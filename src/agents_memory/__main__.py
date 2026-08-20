@@ -28,7 +28,7 @@ Commands:
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
-    if not args or args[0] in ("-h", "--help"):
+    if not args or args[0] in ("-h", "--help", "help"):
         print(USAGE, end="")
         return 0 if args else 2
     if args[0] in ("-v", "--version", "version"):
@@ -41,6 +41,10 @@ def main(argv: list[str] | None = None) -> int:
 
         return help_main(["--help-json"])
     cmd, rest = args[0], args[1:]
+    if cmd == "init":
+        from .sync import main as run
+
+        return run(["--init", *rest])
     if cmd == "sync":
         from .sync import main as run
 

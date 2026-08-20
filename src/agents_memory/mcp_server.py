@@ -303,6 +303,14 @@ def ingest_status() -> str:
         return f"Error reading ingest status: {e}"
 
 
+# Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed
+try:
+    from agents_traces import auto_trace_mcp
+    auto_trace_mcp(mcp)
+except Exception:
+    pass
+
+
 def main() -> int:
     print("Starting local agents-memory MCP on stdio...", file=sys.stderr)
     mcp.run()

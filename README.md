@@ -1,7 +1,7 @@
 # agents-memory
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Version 1.0.0"></a>
+  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.0.1-blue.svg?style=flat-square" alt="Version 1.0.1"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-memory/"><img src="https://img.shields.io/pypi/v/agents-memory.svg?style=flat-square" alt="PyPI"></a>
@@ -62,7 +62,7 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 
 ## Quickstart
 
-### 1-Step Setup
+### 1. Standard Install (PyPI)
 
 ```bash
 pip install agents-memory && agents-memory sync --init
@@ -70,10 +70,20 @@ pip install agents-memory && agents-memory sync --init
 
 Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
 
-> [!TIP]
-> **🤖 Agent-Driven Setup (Zero Friction):**  
-> Simply tell your coding agent: **"Install and set up agents-memory for me."**  
-> The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
+### 2. Agent-Driven Setup (Zero Friction)
+
+Simply tell your coding assistant: **"Install and set up agents-memory for me."**  
+The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
+
+### 3. Source Checkout via vand
+
+If you manage multi-repo checkouts with [vand](https://github.com/Lolaplex/vand), `agents-memory` includes declarative lifecycle hooks in `source.yaml`:
+
+```bash
+vand clone Lolaplex/agents-memory
+```
+
+`vand` clones the repository, executes the automated editable install defined in `source.yaml`, and keeps local dependencies synchronized on update.
 
 ---
 

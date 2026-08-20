@@ -34,7 +34,7 @@ def _resolve_version() -> str:
         return version("agents-memory")
     except Exception:
         pass
-    return "1.0.0"
+    return "1.0.1"
 
 
 __version__ = _resolve_version()

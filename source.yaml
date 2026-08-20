@@ -1,4 +1,4 @@
-# Machine-readable hooks for git-updater.
+# Machine-readable hooks for vand (https://github.com/Lolaplex/vand)
 version: 1
 install: python -m pip install -e .
 update: python -m pip install -e .

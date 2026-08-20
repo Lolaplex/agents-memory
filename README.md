@@ -71,7 +71,7 @@ pip install agents-memory && agents-memory sync --init
 Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
 
 > [!TIP]
-> **Agent-Driven Setup (Zero Friction):**  
+> **🤖 Agent-Driven Setup (Zero Friction):**  
 > Simply tell your coding agent: **"Install and set up agents-memory for me."**  
 > The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
 

@@ -123,7 +123,7 @@ MARKER = "<!-- agents-memory-sync -->"
 PATHS_BEGIN = "<!-- agents-memory-paths -->"
 PATHS_END = "<!-- /agents-memory-paths -->"
 DEFAULT_RULE_NAME = "user-rules.mdc"
-LEGACY_RULE_STEMS = ("felix-always",)
+LEGACY_RULE_STEMS = ("legacy-always",)
 SKILL_TEMPLATE = (
     (ROOT / "skills" / "memory-sync" / "SKILL.md")
     if (ROOT / "skills" / "memory-sync" / "SKILL.md").is_file()

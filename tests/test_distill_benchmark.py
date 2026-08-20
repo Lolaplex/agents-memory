@@ -47,7 +47,7 @@ BENCHMARK_DATASET = [
     },
     # --- Category 3: User Preferences & Persona (Keep -> kind=note / collection=preferences) ---
     {
-        "bullet": "[Preferences @ 2026-08-01] Felix prefers Caveman Ultra mode: dense, direct, 0 fluff, 0 courtesy filler",
+        "bullet": "[Preferences @ 2026-08-01] User prefers Caveman Ultra mode: dense, direct, 0 fluff, 0 courtesy filler",
         "expected_discard": False,
         "expected_kind": "note",
         "expected_collection": "preferences",

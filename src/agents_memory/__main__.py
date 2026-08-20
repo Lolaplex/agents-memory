@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args or args[0] in ("-h", "--help"):
         print(USAGE, end="")
         return 0 if args else 2
+    if args[0] in ("-v", "--version", "version"):
+        from . import __version__
+
+        print(f"agents-memory {__version__}")
+        return 0
     if args[0] in ("--help-json", "help-json"):
         from .cli_help import main as help_main
 

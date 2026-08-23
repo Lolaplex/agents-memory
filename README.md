@@ -15,7 +15,7 @@ One persistent identity, shared across **Claude Code**, **Cursor**, **Antigravit
 
 ## Quickstart
 
-### 1. 1-Step Setup (PyPI)
+### 1-Step Setup
 
 ```bash
 pip install agents-memory && agents-memory sync --init
@@ -30,13 +30,7 @@ Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed 
 > Simply tell your coding agent: **"Install and set up agents-memory for me."**  
 > The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
 
-### 3. Source Checkout via vand
-
-If you manage multi-repo checkouts with [vand](https://github.com/Lolaplex/vand), `agents-memory` includes declarative lifecycle hooks in `source.yaml`:
-
-```bash
-vand clone Lolaplex/agents-memory
-```
+*Source checkouts can also be installed and managed using [vand](https://github.com/Lolaplex/vand).*
 
 ---
 
@@ -122,7 +116,7 @@ The formal, implementation-agnostic layout specification lives in [`abi/`](abi/)
 - [`abi/WHY.md`](abi/WHY.md) — Architecture decisions & why Markdown wins over RAG.
 - [`abi/LAYOUT.md`](abi/LAYOUT.md) — Directory taxonomy and path contracts.
 - [`abi/KINDS.md`](abi/KINDS.md) — Typed memory taxonomy (`concepts`, `facts`, `decisions`).
-- [`abi/MCP.md`](abi/MCP.md) — Tool definitions and request/response specifications.
+- [`abi/MCP.md`](abi/MCP.md) — Tool surface definitions and request/response specifications.
 - [`abi/INGEST.md`](abi/INGEST.md) — Catalog, extract, and distillation pipeline.
 - [`abi/INJECTION.md`](abi/INJECTION.md) — Host rule injection mechanisms.
 

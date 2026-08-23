@@ -13,6 +13,33 @@ One persistent identity, shared across **Claude Code**, **Cursor**, **Antigravit
 
 ---
 
+## Quickstart
+
+### 1. 1-Step Setup (PyPI)
+
+```bash
+pip install agents-memory && agents-memory sync --init
+```
+
+Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
+
+### 2. Agent-Driven Setup (Zero Friction)
+
+> [!TIP]
+> **🤖 Agent-Driven Setup (Zero Friction):**  
+> Simply tell your coding agent: **"Install and set up agents-memory for me."**  
+> The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
+
+### 3. Source Checkout via vand
+
+If you manage multi-repo checkouts with [vand](https://github.com/Lolaplex/vand), `agents-memory` includes declarative lifecycle hooks in `source.yaml`:
+
+```bash
+vand clone Lolaplex/agents-memory
+```
+
+---
+
 ## Why `.agents/memory`?
 
 The name **`agents-memory`** comes directly from its universal storage standard: **`.agents/memory`**.
@@ -59,25 +86,6 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
  │  Antigravity AGENTS.md      │ │  Universal Tool Integration │
  └─────────────────────────────┘ └─────────────────────────────┘
 ```
-
----
-
-## Quickstart
-
-### 1-Step Setup
-
-```bash
-pip install agents-memory && agents-memory sync --init
-```
-
-Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
-
-> [!TIP]
-> **🤖 Agent-Driven Setup (Zero Friction):**  
-> Simply tell your coding agent: **"Install and set up agents-memory for me."**  
-> The agent installs the package, asks your stack preferences once, fills your `USER.md` profile, and registers your repositories autonomously.
-
-*Source checkouts can also be installed and managed using [vand](https://github.com/Lolaplex/vand).*
 
 ---
 

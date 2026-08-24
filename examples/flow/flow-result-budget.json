@@ -1,0 +1,18 @@
+{
+  "status": "completed",
+  "cost": { "used": 4, "remaining": 46 },
+  "result": {
+    "branch": "promoted",
+    "fields": {
+      "path": "user/concepts/staging-hygiene",
+      "kind": "concept"
+    }
+  },
+  "obligations": [],
+  "links": [
+    {
+      "rel": "search",
+      "capability": "memory.resolve"
+    }
+  ]
+}

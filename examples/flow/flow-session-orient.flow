@@ -1,0 +1,10 @@
+# flow: session snap -> baton check -> chronicle append
+# scope: memory.v1
+# Session orientation flow: read recent user lines + baton header, then log session start beat.
+
+session.snap(limit: 10)
+| snap output |>
+    append.chronicle(beat: "Session resumed and oriented from recent lines", emoji: "🔄")
+    | recorded loc |> result { loc: loc }
+    | failed err |> result { error: err }
+| unavailable reason |> result { error: reason }

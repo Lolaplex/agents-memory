@@ -1,0 +1,14 @@
+{
+  "relation_kinds": [
+    { "name": "refs", "description": "Directional reference from this entity to another", "symmetric": false },
+    { "name": "supersedes", "description": "This entity replaces the target (old kept, marked superseded)", "symmetric": false },
+    { "name": "same_as", "description": "Identity assertion: these two ids refer to the same thing", "symmetric": true },
+    { "name": "at_project", "description": "Scoped to a project slug", "symmetric": false },
+    { "name": "at_landmark", "description": "Located at a plex landmark", "symmetric": false },
+    { "name": "near", "description": "Proximity relation between records/entities", "symmetric": true },
+    { "name": "on_trail", "description": "Part of an ordered trail", "symmetric": false },
+    { "name": "survey_ref", "description": "Survey pointer from catalog to body", "symmetric": false },
+    { "name": "part_of", "description": "Containment relation", "symmetric": false },
+    { "name": "next", "description": "Sequence ordering", "symmetric": false }
+  ]
+}

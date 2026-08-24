@@ -54,6 +54,8 @@ FACTS_MD = USER_MEMORY / "facts.md"
 CHATS_INDEX = USER_MEMORY / "chats-index.md"
 LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
 PROJECTS_DIR = USER_MEMORY / "projects"
+EVENTS_DIR = USER_MEMORY / "events"
+CHRONICLE_DIR = EVENTS_DIR / "chronicle"
 CLAUDE_HOME = Path.home() / ".claude"
 HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
 HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
@@ -457,6 +459,7 @@ def migrate_taxonomy() -> None:
 def ensure_memory_layout() -> None:
     """Create ~/.agents/memory and copy example scaffolding if missing."""
     USER_MEMORY.mkdir(parents=True, exist_ok=True)
+    CHRONICLE_DIR.mkdir(parents=True, exist_ok=True)
     _write(LAYOUT_MD, shipped_layout_text())
     orphans_doc = ORPHANS / "README.md"
     if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
@@ -2565,3 +2568,267 @@ def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = 
 
     res = distill_batch(items_to_distill, auto_sync=auto_sync)
     return res
+
+
+# ----------------------------------------------------------------------
+# Wave 002 — Temporal Layer (baton rituals, chronicle, session tools)
+# ----------------------------------------------------------------------
+
+
+def find_project(slug_or_path: str = "", cwd: str = "") -> Optional[Project]:
+    projects = parse_projects()
+    if not projects:
+        return None
+    slug_or_path = slug_or_path.strip()
+    if slug_or_path:
+        for p in projects:
+            if p.slug == slug_or_path or str(p.path_obj) == slug_or_path:
+                return p
+    if cwd:
+        try:
+            cwd_p = Path(cwd).resolve()
+            for p in projects:
+                try:
+                    if cwd_p == p.path_obj.resolve() or cwd_p.is_relative_to(p.path_obj.resolve()):
+                        return p
+                except (ValueError, OSError):
+                    pass
+        except (ValueError, OSError):
+            pass
+    return None
+
+
+def get_baton(project: str = "", cwd: str = "") -> str:
+    p = find_project(project, cwd)
+    if p:
+        baton_path = p.memory_dir / "rituals" / "baton.md"
+    else:
+        baton_path = USER_MEMORY / "rituals" / "baton.md"
+    return _read(baton_path).strip()
+
+
+def set_baton(text: str, project: str = "", cwd: str = "") -> str:
+    text = text.strip()
+    p = find_project(project, cwd)
+    if p:
+        baton_path = p.memory_dir / "rituals" / "baton.md"
+    else:
+        baton_path = USER_MEMORY / "rituals" / "baton.md"
+    _write(baton_path, text)
+    sync_injection()
+    return str(baton_path)
+
+
+def append_chronicle(
+    beat: str,
+    project: str = "",
+    emoji: str = "📝",
+    refs: Optional[List[str]] = None,
+) -> str:
+    beat = beat.strip()
+    if not beat:
+        raise ValueError("Chronicle beat cannot be empty")
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    ts = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+    date_stamp = now.strftime("%Y-%m-%d")
+
+    slug = project.strip() if project.strip() else date_stamp
+    file_path = CHRONICLE_DIR / f"{slug}.md"
+
+    line = f"- {emoji} [{ts}] {beat}"
+    if refs:
+        refs_json = json.dumps(refs)
+        line += f"\n  refs: {refs_json}"
+
+    existing = _read(file_path)
+    if not existing:
+        header = f"# Chronicle — {slug}\n\n"
+        content = header + line + "\n"
+    else:
+        content = existing.rstrip() + "\n" + line + "\n"
+
+    _write(file_path, content)
+    sync_injection()
+    return str(file_path)
+
+
+def _collect_raw_session_user_lines() -> List[dict]:
+    """Gather user message lines from ingest-configured jsonl and transcript sources."""
+    try:
+        from .ingest_config import load_ingest, list_sources, resolve_source_roots
+        from .ingest_extractors import _jsonl_user_lines, user_messages, unzip_export
+    except ImportError:
+        return []
+
+    out: List[dict] = []
+    cfg = load_ingest()
+    for src in list_sources(cfg):
+        kind = src.get("kind") or ""
+        label = src.get("label") or src.get("id") or "session"
+        roots = resolve_source_roots(src)
+        for root in roots:
+            if kind == "openai-export":
+                export = root
+                if root.suffix.lower() == ".zip":
+                    try:
+                        export = unzip_export(root)
+                    except Exception:
+                        continue
+                elif not any(root.glob("conversations-*.json")) and root.is_dir():
+                    continue
+                for shard in sorted(export.glob("conversations-*.json")):
+                    try:
+                        data = json.loads(shard.read_text(encoding="utf-8"))
+                        for conv in data if isinstance(data, list) else []:
+                            if not isinstance(conv, dict):
+                                continue
+                            title = str(conv.get("title") or "(untitled)")
+                            for text in user_messages(conv):
+                                text_clean = text.strip()
+                                if text_clean:
+                                    out.append({"source": label, "title": title, "text": text_clean, "file": shard.name})
+                    except Exception:
+                        pass
+            else:
+                files: List[Path] = []
+                if root.is_dir():
+                    files = sorted(root.rglob("*.jsonl"))
+                elif root.is_file() and root.suffix == ".jsonl":
+                    files = [root]
+
+                for p in files:
+                    if "subagents" in p.parts:
+                        continue
+                    try:
+                        with p.open(encoding="utf-8", errors="replace") as fh:
+                            for line in fh:
+                                try:
+                                    obj = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                text = ""
+                                role = obj.get("role") or (obj.get("message") or {}).get("role") or obj.get("type")
+                                if role in ("user", "USER_INPUT") or obj.get("kind") == 1:
+                                    msg = obj.get("message") or obj.get("content") or obj
+                                    if isinstance(msg, dict):
+                                        c = msg.get("content") or msg.get("text") or msg.get("inputText") or ""
+                                        if isinstance(c, str):
+                                            text = c
+                                        elif isinstance(c, list):
+                                            text = " ".join(
+                                                part.get("text") or ""
+                                                for part in c
+                                                if isinstance(part, dict) and part.get("type") in ("text", "input")
+                                            )
+                                    elif isinstance(msg, str):
+                                        text = msg
+                                if text.strip():
+                                    out.append({"source": label, "title": p.parent.name[:12], "text": text.strip(), "file": str(p)})
+                    except Exception:
+                        pass
+    return out
+
+
+def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
+    limit = max(1, limit)
+    baton = get_baton(project=project, cwd=cwd)
+    p = find_project(project, cwd)
+    proj_name = p.slug if p else (project or "global")
+
+    parts = []
+    if baton:
+        parts.append(f"=== BATON RITUAL ({proj_name}) ===\n{baton}\n===================================")
+
+    lines = _collect_raw_session_user_lines()
+    recent = lines[-limit:] if len(lines) > limit else lines
+
+    if recent:
+        parts.append(f"--- Recent Session User Lines ({len(recent)}) ---")
+        for item in reversed(recent):
+            snippet = item["text"]
+            if len(snippet) > 300:
+                snippet = snippet[:300] + "..."
+            parts.append(f"[{item['source']} | {item['title']}] {snippet}")
+    else:
+        parts.append("No session user lines found in configured ingest sources.")
+
+    return "\n\n".join(parts)
+
+
+def session_grep(pattern: str, since: str = "", project: str = "") -> str:
+    if not pattern:
+        return "Error: pattern is required for session_grep"
+    try:
+        rx = re.compile(pattern, re.IGNORECASE)
+    except re.error as e:
+        return f"Error invalid regex pattern: {e}"
+
+    lines = _collect_raw_session_user_lines()
+    hits = []
+    for item in lines:
+        if since and item.get("date", "") < since:
+            continue
+        if rx.search(item["text"]) or rx.search(item["title"]):
+            hits.append(item)
+
+    if not hits:
+        return f"No session lines matching '{pattern}'."
+
+    out = [f"Found {len(hits)} matching session lines:"]
+    for item in hits[-50:]:
+        snippet = item["text"].replace("\n", " ")
+        if len(snippet) > 200:
+            snippet = snippet[:200] + "..."
+        out.append(f"- [{item['source']} | {item['title']}] {snippet}")
+    return "\n".join(out)
+
+
+def session_tail(session_id: str = "", limit: int = 10) -> str:
+    limit = max(1, limit)
+    lines = _collect_raw_session_user_lines()
+    if session_id:
+        filtered = [l for l in lines if session_id.lower() in l["file"].lower() or session_id.lower() in l["title"].lower()]
+    else:
+        filtered = lines
+
+    if not filtered:
+        return f"No session lines found matching '{session_id}'." if session_id else "No session lines found."
+
+    recent = filtered[-limit:]
+    out = [f"Session tail ({len(recent)} lines):"]
+    for item in recent:
+        snippet = item["text"].replace("\n", " ")
+        if len(snippet) > 250:
+            snippet = snippet[:250] + "..."
+        out.append(f"- [{item['source']} | {item['title']}] {snippet}")
+    return "\n".join(out)
+
+
+def check_memory_freshness() -> Dict[str, Any]:
+    """Check freshness across staging inbox, project batons, and index cache.
+    Returns nag warnings for stale baton (>24h), staging accumulation (>20 bullets), and index status.
+    """
+    nags: List[str] = []
+    inbox = get_staging_inbox()
+    if inbox["total"] > 20:
+        nags.append(f"Staging inbox has {inbox['total']} unprocessed bullets (recommend running distill / memory-distill).")
+
+    # Check batons
+    now = time.time()
+    for proj in parse_projects():
+        baton_file = proj.memory_dir / "rituals" / "baton.md"
+        if baton_file.exists():
+            try:
+                age_hours = (now - baton_file.stat().st_mtime) / 3600.0
+                if age_hours > 24.0:
+                    nags.append(f"Project '{proj.slug}' baton is stale ({round(age_hours, 1)}h since last update).")
+            except OSError:
+                pass
+
+    return {
+        "status": "warning" if nags else "ok",
+        "staging_count": inbox["total"],
+        "nags": nags,
+    }
+

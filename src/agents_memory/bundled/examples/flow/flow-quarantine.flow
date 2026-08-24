@@ -1,0 +1,7 @@
+# flow: quarantine propose
+# scope: memory.v1
+# Agent-safe write boundary: propose to staging, never direct to typed memory.
+
+quarantine.propose(fact: "New deployment pattern discovered in homelab", source: "coding-agent")
+| accepted entry |> result { staged: entry }
+| rejected reason |> result { error: reason }

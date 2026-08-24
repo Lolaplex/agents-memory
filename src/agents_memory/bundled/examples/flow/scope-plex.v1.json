@@ -1,0 +1,60 @@
+{
+  "scope": "plex.v1",
+  "budget": { "unit": "cost", "maximum": 100 },
+  "capabilities": [
+    {
+      "id": "records.resolve",
+      "cost": 1,
+      "inputs": [
+        { "name": "ref", "type": "RecordRef", "required": true }
+      ],
+      "outcomes": ["found", "ambiguous", "not_found"],
+      "semantic": {
+        "consumes": ["RecordRef"],
+        "produces": ["Record"],
+        "relations": ["same_as", "at_landmark"]
+      }
+    },
+    {
+      "id": "records.open",
+      "cost": 5,
+      "inputs": [
+        { "name": "record", "type": "Record", "required": true }
+      ],
+      "outcomes": ["opened", "unsupported", "failed"],
+      "semantic": {
+        "consumes": ["Record"],
+        "produces": ["WebViewInstance"],
+        "relations": []
+      }
+    },
+    {
+      "id": "landmarks.list",
+      "cost": 1,
+      "inputs": [],
+      "outcomes": ["found", "empty"],
+      "semantic": {
+        "consumes": [],
+        "produces": ["Landmark"],
+        "relations": ["at_landmark"]
+      }
+    },
+    {
+      "id": "quarantine.propose",
+      "cost": 1,
+      "inputs": [
+        { "name": "url", "type": "string", "required": false },
+        { "name": "title", "type": "string", "required": false },
+        { "name": "notes", "type": "string", "required": false },
+        { "name": "landmark", "type": "string", "required": false },
+        { "name": "source", "type": "string", "required": true }
+      ],
+      "outcomes": ["accepted", "rejected"],
+      "semantic": {
+        "consumes": [],
+        "produces": ["QuarantineEntry"],
+        "relations": ["at_landmark"]
+      }
+    }
+  ]
+}

@@ -210,6 +210,36 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("state_file", res)
         self.assertIn("sources", res)
 
+    def test_baton_rituals(self):
+        res_set = mcp_server.set_baton("Initial session baton text", project="demo")
+        self.assertIn("Baton updated at", res_set)
+        res_get = mcp_server.get_baton(project="demo")
+        self.assertEqual(res_get, "Initial session baton text")
+
+    def test_append_chronicle(self):
+        res = mcp_server.append_chronicle("Finished Wave 001 milestones", project="demo", emoji="🚀", refs=["project/demo/decisions/001"])
+        self.assertIn("Beat recorded to", res)
+        chronicle_file = store.CHRONICLE_DIR / "demo.md"
+        self.assertTrue(chronicle_file.exists())
+        content = chronicle_file.read_text(encoding="utf-8")
+        self.assertIn("Finished Wave 001 milestones", content)
+        self.assertIn("🚀", content)
+        self.assertIn("project/demo/decisions/001", content)
+
+    def test_session_snap_grep_tail(self):
+        # set baton so snap includes header
+        mcp_server.set_baton("Current focus: Wave 002 temporal layer", project="demo")
+        snap = mcp_server.session_snap(project="demo")
+        self.assertIn("=== BATON RITUAL (demo) ===", snap)
+        self.assertIn("Current focus: Wave 002 temporal layer", snap)
+
+        grep_res = mcp_server.session_grep(pattern="nonexistent_pattern_12345")
+        self.assertIn("No session lines matching", grep_res)
+
+        tail_res = mcp_server.session_tail(limit=5)
+        self.assertIn("Session", tail_res)
+
 
 if __name__ == "__main__":
     unittest.main()
+

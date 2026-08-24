@@ -1,0 +1,59 @@
+{
+  "scope": "media.v1",
+  "budget": { "unit": "cost", "maximum": 50 },
+  "capabilities": [
+    {
+      "id": "media.resolve",
+      "cost": 1,
+      "inputs": [
+        { "name": "ref", "type": "MediaRef", "required": true }
+      ],
+      "outcomes": ["found", "ambiguous", "not_found"],
+      "semantic": {
+        "consumes": ["MediaRef"],
+        "produces": ["MediaEntity"],
+        "relations": ["same_as", "part_of"]
+      }
+    },
+    {
+      "id": "media.relate",
+      "cost": 1,
+      "inputs": [
+        { "name": "subject", "type": "MediaEntity", "required": true },
+        { "name": "relation", "type": "RelationKind", "required": true }
+      ],
+      "outcomes": ["found", "many", "not_found"],
+      "semantic": {
+        "consumes": ["MediaEntity", "RelationKind"],
+        "produces": ["MediaEntity"],
+        "relations": ["next", "part_of", "near"]
+      }
+    },
+    {
+      "id": "media.authorize",
+      "cost": 1,
+      "inputs": [
+        { "name": "media", "type": "MediaEntity", "required": true }
+      ],
+      "outcomes": ["granted", "denied"],
+      "semantic": {
+        "consumes": ["MediaEntity"],
+        "produces": ["PlaybackGrant"],
+        "relations": []
+      }
+    },
+    {
+      "id": "media.play",
+      "cost": 2,
+      "inputs": [
+        { "name": "grant", "type": "PlaybackGrant", "required": true }
+      ],
+      "outcomes": ["playing", "failed"],
+      "semantic": {
+        "consumes": ["PlaybackGrant"],
+        "produces": ["PlaybackSession"],
+        "relations": []
+      }
+    }
+  ]
+}

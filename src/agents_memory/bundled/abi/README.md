@@ -26,6 +26,8 @@ Markdown on disk is the **source of truth**. Tools sit above it; they must not b
 
 | [`KINDS.md`](KINDS.md) | Where facts go; mutability rules |
 
+| [`HYGIENE.md`](HYGIENE.md) | Three lifetimes, write boundaries, index-as-cache, cross-product boundaries |
+
 | [`INJECTION.md`](INJECTION.md) | AGENTS.md / CLAUDE.md binding |
 
 | [`PLATFORM.md`](PLATFORM.md) | Windows vs Unix, symlinks, per-machine paths |

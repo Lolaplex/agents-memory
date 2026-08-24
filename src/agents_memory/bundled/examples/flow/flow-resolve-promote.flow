@@ -1,0 +1,11 @@
+# flow: resolve → promote
+# scope: memory.v1
+# Generic flow-based capability continuation.
+
+memory.resolve(ref: query("agents-memory staging overflow"))
+| found file |>
+    memory.promote(bullet: file, kind: "concept", name: "staging-hygiene")
+    | promoted result |> result { promoted: result }
+    | rejected reason |> result { error: reason }
+| ambiguous candidates |> result { candidates: candidates }
+| not_found _ |> result { error: "not found" }

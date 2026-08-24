@@ -21,6 +21,10 @@ Commands:
   consolidate      Move clone leaks into ~/.agents/memory
   extract-openai   Filter Open AI GDPR export into staging
   distill          Inspect staging inbox for distillation
+  check            Mechanical store health checks (read-only, zero AI)
+  serve            Start local memory browser (localhost:8765)
+  web              Export static HTML website
+  rebuild-index    Rebuild disposable FTS index cache
   mcp              stdio MCP server
   help-json        Machine-readable CLI + injection spec
 """
@@ -62,7 +66,9 @@ def main(argv: list[str] | None = None) -> int:
 
         if "--auto" in rest or "-a" in rest:
             res = auto_distill(limit=50, discard_noise=True, auto_sync=True)
-            print(f"Auto-distill result: {res['promoted']} promoted, {res['discarded']} discarded, {res['remaining_staging_count']} remaining.")
+            print(
+                f"Auto-distill result: {res['promoted']} promoted, {res['discarded']} discarded, {res['remaining_staging_count']} remaining."
+            )
             if res.get("errors"):
                 for err in res["errors"]:
                     print(f"  Error: {err}")
@@ -83,7 +89,9 @@ def main(argv: list[str] | None = None) -> int:
                 title = item.get("title") or ""
                 prefix = f"[{title}] " if title else ""
                 print(f"- {prefix}{item.get('text') or item.get('bullet')}")
-        print("\nTo distill, tell your Agent: 'run memory-distill' or use the memory-distill skill (or: python -m agents_memory distill --auto).")
+        print(
+            "\nTo distill, tell your Agent: 'run memory-distill' or use the memory-distill skill (or: python -m agents_memory distill --auto)."
+        )
         return 0
     if cmd in ("ingest-chats", "ingest_chats"):
         from .ingest_chats import main as run
@@ -96,11 +104,42 @@ def main(argv: list[str] | None = None) -> int:
     if cmd in ("extract-openai", "extract_openai"):
         from .extract_openai import main as run
 
+        return run()
+    if cmd == "check":
+        from .check import main as run_check
+
+        return run_check(rest)
+    if cmd == "serve":
+        from .viewer import serve_viewer
+
+        port = int(rest[0]) if rest and rest[0].isdigit() else 8765
+        serve_viewer(port=port)
+        return 0
+    if cmd == "web":
+        from .viewer import export_static_web
+
+        out_dir = Path(rest[0]) if rest else None
+        res = export_static_web(dest_dir=out_dir)
+        print(
+            f"Exported static memory website: {res['files']} files to {res['export_dir']}"
+        )
+        return 0
+    if cmd in ("rebuild-index", "rebuild_index", "index"):
+        from .index import rebuild_index
+
+        res = rebuild_index()
+        print(
+            f"Indexed {res['indexed']} markdown documents in {res['duration_ms']}ms -> {res['db_path']}"
+        )
+        return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:
-            print("WARNING: This will clear local memory caches and temporary state. Pass --yes to confirm.")
+            print(
+                "WARNING: This will clear local memory caches and temporary state. Pass --yes to confirm."
+            )
             return 1
         from .store import clear_memory_cache
+
         clear_memory_cache()
         print("Memory state and cache reset successfully.")
         return 0

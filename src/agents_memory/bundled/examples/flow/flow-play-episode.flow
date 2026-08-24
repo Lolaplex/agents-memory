@@ -1,0 +1,18 @@
+# flow: resolve show -> next episode -> authorize -> play
+# scope: media.v1
+# Pure flow-based capability continuation without filesystem paths.
+
+media.resolve(ref: query("The Expanse S03E01"))
+| found show |>
+    media.relate(subject: show, relation: "next")
+    | found episode |>
+        media.authorize(media: episode)
+        | granted grant |>
+            media.play(grant: grant)
+            | playing session |> result { session: session }
+            | failed reason |> result { error: reason }
+        | denied reason |> result { error: reason }
+    | many candidates |> result { candidates: candidates }
+    | not_found _ |> result { error: "next episode not found" }
+| ambiguous candidates |> result { candidates: candidates }
+| not_found _ |> result { error: "show not found" }

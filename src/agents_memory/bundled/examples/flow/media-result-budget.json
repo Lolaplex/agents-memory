@@ -1,0 +1,27 @@
+{
+  "status": "completed",
+  "cost": { "used": 5, "remaining": 45 },
+  "result": {
+    "branch": "playing",
+    "fields": {
+      "session": {
+        "kind": "PlaybackSession",
+        "id": "session:play-987",
+        "stream_url": "/runtime/stream/play-987"
+      }
+    }
+  },
+  "obligations": [
+    {
+      "kind": "PlaybackSession",
+      "id": "session:play-987",
+      "state": "active"
+    }
+  ],
+  "links": [
+    {
+      "rel": "stop",
+      "capability": "media.stop"
+    }
+  ]
+}

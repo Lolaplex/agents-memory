@@ -1,0 +1,17 @@
+{
+  "status": "completed",
+  "cost": { "used": 3, "remaining": 47 },
+  "result": {
+    "branch": "recorded",
+    "fields": {
+      "loc": "user/events/chronicle/2026-08-24.md"
+    }
+  },
+  "obligations": [],
+  "links": [
+    {
+      "rel": "baton",
+      "capability": "memory.get-baton"
+    }
+  ]
+}

@@ -90,6 +90,50 @@ Filter durable user lines into `staging/ingest/<id>/captured.md` for one source 
 
 JSON summary from `ingest/state.json` plus `staging` block: `bullet_count`, `group_count`, `threshold`, `nag` (when inbox exceeds threshold).
 
+### `get_baton(project="", cwd="")`
+
+Read the session handoff baton marker text for a project (`<repo>/.agents/memory/rituals/baton.md`) or global user store fallback (`~/.agents/memory/rituals/baton.md`).
+
+### `set_baton(text, project="", cwd="")`
+
+Write or update the session handoff baton marker text. Mutable ritual; triggers auto-sync.
+
+### `append_chronicle(beat, project="", emoji="📝", refs=[])`
+
+Append an observation beat to `~/.agents/memory/events/chronicle/<slug>.md`. Includes timestamp and optional relation `refs:`.
+
+### `session_snap(limit=20, project="", cwd="")`
+
+Fetch verbatim recent user lines from ingest-configured jsonl/transcript sources. Includes active baton header if present.
+
+### `session_grep(pattern, since="", project="")`
+
+Stream search across raw session logs matching pattern (case-insensitive regex/substring).
+
+### `session_tail(session_id="", limit=10)`
+
+Tail recent lines from a live or recent session log.
+
+### `rebuild_index()`
+
+Rebuild the disposable SQLite FTS search index cache from markdown files on disk.
+
+### `search_hybrid(query, project="", limit=20)`
+
+Search indexed memory using FTS5 rank-ordered search with phrase and term fallback.
+
+### `get_related(memory_id, limit=5)`
+
+Retrieve explicit relations (`refs`, `supersedes`, `same_as`, `at_project`) and content-related documents for a memory item.
+
+### `suggest_links(from_id, limit=5)`
+
+Propose candidate typed relation links based on content overlap for human review.
+
+### `check_memory_freshness()`
+
+Check freshness across staging inbox, project batons, and index cache. Returns nag warnings for stale state.
+
 ## Non-goals
 
 - No cloud sync, no embedding database as source of truth, no LLM on write.

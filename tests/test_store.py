@@ -12,7 +12,14 @@ from agents_memory import store
 
 
 class AddMemoryTests(unittest.TestCase):
-    def setUp(self):
+    tmp: "tempfile.TemporaryDirectory[str]"
+    root: Path
+    user: Path
+    repo: Path
+    projects_md: Path
+    patches: "list"
+
+    def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.user = self.root / "user"
@@ -207,7 +214,7 @@ class AddMemoryTests(unittest.TestCase):
         with patch("agents_memory.ingest_config.load_ingest", lambda: ingest):
             summary = store.staging_status_summary()
         self.assertEqual(summary["bullet_count"], 5)
-        self.assertIn("memory-distill", summary["nag"])
+        self.assertIn("auto_distill", summary["nag"])
 
     def test_distill_batch(self):
         staging = self.user / "staging"

@@ -81,11 +81,11 @@ def add_memory(
     architecture decisions (ADRs), tool/package choices, styling conventions, or corrections.
     Do NOT wait for explicit user commands like 'save this'.
 
-    kind=concept|entity|workflow|project|note|scratch|research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|staging
+    kind=fact|concept|entity|workflow|project|note|scratch|research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|staging
     plus name= (file stem). collection= for notes/ or a note class
     (feature, bug-fix, simplification, architecture, process, testing).
     Sequential 001-topic.md: plans, tasks, waves, roadmap, decisions, lifecycle notes.
-    kind=research is topical (input). project= alone writes staging/captured.md (inbox).
+    kind=research is topical (input). project= alone writes <repo>/.agents/memory/facts.md (direct fact).
     Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
     """
     try:

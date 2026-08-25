@@ -75,10 +75,17 @@ class AddMemoryTests(unittest.TestCase):
 
     def test_repo_captured_without_kind(self):
         loc = store.add_memory("local only", project="demo")
-        path = self.repo / ".agents" / "memory" / "staging" / "captured.md"
+        path = self.repo / ".agents" / "memory" / "facts.md"
         self.assertTrue(path.exists())
         self.assertIn("local only", path.read_text(encoding="utf-8"))
-        self.assertIn("Staging", path.read_text(encoding="utf-8"))
+        self.assertIn("Facts", path.read_text(encoding="utf-8"))
+        self.assertIn("facts.md", loc)
+
+    def test_repo_explicit_staging(self):
+        loc = store.add_memory("staging inbox item", kind="staging", project="demo")
+        path = self.repo / ".agents" / "memory" / "staging" / "captured.md"
+        self.assertTrue(path.exists())
+        self.assertIn("staging inbox item", path.read_text(encoding="utf-8"))
         self.assertIn("captured.md", loc)
 
     def test_research_in_repo(self):

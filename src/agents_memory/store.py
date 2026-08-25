@@ -23,7 +23,7 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import PACKAGE_DIR, ROOT
 
@@ -235,7 +235,7 @@ def _default_roots() -> List[str]:
     return found or [str(Path.home())]
 
 
-def default_scan() -> dict:
+def default_scan() -> dict[str, Any]:
     return {
         "roots": _default_roots(),
         "agent_rule_name": DEFAULT_RULE_NAME,
@@ -490,7 +490,7 @@ def ensure_memory_layout() -> None:
         _write(dst, _read(src))
 
 
-def load_scan() -> dict:
+def load_scan() -> dict[str, Any]:
     ensure_memory_layout()
     if not SCAN_JSON.exists():
         cfg = default_scan()
@@ -562,8 +562,8 @@ def scan_roots() -> List[str]:
     return [str(Path(r).expanduser()) for r in (load_scan().get("roots") or [])]
 
 
-def mcp_entry() -> dict:
-    entry: dict = {
+def mcp_entry() -> dict[str, Any]:
+    entry: dict[str, Any] = {
         "command": sys.executable,
         "args": ["-m", "agents_memory.mcp_server"],
     }
@@ -773,7 +773,7 @@ def _strip_jsonc(text: str) -> str:
     return stripped
 
 
-def _load_jsonc(path: Path) -> dict:
+def _load_jsonc(path: Path) -> dict[str, Any]:
     raw = _read(path)
     if not raw.strip():
         return {}
@@ -793,7 +793,7 @@ def _resolve_cmd(cmd: str) -> str:
     return found or cmd
 
 
-def _mcp_servers_from_file(path: Path) -> Dict[str, dict]:
+def _mcp_servers_from_file(path: Path) -> Dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     try:
@@ -805,17 +805,17 @@ def _mcp_servers_from_file(path: Path) -> Dict[str, dict]:
     servers = data.get("mcpServers") or data.get("context_servers") or {}
     if not isinstance(servers, dict):
         return {}
-    out: Dict[str, dict] = {}
+    out: Dict[str, dict[str, Any]] = {}
     for name, spec in servers.items():
         if isinstance(name, str) and isinstance(spec, dict):
             out[name] = spec
     return out
 
 
-def collect_mcp_servers() -> Dict[str, dict]:
+def collect_mcp_servers() -> Dict[str, dict[str, Any]]:
     """Union of your Agent host MCP configs. Later files fill missing fields only."""
     sources = known_host_mcp_paths()
-    merged: Dict[str, dict] = {}
+    merged: Dict[str, dict[str, Any]] = {}
     seen: set[str] = set()
     for path in sources:
         key = str(path.resolve()).lower()
@@ -835,10 +835,10 @@ def collect_mcp_servers() -> Dict[str, dict]:
     return merged
 
 
-def mcp_spec_to_zed(spec: dict) -> dict:
+def mcp_spec_to_zed(spec: dict[str, Any]) -> dict[str, Any]:
     url = spec.get("url")
     if isinstance(url, str) and url.strip():
-        entry: dict = {"source": "custom", "url": url.strip()}
+        entry: dict[str, Any] = {"source": "custom", "url": url.strip()}
         headers = spec.get("headers")
         if isinstance(headers, dict) and headers:
             entry["headers"] = headers
@@ -938,7 +938,7 @@ def mirror_skills_to_zed() -> List[str]:
     return written
 
 
-def save_scan(cfg: dict) -> None:
+def save_scan(cfg: dict[str, Any]) -> None:
     _write(SCAN_JSON, json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
 
 
@@ -1160,7 +1160,7 @@ def discover_disk() -> List[Tuple[str, Path]]:
     return found
 
 
-def inventory_report() -> dict:
+def inventory_report() -> dict[str, Any]:
     tracked = parse_projects()
     by_slug = {p.slug: p for p in tracked}
     by_path = {str(p.path_obj.resolve()).lower(): p for p in tracked if p.path_obj.exists()}
@@ -1885,10 +1885,10 @@ def _read_cached_lines(path: Path) -> List[str]:
     return lines
 
 
-def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
+def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict[str, Any]]:
     q = query.lower().strip()
     files = iter_memory_files(project=project)
-    hits: List[dict] = []
+    hits: List[dict[str, Any]] = []
     for path in files:
         lines = _read_cached_lines(path)
         for i, line in enumerate(lines, 1):
@@ -2080,19 +2080,18 @@ def _already_has_fact(text: str, fact: str) -> bool:
 
 def _append_bullet(path: Path, fact: str) -> str:
     bullet = fact if fact.lstrip().startswith("- ") else f"- {fact}"
-    if path.exists():
-        text = _read(path)
-        if _already_has_fact(text, fact):
-            return file_id(path)
-        body = text.rstrip()
-        if body and not body.splitlines()[-1].lstrip().startswith("- "):
-            body += "\n"
-        _write(path, body + f"\n{bullet}\n")
-        return file_id(path)
     if not path.exists():
-        header = STAGING_HEADER if path.parent.name == "staging" else f"# {_heading_from_stem(path.stem)}\n"
+        header = STAGING_HEADER if path.parent.name == "staging" else f"#{_heading_from_stem(path.stem)}\n"
         _write(path, f"{header}\n{bullet}\n")
         return file_id(path)
+    text = _read(path)
+    if _already_has_fact(text, fact):
+        return file_id(path)
+    body = text.rstrip()
+    if body and not body.splitlines()[-1].lstrip().startswith("- "):
+        body += "\n"
+    _write(path, body + f"\n{bullet}\n")
+    return file_id(path)
 
 
 def _append_repo_captured(path: Path, fact: str) -> str:
@@ -2234,7 +2233,18 @@ def remove_staging_bullet(
         file_modified = False
         for line in lines:
             normalized_line = line.strip().lstrip("-").strip().lower()
-            if not file_modified and normalized_line == clean_bullet:
+            # Exact match first; fall back to containment so truncated/
+            # redacted bullet variants still resolve to their source line.
+            matched = (
+                not file_modified
+                and normalized_line
+                and (
+                    normalized_line == clean_bullet
+                    or clean_bullet in normalized_line
+                    or normalized_line in clean_bullet
+                )
+            )
+            if matched:
                 file_modified = True
                 continue
             new_lines.append(line)
@@ -2285,7 +2295,7 @@ _STAGING_BULLET_RE = re.compile(
 )
 
 
-def parse_staging_bullet(text: str) -> dict:
+def parse_staging_bullet(text: str) -> dict[str, str]:
     text = text.strip()
     match = _STAGING_BULLET_RE.match(text)
     if match:
@@ -2319,7 +2329,7 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
     return candidate_paths
 
 
-def _staging_file_meta(path: Path) -> dict:
+def _staging_file_meta(path: Path) -> dict[str, str]:
     fid = file_id(path)
     meta = {"file": fid, "ingest_id": "", "source": fid, "project": ""}
     try:
@@ -2347,19 +2357,19 @@ def _staging_file_meta(path: Path) -> dict:
     return meta
 
 
-def get_staging_inbox(project: str = "", limit: int = 20) -> dict:
+def get_staging_inbox(project: str = "", limit: int = 20) -> dict[str, Any]:
     """Retrieve un-distilled bullets grouped by staging source file.
 
     limit=0 returns all groups with no cap on shown bullets.
     """
-    groups: List[dict] = []
+    groups: List[dict[str, Any]] = []
     total = 0
     for path in _collect_staging_paths(project):
         if not path.is_file():
             continue
         meta = _staging_file_meta(path)
         seen_in_file: set[str] = set()
-        bullets: List[dict] = []
+        bullets: List[dict[str, Any]] = []
         for line in _read(path).splitlines():
             stripped = line.strip()
             if not stripped.startswith(("- ", "* ")):
@@ -2395,7 +2405,7 @@ def get_staging_inbox(project: str = "", limit: int = 20) -> dict:
 
     shown = total
     if limit > 0 and total > limit:
-        capped_groups: List[dict] = []
+        capped_groups: List[dict[str, Any]] = []
         remaining = limit
         for group in groups:
             if remaining <= 0:
@@ -2422,7 +2432,7 @@ def count_staging_bullets(project: str = "") -> int:
     return int(get_staging_inbox(project=project, limit=0)["total"])
 
 
-def staging_status_summary() -> dict:
+def staging_status_summary() -> dict[str, Any]:
     from .ingest_config import load_ingest
 
     inbox = get_staging_inbox(limit=0)
@@ -2432,8 +2442,10 @@ def staging_status_summary() -> dict:
     nag = ""
     if threshold > 0 and total >= threshold:
         nag = (
-            f"{total} staging bullets waiting — run memory-distill, "
-            "MCP get_staging_inbox, or `python -m agents_memory distill`"
+            f"{total} staging bullets waiting — call MCP auto_distill FIRST "
+            "(repeat until remaining_staging_count stops dropping), then manually "
+            "process leftovers via get_staging_inbox + distill_batch. "
+            "The inbox MUST reach 0 before you stop."
         )
     return {
         "bullet_count": total,
@@ -2443,7 +2455,7 @@ def staging_status_summary() -> dict:
     }
 
 
-def distill_batch(items: List[dict], auto_sync: bool = True) -> dict:
+def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[str, Any]:
     """Batch process staging bullets into typed memory or discard them.
 
     Each item is a dict with:
@@ -2504,7 +2516,7 @@ _NOISE_LINE_PATTERNS = (
 )
 
 
-def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = True) -> dict:
+def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = True) -> dict[str, Any]:
     """Automatically classify and distill staging inbox bullets into memory or discard noise."""
     inbox = get_staging_inbox(limit=limit)
     items_to_distill = []
@@ -2558,12 +2570,20 @@ def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = 
                 })
 
     if not items_to_distill:
+        remaining = count_staging_bullets()
         return {
             "promoted": 0,
             "discarded": 0,
-            "remaining_staging_count": count_staging_bullets(),
+            "remaining_staging_count": remaining,
             "errors": [],
-            "message": "No obvious rules or noise auto-classified; manual distillation required for remaining items.",
+            "message": (
+                "No obvious rules or noise auto-classified. "
+                f"{remaining} bullets remain — you MUST now process them manually: "
+                "get_staging_inbox(limit=100), then distill_batch with explicit "
+                "promote or discard decisions for EVERY bullet until the inbox is empty."
+            )
+            if remaining
+            else "Staging inbox empty.",
         }
 
     res = distill_batch(items_to_distill, auto_sync=auto_sync)

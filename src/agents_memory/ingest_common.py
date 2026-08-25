@@ -5,7 +5,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, List
 
 from .store import USER_MEMORY, _append_bullet, _read, _write
 
@@ -123,7 +123,7 @@ def staging_header(source_id: str, label: str) -> str:
     )
 
 
-def load_state() -> dict:
+def load_state() -> dict[str, Any]:
     path = ingest_state_path()
     if not path.is_file():
         return {"sources": {}}
@@ -136,7 +136,7 @@ def load_state() -> dict:
     return {"sources": {}}
 
 
-def save_state(state: dict) -> None:
+def save_state(state: dict[str, Any]) -> None:
     path = ingest_state_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     _write(path, json.dumps(state, indent=2, ensure_ascii=False))
@@ -173,7 +173,7 @@ def append_staging_bullets(source_id: str, label: str, lines: List[str]) -> Path
     return path
 
 
-def write_entity_card(source: dict, paths: List[Path], catalog_count: int) -> Path:
+def write_entity_card(source: dict[str, Any], paths: List[Path], catalog_count: int) -> Path:
     sid = str(source["id"])
     label = str(source.get("label") or sid)
     kind = str(source.get("kind") or "")

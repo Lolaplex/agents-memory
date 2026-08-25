@@ -25,8 +25,9 @@ Bare facts with no `kind`/`name` and no `project=` are rejected.
 
 | kind | Path | Notes |
 |------|------|-------|
-| *(empty kind)* | `<repo>/.agents/memory/staging/captured.md` | Inbox only; distill then delete |
-| `staging` | same | Explicit inbox |
+| *(empty kind)* | `<repo>/.agents/memory/facts.md` | Direct fact; skips staging |
+| `fact` / `facts` | `<repo>/.agents/memory/facts.md` | Direct project fact |
+| `staging` | `<repo>/.agents/memory/staging/captured.md` | Explicit inbox; distill then delete |
 | `research` | `<repo>/.agents/memory/research/<name>.md` | Input, not a decision |
 | `plans` | `<repo>/.agents/memory/plans/001-<name>.md` | Sequential |
 | `tasks` | `<repo>/.agents/memory/tasks/001-<name>.md` | Sequential |

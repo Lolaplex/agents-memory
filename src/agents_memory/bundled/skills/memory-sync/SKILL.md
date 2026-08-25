@@ -71,7 +71,8 @@ If you scaffold a repo under a scan root:
 - Decision / claimed contract → `kind="decision"|"adr"` → `decisions/001-title.md`
 - In-flight design note → `kind="proposed"|"implemented"|"rejected"`, `collection=` class (`architecture` default). **implemented** and **decisions** = revise the file in place when shipped reality changes; **rejected** = frozen.
 - Research (input) → `kind="research"` — revise topical file when input changes
-- Inbox → `project=` alone or `kind="staging"` → `staging/captured.md`. Distill, then delete the bullet.
+- Project fact → `project="slug"` alone or `kind="fact"` → `<repo>/.agents/memory/facts.md` (direct fact, skips staging)
+- Inbox / Raw Dump → `kind="staging"` → `staging/captured.md`. Distill, then delete the bullet.
 - Personal note → `add_memory(kind="note", name="stem", collection="interests"|…)` or `project="slug"` for `notes/projects/<slug>/`
 - Throw-away → `kind="scratch"`
 - No `facts.md`. Path encodes the home.

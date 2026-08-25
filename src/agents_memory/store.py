@@ -1918,12 +1918,12 @@ KIND_FOLDERS = {
 }
 
 KIND_HELP = (
-    "add_memory needs kind=concept|entity|workflow|project|note|scratch|"
+    "add_memory needs kind=fact|concept|entity|workflow|project|note|scratch|"
     "research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|"
     "staging plus name=. collection= is a notes/ folder or a note class "
     "(feature, bug-fix, simplification, architecture, process, testing). "
     "plans/tasks/waves/roadmap/decisions are 001-topic.md. "
-    "project= alone writes <repo>/.agents/memory/staging/captured.md (inbox, distill it)"
+    "project= alone writes <repo>/.agents/memory/facts.md (direct fact, skips staging)"
 )
 
 
@@ -1960,13 +1960,6 @@ def sequential_path(folder: Path, name: str) -> Path:
     if existing:
         return existing[0]
     return folder / f"{next_seq(folder):03d}-{slug}.md"
-    name = (name or "").strip().replace("\\", "/").split("/")[-1]
-    if name.lower().endswith(".md"):
-        name = name[:-3]
-    name = re.sub(r"[^a-zA-Z0-9._-]+", "-", name).strip("-._").lower()
-    if not name:
-        raise ValueError("empty name")
-    return name
 
 
 def _heading_from_stem(stem: str) -> str:
@@ -1987,8 +1980,23 @@ def memory_file_for(
     if kind in {"notes"}:
         kind = "note"
 
+    if kind in {"fact", "facts"}:
+        slug = project or name
+        if slug:
+            p = projects_by_slug().get(slug)
+            if p:
+                ensure_project_file(p)
+                if p.path_obj.is_dir():
+                    p.memory_dir.mkdir(parents=True, exist_ok=True)
+                    return p.memory_dir / "facts.md"
+                return USER_MEMORY / "notes" / "projects" / slugify_name(slug) / "facts.md"
+        return USER_MEMORY / f"{slugify_name(name or 'facts')}.md"
+
     if kind == "scratch" or collection == "scratch":
         return USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+
+    if kind in {"staging", "captured"} and not project:
+        return USER_MEMORY / "staging" / f"{slugify_name(name or 'captured')}.md"
 
     if kind in NOTE_LIFECYCLES:
         if not project:
@@ -2063,7 +2071,10 @@ def memory_file_for(
         if not p:
             raise ValueError(f"unknown project '{project}' — register it first")
         ensure_project_file(p)
-        return p.memory_dir / "staging" / "captured.md"
+        if p.path_obj.is_dir():
+            p.memory_dir.mkdir(parents=True, exist_ok=True)
+            return p.memory_dir / "facts.md"
+        return USER_MEMORY / "notes" / "projects" / slugify_name(project) / "facts.md"
 
     raise ValueError(KIND_HELP)
 
@@ -2124,7 +2135,7 @@ def add_memory(
     collection: str = "",
     auto_sync: bool = True,
 ) -> str:
-    """File a durable fact. kind+name → taxonomy; project= alone → staging/captured.md (inbox)."""
+    """File a durable fact. kind+name → taxonomy; project= alone → facts.md (direct fact)."""
     from .ingest_common import scrub
     fact = scrub(fact.strip())
     if not fact:

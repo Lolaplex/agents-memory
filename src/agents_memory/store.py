@@ -1959,57 +1959,7 @@ def _read_cached_lines(path: Path) -> List[str]:
 
 
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
-    # Ranked path: FTS5 + bm25 over the rebuilt index when available.
-    # Falls back to the legacy linear substring scan otherwise.
-    try:
-        import inspect
-
-        from .index import search_hybrid as _sh
-
-        # fetch full content, not snippets — callers need the whole note
-        conn_path = None
-        from .index import INDEX_DIR
-
-        conn_path = INDEX_DIR / "fts.sqlite"
-        import sqlite3
-
-        conn = sqlite3.connect(str(conn_path))
-        clean_terms = re.findall(r"\w+", query)
-        if not clean_terms:
-            raise ValueError("empty query")
-        fts_query = " OR ".join(f'"{t}"' for t in clean_terms)
-        sql = """
-            SELECT d.id, d.title, d.project,
-                   d.content
-            FROM documents_fts
-            JOIN documents d ON documents_fts.id = d.id
-            WHERE documents_fts MATCH ?
-        """
-        params: List[Any] = [fts_query]
-        if project:
-            sql += " AND d.project = ?"
-            params.append(project)
-        sql += " ORDER BY rank LIMIT ?"
-        params.append(max(1, limit))
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        ranked = [
-            {"id": r[0], "title": r[1], "project": r[2], "text": r[3]}
-            for r in cur.fetchall()
-        ]
-        conn.close()
-        if ranked:
-            return [
-                {
-                    "id": f"{h['project']}/{h['title']}:{h['id']}",
-                    "file": h["title"],
-                    "line": 0,
-                    "text": h["text"],
-                }
-                for h in ranked
-            ]
-    except Exception:
-        pass  # index missing/corrupt — legacy scan below
+    # Precision path first: exact substring (high precision, order-stable).
     q = query.lower().strip()
     files = iter_memory_files(project=project)
     hits: List[dict[str, Any]] = []
@@ -2029,7 +1979,27 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
             )
             if len(hits) >= limit:
                 return hits
-    return hits
+    if hits:
+        return hits
+
+    # Recall booster: ranked FTS5 over the rebuilt index when the exact
+    # substring found nothing (multi-word queries, word-order variants).
+    try:
+        from .index import search_hybrid
+
+        ranked = search_hybrid(query, project=project, limit=limit)
+        return [
+            {
+                "id": f"{h['project']}/{h['title']}:{h['id']}",
+                "file": h["title"],
+                "line": 0,
+                "text": re.sub(r"<[^>]+>", "", h["snippet"]),
+            }
+            for h in ranked
+        ]
+    except Exception:
+        pass  # index missing/corrupt — nothing more we can do
+    return []
 
 
 KIND_FOLDERS = {

@@ -12,7 +12,9 @@ Chat bodies stay in product folders; only titles/paths are ingested.
 `add_memory` requires kind+name (user taxonomy) or project= (in-tree notes).
 AGENTS.md is the instruction file. CLAUDE.md is bound to it (symlink, else hardlink, else copy).
 """
+
 from __future__ import annotations
+
 import json
 import os
 import re
@@ -38,7 +40,11 @@ def is_engine_repo(repo: Path) -> bool:
 
 ABI_DIR = ROOT / "abi" if (ROOT / "abi").is_dir() else PACKAGE_DIR / "bundled" / "abi"
 ABI_LAYOUT = ABI_DIR / "LAYOUT.md"
-EXAMPLES = ROOT / "examples" if (ROOT / "examples").is_dir() else PACKAGE_DIR / "bundled" / "examples"
+EXAMPLES = (
+    ROOT / "examples"
+    if (ROOT / "examples").is_dir()
+    else PACKAGE_DIR / "bundled" / "examples"
+)
 CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
 AGENTS_HOME = Path.home() / ".agents"
@@ -204,7 +210,9 @@ def _write(path: Path, content: str) -> None:
     if not content.endswith("\n"):
         content += "\n"
     # Atomic write via thread-unique temp file + os.replace
-    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp")
+    tmp_path = path.with_name(
+        f".{path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp"
+    )
     try:
         tmp_path.write_text(content, encoding="utf-8")
         for attempt in range(5):
@@ -221,7 +229,6 @@ def _write(path: Path, content: str) -> None:
                 tmp_path.unlink()
             except OSError:
                 pass
-
 
 
 def _default_roots() -> List[str]:
@@ -261,7 +268,11 @@ def _copy_if_missing(src: Path, dst: Path) -> bool:
 
 def _is_scaffold_file(path: Path) -> bool:
     name = path.name
-    return ".example." in name or name.endswith(".example.json") or name == "orphans.example.md"
+    return (
+        ".example." in name
+        or name.endswith(".example.json")
+        or name == "orphans.example.md"
+    )
 
 
 def consolidate_repo_leaks() -> List[str]:
@@ -449,7 +460,9 @@ def migrate_taxonomy() -> None:
         _merge_relocate(mem / "facts.md", mem / "staging" / "captured.md")
         _merge_relocate(mem / "notes" / "captured.md", mem / "staging" / "captured.md")
         _merge_relocate(mem / "from-chats.md", mem / "staging" / "from-chats.md")
-        _merge_relocate(mem / "research" / "from-chats.md", mem / "staging" / "from-chats.md")
+        _merge_relocate(
+            mem / "research" / "from-chats.md", mem / "staging" / "from-chats.md"
+        )
         if not p.detail_path.exists():
             _write(p.detail_path, stub_project_md(p))
         if not p.user_link_path.exists():
@@ -512,7 +525,9 @@ def load_scan() -> dict[str, Any]:
 
 def agent_rule_name() -> str:
     cfg = load_scan()
-    name = str(cfg.get("agent_rule_name") or cfg.get("cursor_rule_name") or DEFAULT_RULE_NAME).strip()
+    name = str(
+        cfg.get("agent_rule_name") or cfg.get("cursor_rule_name") or DEFAULT_RULE_NAME
+    ).strip()
     if not name.endswith(".mdc"):
         name += ".mdc"
     return name
@@ -527,9 +542,7 @@ def injection_agent_rule() -> Path:
     return canonical_agent_rule()
 
 
-HOST_RULE_DIRS = (
-    Path.home() / ".cursor" / "rules",
-)
+HOST_RULE_DIRS = (Path.home() / ".cursor" / "rules",)
 
 
 def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
@@ -978,9 +991,7 @@ def render_projects_table(projects: Iterable[Project]) -> str:
         "|------|------|------|-------|--------|",
     ]
     for p in sorted(projects, key=lambda x: x.slug.lower()):
-        rows.append(
-            f"| {p.slug} | `{p.path}` | {p.role} | {p.stack} | {p.status} |"
-        )
+        rows.append(f"| {p.slug} | `{p.path}` | {p.role} | {p.stack} | {p.status} |")
     return "\n".join(rows) + "\n"
 
 
@@ -1052,9 +1063,14 @@ def discover_ide_workspaces() -> List[Path]:
                         for idx, line in enumerate(fh):
                             if idx > 20:
                                 break
-                            for match in re.finditer(r"(?:[a-zA-Z]:[/\\][^\r\n<>\"'\s]+|/(?:Users|home|root)/[^\r\n<>\"'\s]+)", line):
+                            for match in re.finditer(
+                                r"(?:[a-zA-Z]:[/\\][^\r\n<>\"'\s]+|/(?:Users|home|root)/[^\r\n<>\"'\s]+)",
+                                line,
+                            ):
                                 candidate = Path(match.group(0).strip().rstrip(";,.)]"))
-                                if candidate.is_dir() and _looks_like_project(candidate):
+                                if candidate.is_dir() and _looks_like_project(
+                                    candidate
+                                ):
                                     add(candidate)
                 except OSError:
                     pass
@@ -1067,10 +1083,19 @@ def discover_ide_workspaces() -> List[Path]:
             storage_roots.append(Path(appdata) / ide_name / "User" / "workspaceStorage")
     elif sys.platform == "darwin":
         for ide_name in ("Cursor", "Code", "Code - Insiders", "VSCodium"):
-            storage_roots.append(home / "Library" / "Application Support" / ide_name / "User" / "workspaceStorage")
+            storage_roots.append(
+                home
+                / "Library"
+                / "Application Support"
+                / ide_name
+                / "User"
+                / "workspaceStorage"
+            )
     else:
         for ide_name in ("Cursor", "Code", "Code - Insiders", "VSCodium"):
-            storage_roots.append(home / ".config" / ide_name / "User" / "workspaceStorage")
+            storage_roots.append(
+                home / ".config" / ide_name / "User" / "workspaceStorage"
+            )
 
     for storage_root in storage_roots:
         if not storage_root.is_dir():
@@ -1083,7 +1108,9 @@ def discover_ide_workspaces() -> List[Path]:
                 if ws_json.is_file():
                     try:
                         data = json.loads(_read(ws_json))
-                        folder = data.get("folder") or (data.get("configuration") or {}).get("folder")
+                        folder = data.get("folder") or (
+                            data.get("configuration") or {}
+                        ).get("folder")
                         if folder:
                             add(_parse_workspace_uri(str(folder)))
                     except (json.JSONDecodeError, OSError):
@@ -1098,11 +1125,21 @@ def discover_ide_workspaces() -> List[Path]:
             for proj in cursor_projects.iterdir():
                 if proj.is_dir():
                     name = proj.name
-                    if name.startswith("c-Users-") or name.startswith("c--") or name.startswith("Users-"):
+                    if (
+                        name.startswith("c-Users-")
+                        or name.startswith("c--")
+                        or name.startswith("Users-")
+                    ):
                         parts = name.split("-")
-                        if len(parts) >= 4 and parts[0].lower() == "c" and parts[1].lower() == "users":
+                        if (
+                            len(parts) >= 4
+                            and parts[0].lower() == "c"
+                            and parts[1].lower() == "users"
+                        ):
                             reconstructed = Path(f"C:/{parts[2]}/{'/'.join(parts[3:])}")
-                            if reconstructed.is_dir() and _looks_like_project(reconstructed):
+                            if reconstructed.is_dir() and _looks_like_project(
+                                reconstructed
+                            ):
                                 add(reconstructed)
         except OSError:
             pass
@@ -1163,7 +1200,9 @@ def discover_disk() -> List[Tuple[str, Path]]:
 def inventory_report() -> dict[str, Any]:
     tracked = parse_projects()
     by_slug = {p.slug: p for p in tracked}
-    by_path = {str(p.path_obj.resolve()).lower(): p for p in tracked if p.path_obj.exists()}
+    by_path = {
+        str(p.path_obj.resolve()).lower(): p for p in tracked if p.path_obj.exists()
+    }
     disk = discover_disk()
     unknown = []
     known = []
@@ -1180,12 +1219,14 @@ def inventory_report() -> dict[str, Any]:
             if existing_p.path_obj.exists():
                 unknown.append({"slug": slug, "path": str(resolved)})
             else:
-                moved.append({
-                    "slug": slug,
-                    "old_path": existing_p.path,
-                    "new_path": str(resolved),
-                    "confidence": "high",
-                })
+                moved.append(
+                    {
+                        "slug": slug,
+                        "old_path": existing_p.path,
+                        "new_path": str(resolved),
+                        "confidence": "high",
+                    }
+                )
                 seen_moved_slugs.add(slug)
         else:
             unknown.append({"slug": slug, "path": str(resolved)})
@@ -1205,18 +1246,22 @@ def inventory_report() -> dict[str, Any]:
             u_slug = u["slug"].lower()
             u_path = Path(u["path"])
             u_dir_name = u_path.name.lower()
-            is_exact = (u_slug == old_slug or u_dir_name == old_dir_name)
+            is_exact = u_slug == old_slug or u_dir_name == old_dir_name
             is_partial = (
-                (len(old_slug) >= 3 and (old_slug in u_slug or u_slug in old_slug))
-                or (len(old_dir_name) >= 3 and (old_dir_name in u_dir_name or u_dir_name in old_dir_name))
+                len(old_slug) >= 3 and (old_slug in u_slug or u_slug in old_slug)
+            ) or (
+                len(old_dir_name) >= 3
+                and (old_dir_name in u_dir_name or u_dir_name in old_dir_name)
             )
             if is_exact or is_partial:
-                moved.append({
-                    "slug": m["slug"],
-                    "old_path": m["path"],
-                    "new_path": u["path"],
-                    "confidence": "high" if is_exact else "medium",
-                })
+                moved.append(
+                    {
+                        "slug": m["slug"],
+                        "old_path": m["path"],
+                        "new_path": u["path"],
+                        "confidence": "high" if is_exact else "medium",
+                    }
+                )
                 seen_moved_slugs.add(m["slug"])
                 break
 
@@ -1229,7 +1274,13 @@ def inventory_report() -> dict[str, Any]:
         if slug_counts[u["slug"]] > 1:
             p = Path(u["path"])
             parent_name = p.parent.name.lower()
-            if parent_name and parent_name not in ("coding", "src", "code", "dev", "developer"):
+            if parent_name and parent_name not in (
+                "coding",
+                "src",
+                "code",
+                "dev",
+                "developer",
+            ):
                 u["suggested_slug"] = f"{parent_name}-{u['slug']}"
 
     cfg = load_scan()
@@ -1254,7 +1305,7 @@ def stub_project_md(p: Project) -> str:
         f"---\n\n"
         f"# {p.slug}\n\n"
         f"{p.role} · `{p.stack}` · {p.status}\n\n"
-        f"Path: `{p.path}`. MCP `get_project_memories(\"{p.slug}\")` for in-tree memory.\n"
+        f'Path: `{p.path}`. MCP `get_project_memories("{p.slug}")` for in-tree memory.\n'
     )
 
 
@@ -1367,7 +1418,7 @@ def project_agents_text(p: Project) -> str:
         f"**Stack:** {p.stack}\n\n"
         f"In-tree memory: `.agents/memory/` (staging inbox — distill, do not hoard). "
         f"Global profile: `~/.agents/AGENTS.md`. "
-        f"MCP `search_memory` / `get_project_memories(\"{p.slug}\")` for detail.\n"
+        f'MCP `search_memory` / `get_project_memories("{p.slug}")` for detail.\n'
     )
 
 
@@ -1464,7 +1515,10 @@ def _ensure_claude_pointer(path: Path) -> None:
         "Also read `AGENTS.md` in this folder (bound to `~/.agents/AGENTS.md`) "
         "for user memory.\n"
     )
-    path.write_text(text.rstrip() + extra + ("\n" if not extra.endswith("\n") else ""), encoding="utf-8")
+    path.write_text(
+        text.rstrip() + extra + ("\n" if not extra.endswith("\n") else ""),
+        encoding="utf-8",
+    )
 
 
 def _bound_to(link: Path, target: Path) -> bool:
@@ -1474,7 +1528,7 @@ def _bound_to(link: Path, target: Path) -> bool:
         if link.is_symlink():
             got = Path(os.readlink(str(link)))
             if not got.is_absolute():
-                got = (link.parent / got)
+                got = link.parent / got
             return got.resolve() == target.resolve()
         if not link.exists():
             return False
@@ -1547,7 +1601,9 @@ def write_instruction_pair(directory: Path, body: str) -> List[str]:
     return written
 
 
-def bind_dir_to_canonical(directory: Path, canonical: Path) -> Tuple[List[str], List[str]]:
+def bind_dir_to_canonical(
+    directory: Path, canonical: Path
+) -> Tuple[List[str], List[str]]:
     """AGENTS.md and CLAUDE.md in `directory` bound to the canonical user file."""
     directory.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
@@ -1585,7 +1641,9 @@ def bind_claude_home(canonical: Path) -> Tuple[List[str], List[str]]:
     return written, warnings
 
 
-def _bind_collect(path: str, method: str, written: List[str], warnings: List[str]) -> None:
+def _bind_collect(
+    path: str, method: str, written: List[str], warnings: List[str]
+) -> None:
     if path:
         written.append(path)
     if method == "copy":
@@ -1606,13 +1664,21 @@ def repair_instruction_stub(directory: Path) -> List[str]:
     force = directory.resolve() == ROOT.resolve()
     same = False
     try:
-        same = claude.exists() and not claude.is_symlink() and _read(claude) == _read(agents)
+        same = (
+            claude.exists()
+            and not claude.is_symlink()
+            and _read(claude) == _read(agents)
+        )
     except OSError:
         same = False
     stub = _is_git_symlink_stub(claude)
     if _is_foreign_instruction_file(claude) and not stub and not same and not force:
         return []
-    if force and (claude.exists() or claude.is_symlink()) and not _bound_to(claude, agents):
+    if (
+        force
+        and (claude.exists() or claude.is_symlink())
+        and not _bound_to(claude, agents)
+    ):
         claude.unlink()
     bound, method = bind_to(claude, agents)
     return [bound] if bound else []
@@ -1696,7 +1762,12 @@ def install_skills() -> List[str]:
         d_targets = [
             Path.home() / ".cursor" / "skills" / "memory-distill" / "SKILL.md",
             Path.home() / ".agents" / "skills" / "memory-distill" / "SKILL.md",
-            Path.home() / ".gemini" / "config" / "skills" / "memory-distill" / "SKILL.md",
+            Path.home()
+            / ".gemini"
+            / "config"
+            / "skills"
+            / "memory-distill"
+            / "SKILL.md",
         ]
         for path in d_targets:
             _write(path, d_text)
@@ -1810,7 +1881,9 @@ def read_memory_file(file_id_or_path: str) -> str:
     return _read(path)
 
 
-def write_memory_file(file_id_or_path: str, content: str, auto_sync: bool = True) -> str:
+def write_memory_file(
+    file_id_or_path: str, content: str, auto_sync: bool = True
+) -> str:
     """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs."""
     path = resolve_memory_path(file_id_or_path)
     _write(path, content)
@@ -1885,7 +1958,58 @@ def _read_cached_lines(path: Path) -> List[str]:
     return lines
 
 
-def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict[str, Any]]:
+def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
+    # Ranked path: FTS5 + bm25 over the rebuilt index when available.
+    # Falls back to the legacy linear substring scan otherwise.
+    try:
+        import inspect
+
+        from .index import search_hybrid as _sh
+
+        # fetch full content, not snippets — callers need the whole note
+        conn_path = None
+        from .index import INDEX_DIR
+
+        conn_path = INDEX_DIR / "fts.sqlite"
+        import sqlite3
+
+        conn = sqlite3.connect(str(conn_path))
+        clean_terms = re.findall(r"\w+", query)
+        if not clean_terms:
+            raise ValueError("empty query")
+        fts_query = " OR ".join(f'"{t}"' for t in clean_terms)
+        sql = """
+            SELECT d.id, d.title, d.project,
+                   d.content
+            FROM documents_fts
+            JOIN documents d ON documents_fts.id = d.id
+            WHERE documents_fts MATCH ?
+        """
+        params: List[Any] = [fts_query]
+        if project:
+            sql += " AND d.project = ?"
+            params.append(project)
+        sql += " ORDER BY rank LIMIT ?"
+        params.append(max(1, limit))
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        ranked = [
+            {"id": r[0], "title": r[1], "project": r[2], "text": r[3]}
+            for r in cur.fetchall()
+        ]
+        conn.close()
+        if ranked:
+            return [
+                {
+                    "id": f"{h['project']}/{h['title']}:{h['id']}",
+                    "file": h["title"],
+                    "line": 0,
+                    "text": h["text"],
+                }
+                for h in ranked
+            ]
+    except Exception:
+        pass  # index missing/corrupt — legacy scan below
     q = query.lower().strip()
     files = iter_memory_files(project=project)
     hits: List[dict[str, Any]] = []
@@ -1993,7 +2117,9 @@ def memory_file_for(
         return USER_MEMORY / f"{slugify_name(name or 'facts')}.md"
 
     if kind == "scratch" or collection == "scratch":
-        return USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+        return (
+            USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+        )
 
     if kind in {"staging", "captured"} and not project:
         return USER_MEMORY / "staging" / f"{slugify_name(name or 'captured')}.md"
@@ -2092,7 +2218,11 @@ def _already_has_fact(text: str, fact: str) -> bool:
 def _append_bullet(path: Path, fact: str) -> str:
     bullet = fact if fact.lstrip().startswith("- ") else f"- {fact}"
     if not path.exists():
-        header = STAGING_HEADER if path.parent.name == "staging" else f"#{_heading_from_stem(path.stem)}\n"
+        header = (
+            STAGING_HEADER
+            if path.parent.name == "staging"
+            else f"# {_heading_from_stem(path.stem)}\n"
+        )
         _write(path, f"{header}\n{bullet}\n")
         return file_id(path)
     text = _read(path)
@@ -2137,12 +2267,11 @@ def add_memory(
 ) -> str:
     """File a durable fact. kind+name → taxonomy; project= alone → facts.md (direct fact)."""
     from .ingest_common import scrub
+
     fact = scrub(fact.strip())
     if not fact:
         raise ValueError("empty fact")
-    path = memory_file_for(
-        kind=kind, name=name, project=project, collection=collection
-    )
+    path = memory_file_for(kind=kind, name=name, project=project, collection=collection)
     existed = path.exists()
     loc = _append_bullet(path, fact)
     clear_memory_cache()
@@ -2291,7 +2420,9 @@ def promote_bullet(
         collection=collection,
         auto_sync=False,
     )
-    removed = remove_staging_bullet(clean_bullet, project=project, source_path=source_path)
+    removed = remove_staging_bullet(
+        clean_bullet, project=project, source_path=source_path
+    )
     clear_memory_cache()
     if auto_sync:
         try:
@@ -2527,7 +2658,9 @@ _NOISE_LINE_PATTERNS = (
 )
 
 
-def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = True) -> dict[str, Any]:
+def auto_distill(
+    limit: int = 50, discard_noise: bool = True, auto_sync: bool = True
+) -> dict:
     """Automatically classify and distill staging inbox bullets into memory or discard noise."""
     inbox = get_staging_inbox(limit=limit)
     items_to_distill = []
@@ -2552,33 +2685,51 @@ def auto_distill(limit: int = 50, discard_noise: bool = True, auto_sync: bool = 
 
             if is_noise:
                 if discard_noise:
-                    items_to_distill.append({
-                        "bullet": bullet_text,
-                        "discard": True,
-                        "project": proj,
-                        "source_path": src_path,
-                    })
+                    items_to_distill.append(
+                        {
+                            "bullet": bullet_text,
+                            "discard": True,
+                            "project": proj,
+                            "source_path": src_path,
+                        }
+                    )
                 continue
 
             # Check for stack/preferences
             lower = raw_text.lower()
-            if any(k in lower for k in ("always ", "never ", "prefer ", "immer ", "nie ", "bevorzuge ", "stack:", "stack defaults")):
-                items_to_distill.append({
-                    "bullet": bullet_text,
-                    "kind": "note",
-                    "name": "preferences",
-                    "collection": "preferences",
-                    "project": proj,
-                    "source_path": src_path,
-                })
+            if any(
+                k in lower
+                for k in (
+                    "always ",
+                    "never ",
+                    "prefer ",
+                    "immer ",
+                    "nie ",
+                    "bevorzuge ",
+                    "stack:",
+                    "stack defaults",
+                )
+            ):
+                items_to_distill.append(
+                    {
+                        "bullet": bullet_text,
+                        "kind": "note",
+                        "name": "preferences",
+                        "collection": "preferences",
+                        "project": proj,
+                        "source_path": src_path,
+                    }
+                )
             elif proj:
-                items_to_distill.append({
-                    "bullet": bullet_text,
-                    "kind": "note",
-                    "name": "facts",
-                    "project": proj,
-                    "source_path": src_path,
-                })
+                items_to_distill.append(
+                    {
+                        "bullet": bullet_text,
+                        "kind": "note",
+                        "name": "facts",
+                        "project": proj,
+                        "source_path": src_path,
+                    }
+                )
 
     if not items_to_distill:
         remaining = count_staging_bullets()
@@ -2620,7 +2771,9 @@ def find_project(slug_or_path: str = "", cwd: str = "") -> Optional[Project]:
             cwd_p = Path(cwd).resolve()
             for p in projects:
                 try:
-                    if cwd_p == p.path_obj.resolve() or cwd_p.is_relative_to(p.path_obj.resolve()):
+                    if cwd_p == p.path_obj.resolve() or cwd_p.is_relative_to(
+                        p.path_obj.resolve()
+                    ):
                         return p
                 except (ValueError, OSError):
                     pass
@@ -2660,6 +2813,7 @@ def append_chronicle(
     if not beat:
         raise ValueError("Chronicle beat cannot be empty")
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
     ts = now.strftime("%Y-%m-%d %H:%M:%S UTC")
     date_stamp = now.strftime("%Y-%m-%d")
@@ -2687,8 +2841,8 @@ def append_chronicle(
 def _collect_raw_session_user_lines() -> List[dict]:
     """Gather user message lines from ingest-configured jsonl and transcript sources."""
     try:
-        from .ingest_config import load_ingest, list_sources, resolve_source_roots
-        from .ingest_extractors import _jsonl_user_lines, user_messages, unzip_export
+        from .ingest_config import list_sources, load_ingest, resolve_source_roots
+        from .ingest_extractors import _jsonl_user_lines, unzip_export, user_messages
     except ImportError:
         return []
 
@@ -2718,7 +2872,14 @@ def _collect_raw_session_user_lines() -> List[dict]:
                             for text in user_messages(conv):
                                 text_clean = text.strip()
                                 if text_clean:
-                                    out.append({"source": label, "title": title, "text": text_clean, "file": shard.name})
+                                    out.append(
+                                        {
+                                            "source": label,
+                                            "title": title,
+                                            "text": text_clean,
+                                            "file": shard.name,
+                                        }
+                                    )
                     except Exception:
                         pass
             else:
@@ -2739,23 +2900,46 @@ def _collect_raw_session_user_lines() -> List[dict]:
                                 except json.JSONDecodeError:
                                     continue
                                 text = ""
-                                role = obj.get("role") or (obj.get("message") or {}).get("role") or obj.get("type")
-                                if role in ("user", "USER_INPUT") or obj.get("kind") == 1:
-                                    msg = obj.get("message") or obj.get("content") or obj
+                                role = (
+                                    obj.get("role")
+                                    or (obj.get("message") or {}).get("role")
+                                    or obj.get("type")
+                                )
+                                if (
+                                    role in ("user", "USER_INPUT")
+                                    or obj.get("kind") == 1
+                                ):
+                                    msg = (
+                                        obj.get("message") or obj.get("content") or obj
+                                    )
                                     if isinstance(msg, dict):
-                                        c = msg.get("content") or msg.get("text") or msg.get("inputText") or ""
+                                        c = (
+                                            msg.get("content")
+                                            or msg.get("text")
+                                            or msg.get("inputText")
+                                            or ""
+                                        )
                                         if isinstance(c, str):
                                             text = c
                                         elif isinstance(c, list):
                                             text = " ".join(
                                                 part.get("text") or ""
                                                 for part in c
-                                                if isinstance(part, dict) and part.get("type") in ("text", "input")
+                                                if isinstance(part, dict)
+                                                and part.get("type")
+                                                in ("text", "input")
                                             )
                                     elif isinstance(msg, str):
                                         text = msg
                                 if text.strip():
-                                    out.append({"source": label, "title": p.parent.name[:12], "text": text.strip(), "file": str(p)})
+                                    out.append(
+                                        {
+                                            "source": label,
+                                            "title": p.parent.name[:12],
+                                            "text": text.strip(),
+                                            "file": str(p),
+                                        }
+                                    )
                     except Exception:
                         pass
     return out
@@ -2769,7 +2953,9 @@ def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
 
     parts = []
     if baton:
-        parts.append(f"=== BATON RITUAL ({proj_name}) ===\n{baton}\n===================================")
+        parts.append(
+            f"=== BATON RITUAL ({proj_name}) ===\n{baton}\n==================================="
+        )
 
     lines = _collect_raw_session_user_lines()
     recent = lines[-limit:] if len(lines) > limit else lines
@@ -2819,12 +3005,21 @@ def session_tail(session_id: str = "", limit: int = 10) -> str:
     limit = max(1, limit)
     lines = _collect_raw_session_user_lines()
     if session_id:
-        filtered = [l for l in lines if session_id.lower() in l["file"].lower() or session_id.lower() in l["title"].lower()]
+        filtered = [
+            l
+            for l in lines
+            if session_id.lower() in l["file"].lower()
+            or session_id.lower() in l["title"].lower()
+        ]
     else:
         filtered = lines
 
     if not filtered:
-        return f"No session lines found matching '{session_id}'." if session_id else "No session lines found."
+        return (
+            f"No session lines found matching '{session_id}'."
+            if session_id
+            else "No session lines found."
+        )
 
     recent = filtered[-limit:]
     out = [f"Session tail ({len(recent)} lines):"]
@@ -2843,7 +3038,9 @@ def check_memory_freshness() -> Dict[str, Any]:
     nags: List[str] = []
     inbox = get_staging_inbox()
     if inbox["total"] > 20:
-        nags.append(f"Staging inbox has {inbox['total']} unprocessed bullets (recommend running distill / memory-distill).")
+        nags.append(
+            f"Staging inbox has {inbox['total']} unprocessed bullets (recommend running distill / memory-distill)."
+        )
 
     # Check batons
     now = time.time()
@@ -2853,7 +3050,9 @@ def check_memory_freshness() -> Dict[str, Any]:
             try:
                 age_hours = (now - baton_file.stat().st_mtime) / 3600.0
                 if age_hours > 24.0:
-                    nags.append(f"Project '{proj.slug}' baton is stale ({round(age_hours, 1)}h since last update).")
+                    nags.append(
+                        f"Project '{proj.slug}' baton is stale ({round(age_hours, 1)}h since last update)."
+                    )
             except OSError:
                 pass
 
@@ -2862,4 +3061,3 @@ def check_memory_freshness() -> Dict[str, Any]:
         "staging_count": inbox["total"],
         "nags": nags,
     }
-

@@ -91,17 +91,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Connecting to remote memory at {url}...")
         try:
             health = remote_health_check(url, token=token, verify_ssl=verify_ssl)
-        print(f"Connection OK! Remote running agents-memory v{health.get('version', '?')}")
-        print(f"Remote files in store: {health.get('files_count', 0)}")
-        try:
-            verify_remote_tool_api(url, token=token, verify_ssl=verify_ssl)
-            print("Mirror sync API: OK (/api/v1/merge + /api/v1/snapshot)")
-        except Exception as e:
-            print(
-                f"WARNING: Remote server may need upgrade ({e}). "
-                "Deploy latest agents-memory on the server for full mirror sync.",
-                file=sys.stderr,
-            )
+            print(f"Connection OK! Remote running agents-memory v{health.get('version', '?')}")
+            print(f"Remote files in store: {health.get('files_count', 0)}")
+            try:
+                verify_remote_tool_api(url, token=token, verify_ssl=verify_ssl)
+                print("Mirror sync API: OK (/api/v1/merge + /api/v1/snapshot)")
+            except Exception as e:
+                print(
+                    f"WARNING: Remote server may need upgrade ({e}). "
+                    "Deploy latest agents-memory on the server for full mirror sync.",
+                    file=sys.stderr,
+                )
         except PermissionError:
             print("ERROR: Authentication failed. Please provide a valid --token.", file=sys.stderr)
             return 1

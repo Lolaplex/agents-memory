@@ -78,6 +78,23 @@ class TestSyncBundle(unittest.TestCase):
         self.assertIn("beta", (self.mem / "facts.md").read_text(encoding="utf-8"))
         self.assertIn("demo/facts.md", "".join(report["repos"]["applied"]))
 
+    def test_collect_stored_mirrors_when_repos_missing(self):
+        stored = self.user / "mirror" / "projects" / "ghost"
+        stored.mkdir(parents=True)
+        (stored / "facts.md").write_text("# Facts\n- ghost\n", encoding="utf-8")
+        with patch("agents_memory.remote.sync_bundle.parse_projects", return_value=[]):
+            bundle = collect_sync_bundle(include_projects=True, memory_root=self.user)
+        self.assertIn(f"{MIRROR_PREFIX}ghost/facts.md", bundle)
+        self.assertIn("ghost", bundle[f"{MIRROR_PREFIX}ghost/facts.md"])
+
+    def test_live_repo_wins_over_stored_mirror(self):
+        stored = self.user / "mirror" / "projects" / "demo"
+        stored.mkdir(parents=True)
+        (stored / "facts.md").write_text("# Facts\n- stale\n", encoding="utf-8")
+        bundle = collect_sync_bundle(include_projects=True, memory_root=self.user)
+        self.assertIn("alpha", bundle[f"{MIRROR_PREFIX}demo/facts.md"])
+        self.assertNotIn("stale", bundle[f"{MIRROR_PREFIX}demo/facts.md"])
+
 
 if __name__ == "__main__":
     unittest.main()

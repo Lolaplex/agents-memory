@@ -50,9 +50,16 @@ EXAMPLES = (
 )
 CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
-AGENTS_HOME = Path.home() / ".agents"
+
+
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.environ.get(name, "").strip()
+    return Path(raw).expanduser().resolve() if raw else default
+
+
+AGENTS_HOME = _env_path("AGENTS_HOME", Path.home() / ".agents")
 AGENTS_RULES = AGENTS_HOME / "rules"
-USER_MEMORY = AGENTS_HOME / "memory"
+USER_MEMORY = _env_path("AGENTS_MEMORY_PATH", AGENTS_HOME / "memory")
 MEMORY = USER_MEMORY
 ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
@@ -65,7 +72,11 @@ LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
 PROJECTS_DIR = USER_MEMORY / "projects"
 EVENTS_DIR = USER_MEMORY / "events"
 CHRONICLE_DIR = EVENTS_DIR / "chronicle"
-CLAUDE_HOME = Path.home() / ".claude"
+CLAUDE_HOME = (
+    AGENTS_HOME / "claude"
+    if os.environ.get("AGENTS_HOME", "").strip()
+    else Path.home() / ".claude"
+)
 HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
 HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
 

@@ -227,12 +227,21 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("project/demo/decisions/001", content)
 
     def test_session_snap_grep_tail(self):
-        # set baton so snap includes header
         mcp_server.set_baton("Current focus: Wave 002 temporal layer", project="demo")
-        mock_lines = [
-            {"source": "cursor", "title": "Test Session", "text": "Implemented temporal session layer", "file": "test.jsonl"}
-        ]
-        with patch.object(store, "_collect_raw_session_user_lines", return_value=mock_lines):
+        with patch(
+            "agents_traces.session_view.session_snap",
+            return_value="Implemented temporal session layer",
+        ), patch(
+            "agents_traces.session_view.session_grep",
+            side_effect=lambda pattern, since="": (
+                "Implemented temporal session layer"
+                if "temporal" in pattern
+                else "No session lines matching"
+            ),
+        ), patch(
+            "agents_traces.session_view.session_tail",
+            return_value="Session tail\nImplemented temporal session layer",
+        ):
             snap = mcp_server.session_snap(project="demo")
             self.assertIn("=== BATON RITUAL (demo) ===", snap)
             self.assertIn("Current focus: Wave 002 temporal layer", snap)

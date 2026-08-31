@@ -34,14 +34,14 @@ def get_all_memory_files(memory_dir: Optional[Path] = None) -> dict[str, str]:
     files: dict[str, str] = {}
     for p in root.rglob("*"):
         if p.is_file():
-            # Skip hidden, git, cache, lock files
-            rel = p.relative_to(root).as_posix()
-            if any(part.startswith(".") for part in p.parts):
+            # Skip hidden, git, cache, lock files relative to memory root
+            rel_p = p.relative_to(root)
+            if any(part.startswith(".") for part in rel_p.parts):
                 continue
-            if p.suffix in (".sqlite", ".db", ".lock", ".tmp", ".pyc"):
+            if p.suffix in (".sqlite", ".db", ".lock", ".tmp", ".pyc") or p.name == "remote_config.json":
                 continue
             try:
-                files[rel] = p.read_text(encoding="utf-8", errors="replace")
+                files[rel_p.as_posix()] = p.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 pass
     return files

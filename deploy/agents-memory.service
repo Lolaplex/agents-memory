@@ -1,0 +1,17 @@
+[Unit]
+Description=agents-memory Cloud Sync & Remote MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root
+Environment="AGENTS_MEMORY_PORT=8443"
+Environment="AGENTS_MEMORY_HOST=0.0.0.0"
+Environment="AGENTS_MEMORY_TOKEN=changeme_secret_token_123"
+ExecStart=/usr/local/bin/agents-memory remote serve --host 0.0.0.0 --port 8443 --token ${AGENTS_MEMORY_TOKEN}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

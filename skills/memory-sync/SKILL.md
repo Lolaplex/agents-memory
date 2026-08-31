@@ -34,9 +34,21 @@ MCP server `agents-memory`: see [`abi/MCP.md`](../../abi/MCP.md). CLI/injection:
 ## When this skill fires
 
 - User asks for Bestandaufnahme / inventory / memory sync / Projekte updaten
+- User asks about cloud sync, VPS assistant memory, or multi-device status
 - User (or you) created a **new folder** under a `scan.json` root
 - A path in `PROJECTS.md` is wrong or missing
 - After editing `USER.md` or `PROJECTS.md` by hand → always `python -m agents_memory sync`
+
+## Cloud Sync & Multi-Device Coordination
+
+`agents-memory` can sync seamlessly across workstations, laptops, and VPS assistants:
+
+* **Check status:** `python -m agents_memory remote status` (shows local vs remote mode and server health).
+* **Connect to cloud:** `python -m agents_memory connect <URL> --token <TOKEN>`
+  * Performs deterministic multi-device merge (bullets deduplicated, tables merged by slug, staging appended).
+  * Automatically configures IDE host MCP configs to use the client bridge.
+* **Disconnect from cloud:** `python -m agents_memory disconnect` (pulls final snapshot, restores local mode).
+* **Push / Pull manually:** `python -m agents_memory remote push` / `python -m agents_memory remote pull`.
 
 ## Bestandaufnahme workflow
 

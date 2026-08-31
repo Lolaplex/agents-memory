@@ -1,0 +1,20 @@
+services:
+  agents-memory:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agents-memory:latest
+    container_name: agents-memory-server
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    environment:
+      - AGENTS_MEMORY_PORT=8443
+      - AGENTS_MEMORY_HOST=0.0.0.0
+      - AGENTS_MEMORY_TOKEN=${AGENTS_MEMORY_TOKEN:-changeme_secret_token_123}
+    volumes:
+      - memory-data:/root/.agents/memory
+
+volumes:
+  memory-data:
+    driver: local

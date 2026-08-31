@@ -1,0 +1,40 @@
+{
+  "examples": [
+    {
+      "kind": "LocalId",
+      "value": "user/concepts/isar-joins",
+      "context": "agents-memory internal path-based id"
+    },
+    {
+      "kind": "LocalId",
+      "value": "project/agents-memory/decisions/001-semantic-capability-platform",
+      "context": "project-scoped decision record"
+    },
+    {
+      "kind": "ExternalId",
+      "provider": "ingest",
+      "namespace": "openai-export",
+      "value": "session:2026-08-15-tensor-discussion",
+      "context": "ingest session from GDPR export"
+    },
+    {
+      "kind": "LocalId",
+      "value": "local:record:abc123",
+      "context": "plexd record id (plex.v1 scope)"
+    },
+    {
+      "kind": "ExternalId",
+      "provider": "plex",
+      "namespace": "landmark",
+      "value": "homelab",
+      "context": "plex landmark slug (immutable)"
+    },
+    {
+      "kind": "ExternalId",
+      "provider": "orca",
+      "namespace": "repo",
+      "value": "github:Lolaplex/agents-memory@abc1234",
+      "context": "ORCA repository evidence at pinned commit"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,14 @@ from agents_memory import store
 
 
 class AddMemoryTests(unittest.TestCase):
-    def setUp(self):
+    tmp: "tempfile.TemporaryDirectory[str]"
+    root: Path
+    user: Path
+    repo: Path
+    projects_md: Path
+    patches: "list"
+
+    def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.user = self.root / "user"
@@ -68,10 +76,17 @@ class AddMemoryTests(unittest.TestCase):
 
     def test_repo_captured_without_kind(self):
         loc = store.add_memory("local only", project="demo")
-        path = self.repo / ".agents" / "memory" / "staging" / "captured.md"
+        path = self.repo / ".agents" / "memory" / "facts.md"
         self.assertTrue(path.exists())
         self.assertIn("local only", path.read_text(encoding="utf-8"))
-        self.assertIn("Staging", path.read_text(encoding="utf-8"))
+        self.assertIn("Facts", path.read_text(encoding="utf-8"))
+        self.assertIn("facts.md", loc)
+
+    def test_repo_explicit_staging(self):
+        loc = store.add_memory("staging inbox item", kind="staging", project="demo")
+        path = self.repo / ".agents" / "memory" / "staging" / "captured.md"
+        self.assertTrue(path.exists())
+        self.assertIn("staging inbox item", path.read_text(encoding="utf-8"))
         self.assertIn("captured.md", loc)
 
     def test_research_in_repo(self):
@@ -207,7 +222,7 @@ class AddMemoryTests(unittest.TestCase):
         with patch("agents_memory.ingest_config.load_ingest", lambda: ingest):
             summary = store.staging_status_summary()
         self.assertEqual(summary["bullet_count"], 5)
-        self.assertIn("memory-distill", summary["nag"])
+        self.assertIn("auto_distill", summary["nag"])
 
     def test_distill_batch(self):
         staging = self.user / "staging"
@@ -469,6 +484,96 @@ class RegisterBootstrapTests(unittest.TestCase):
             pref_file = user / "notes" / "preferences" / "preferences.md"
             self.assertTrue(pref_file.exists())
             self.assertIn("Always use Tailwind v3", pref_file.read_text(encoding="utf-8"))
+
+    def test_baton_and_chronicle(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "sync_injection", lambda **k: ([], [])
+        ):
+            self.assertEqual(store.get_baton(), "")
+            saved = store.set_baton("Current focus: release v1.0.2")
+            self.assertTrue(Path(saved).exists())
+            self.assertEqual(store.get_baton(), "Current focus: release v1.0.2")
+
+            cpath = store.append_chronicle("Finished release prep")
+            self.assertTrue(Path(cpath).exists())
+            self.assertIn("Finished release prep", Path(cpath).read_text(encoding="utf-8"))
+
+    def test_session_snap_and_grep(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        # Mock ingest config with a dummy cursor transcript
+        cursor_dir = root / "cursor_transcripts"
+        cursor_dir.mkdir()
+        tf = cursor_dir / "test.jsonl"
+        tf.write_text(
+            json.dumps({"role": "user", "message": {"content": [{"type": "text", "text": "<user_query>Setup FastAPI backend</user_query>"}]}}) + "\n",
+            encoding="utf-8",
+        )
+        mock_cfg = {
+            "version": 1,
+            "sources": [{"id": "cursor", "kind": "agent-jsonl", "paths": [str(cursor_dir)], "catalog": True, "extract": True}]
+        }
+        with patch.object(store, "USER_MEMORY", user), patch("agents_memory.ingest_config.load_ingest", return_value=mock_cfg):
+            snap = store.session_snap(limit=10)
+            self.assertIn("Setup FastAPI backend", snap)
+            self.assertNotIn("<user_query>", snap)
+
+            grep_res = store.session_grep("FastAPI")
+            self.assertIn("Setup FastAPI backend", grep_res)
+
+    def test_intuitive_add_memory_kinds(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        rules_dir = root / "rules"
+        rules_dir.mkdir()
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "AGENTS_RULES", rules_dir
+        ), patch.object(store, "sync_injection", lambda **k: ([], [])):
+            pref_loc = store.add_memory("Always use Tailwind v3", kind="preference", auto_sync=False)
+            self.assertTrue(Path(user / "notes" / "preferences" / "preferences.md").exists())
+            self.assertIn("Always use Tailwind v3", Path(user / "notes" / "preferences" / "preferences.md").read_text(encoding="utf-8"))
+
+            rule_loc = store.add_memory("Run commands automatically", kind="rule", name="run-cmd", auto_sync=False)
+            self.assertTrue(Path(rules_dir / "run-cmd.mdc").exists())
+
+            conv_loc = store.add_memory("Use snake_case for python functions", kind="convention", auto_sync=False)
+            self.assertTrue(Path(user / "notes" / "conventions" / "conventions.md").exists())
+
+    def test_project_staging_collection(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        repo = root / "repo"
+        repo.mkdir()
+        proj_mem = repo / ".agents" / "memory" / "staging"
+        proj_mem.mkdir(parents=True)
+        (proj_mem / "captured.md").write_text("# Staging\n\n- Project specific bullet\n", encoding="utf-8")
+
+        proj = store.Project(slug="demo", path=str(repo), role="demo", stack="py", status="active")
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "parse_projects", return_value=[proj]
+        ), patch.object(store, "projects_by_slug", return_value={"demo": proj}):
+            inbox = store.get_staging_inbox()
+            self.assertEqual(inbox["total"], 1)
+            self.assertIn("Project specific bullet", inbox["groups"][0]["bullets"][0]["text"])
+
+            # Test remove_staging_bullet finds project staging too
+            removed = store.remove_staging_bullet("Project specific bullet")
+            self.assertTrue(removed)
+            self.assertEqual(store.get_staging_inbox()["total"], 0)
 
 
 if __name__ == "__main__":

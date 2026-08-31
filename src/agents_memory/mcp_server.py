@@ -19,6 +19,12 @@ from .store import (
     read_memory_file as store_read_file,
     register_project as store_register,
     search_memory as store_search,
+    append_chronicle as store_append_chronicle,
+    get_baton as store_get_baton,
+    set_baton as store_set_baton,
+    session_grep as store_session_grep,
+    session_snap as store_session_snap,
+    session_tail as store_session_tail,
     staging_status_summary,
     sync_injection,
     write_memory_file as store_write_file,
@@ -75,11 +81,11 @@ def add_memory(
     architecture decisions (ADRs), tool/package choices, styling conventions, or corrections.
     Do NOT wait for explicit user commands like 'save this'.
 
-    kind=concept|entity|workflow|project|note|scratch|research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|staging
+    kind=fact|concept|entity|workflow|project|note|scratch|research|plans|tasks|roadmap|waves|decision|proposed|implemented|rejected|staging
     plus name= (file stem). collection= for notes/ or a note class
     (feature, bug-fix, simplification, architecture, process, testing).
     Sequential 001-topic.md: plans, tasks, waves, roadmap, decisions, lifecycle notes.
-    kind=research is topical (input). project= alone writes staging/captured.md (inbox).
+    kind=research is topical (input). project= alone writes <repo>/.agents/memory/facts.md (direct fact).
     Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
     """
     try:
@@ -358,6 +364,126 @@ def ingest_status() -> str:
         )
     except Exception as e:
         return f"Error reading ingest status: {e}"
+
+
+@mcp.tool()
+def get_baton(project: str = "", cwd: str = "") -> str:
+    """Read the session handoff baton marker for a project or global user store."""
+    try:
+        return store_get_baton(project=project, cwd=cwd)
+    except Exception as e:
+        return f"Error reading baton: {e}"
+
+
+@mcp.tool()
+def set_baton(text: str, project: str = "", cwd: str = "") -> str:
+    """Write or update the session handoff baton marker (mutable ritual)."""
+    try:
+        loc = store_set_baton(text, project=project, cwd=cwd)
+        return f"Baton updated at {loc}"
+    except Exception as e:
+        return f"Error setting baton: {e}"
+
+
+@mcp.tool()
+def append_chronicle(
+    beat: str, project: str = "", emoji: str = "📝", refs: list[str] | None = None
+) -> str:
+    """Append a beat to the event chronicle (~/.agents/memory/events/chronicle/<slug>.md)."""
+    try:
+        loc = store_append_chronicle(beat, project=project, emoji=emoji, refs=refs)
+        return f"Beat recorded to {loc}"
+    except Exception as e:
+        return f"Error appending chronicle: {e}"
+
+
+@mcp.tool()
+def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
+    """Fetch verbatim recent user lines from ingest-configured jsonl/transcript sources.
+    Includes active baton header if present.
+    """
+    try:
+        return store_session_snap(limit=limit, project=project, cwd=cwd)
+    except Exception as e:
+        return f"Error taking session snap: {e}"
+
+
+@mcp.tool()
+def session_grep(pattern: str, since: str = "", project: str = "") -> str:
+    """Stream search across raw session logs matching pattern."""
+    try:
+        return store_session_grep(pattern=pattern, since=since, project=project)
+    except Exception as e:
+        return f"Error running session grep: {e}"
+
+
+@mcp.tool()
+def session_tail(session_id: str = "", limit: int = 10) -> str:
+    """Tail recent lines from a live or recent session log."""
+    try:
+        return store_session_tail(session_id=session_id, limit=limit)
+    except Exception as e:
+        return f"Error running session tail: {e}"
+
+
+@mcp.tool()
+def rebuild_index() -> str:
+    """Rebuild the disposable SQLite FTS search index from markdown files on disk."""
+    try:
+        from .index import rebuild_index as run_rebuild
+        res = run_rebuild()
+        return f"Index rebuilt: {res['indexed']} documents in {res['duration_ms']}ms -> {res['db_path']}"
+    except Exception as e:
+        return f"Error rebuilding index: {e}"
+
+
+@mcp.tool()
+def search_hybrid(query: str, project: str = "", limit: int = 20) -> str:
+    """Search memory using FTS5 rank-ordered hybrid search over indexed markdown files."""
+    try:
+        from .index import search_hybrid as run_search
+        hits = run_search(query, project=project, limit=limit)
+        if not hits:
+            return f"No matches found for '{query}'"
+        lines = [f"Found {len(hits)} matches:"]
+        for h in hits:
+            lines.append(f"- [{h['id']}] {h['title']} — {h['snippet']}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error running search: {e}"
+
+
+@mcp.tool()
+def get_related(memory_id: str, limit: int = 5) -> str:
+    """Retrieve explicit relations (refs/supersedes/same_as) and content-related documents for a memory item."""
+    try:
+        from .index import get_related as run_related
+        res = run_related(memory_id, limit=limit)
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return f"Error fetching related memories: {e}"
+
+
+@mcp.tool()
+def suggest_links(from_id: str, limit: int = 5) -> str:
+    """Suggest candidate typed relation links based on content overlap for human review."""
+    try:
+        from .index import suggest_links as run_suggest
+        suggestions = run_suggest(from_id, limit=limit)
+        return json.dumps(suggestions, indent=2)
+    except Exception as e:
+        return f"Error suggesting links: {e}"
+
+
+@mcp.tool()
+def check_memory_freshness() -> str:
+    """Check freshness across staging inbox, project batons, and index cache."""
+    try:
+        from .store import check_memory_freshness as run_check
+        res = run_check()
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return f"Error checking memory freshness: {e}"
 
 
 # Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed

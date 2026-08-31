@@ -1,0 +1,14 @@
+{
+  "protocol": "flow",
+  "version": 0,
+  "scopes": [
+    {
+      "id": "memory.v1",
+      "href": "./scope-memory.v1.json",
+      "title": "Agent memory capabilities"
+    }
+  ],
+  "encodings": [
+    "application/json"
+  ]
+}

@@ -1,0 +1,8 @@
+# flow: open record
+# scope: plex.v1
+# Direct open record flow by ID with WebView instantiation obligation.
+
+records.open(record: record_id("local:record:abc123"))
+| opened instance |> result { instance: instance }
+| unsupported reason |> result { error: reason }
+| failed error |> result { error: error }

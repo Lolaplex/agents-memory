@@ -1,0 +1,62 @@
+{
+  "scope": "memory.v1",
+  "budget": { "unit": "cost", "maximum": 50 },
+  "capabilities": [
+    {
+      "id": "memory.resolve",
+      "cost": 1,
+      "inputs": [
+        { "name": "ref", "type": "MemoryRef", "required": true }
+      ],
+      "outcomes": ["found", "ambiguous", "not_found"],
+      "semantic": {
+        "consumes": ["MemoryRef"],
+        "produces": ["MemoryFile"],
+        "relations": ["same_as", "refs"]
+      }
+    },
+    {
+      "id": "memory.relate",
+      "cost": 1,
+      "inputs": [
+        { "name": "subject", "type": "MemoryFile", "required": true },
+        { "name": "relation", "type": "RelationKind", "required": true }
+      ],
+      "outcomes": ["found", "many", "not_found"],
+      "semantic": {
+        "consumes": ["MemoryFile", "RelationKind"],
+        "produces": ["MemoryFile"],
+        "relations": ["refs", "supersedes", "same_as", "at_project"]
+      }
+    },
+    {
+      "id": "memory.promote",
+      "cost": 2,
+      "inputs": [
+        { "name": "bullet", "type": "StagingBullet", "required": true },
+        { "name": "kind", "type": "MemoryKind", "required": true },
+        { "name": "name", "type": "string", "required": true }
+      ],
+      "outcomes": ["promoted", "rejected"],
+      "semantic": {
+        "consumes": ["StagingBullet"],
+        "produces": ["MemoryFile"],
+        "relations": []
+      }
+    },
+    {
+      "id": "quarantine.propose",
+      "cost": 1,
+      "inputs": [
+        { "name": "fact", "type": "string", "required": true },
+        { "name": "source", "type": "string", "required": true }
+      ],
+      "outcomes": ["accepted", "rejected"],
+      "semantic": {
+        "consumes": [],
+        "produces": ["StagingBullet"],
+        "relations": []
+      }
+    }
+  ]
+}

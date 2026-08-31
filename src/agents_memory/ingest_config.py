@@ -28,26 +28,26 @@ def _expand_glob(pattern: str) -> List[Path]:
     return out
 
 
-def default_ingest() -> dict:
+def default_ingest() -> dict[str, Any]:
     if INGEST_EXAMPLE.is_file():
         return normalize_ingest(json.loads(_read(INGEST_EXAMPLE)))
     return {"version": 1, "sources": []}
 
 
-def ingest_defaults(raw: dict) -> dict:
+def ingest_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "extract_max_bullets": max(0, int(raw.get("extract_max_bullets") or 100)),
         "staging_nag_threshold": max(0, int(raw.get("staging_nag_threshold") or 50)),
     }
 
 
-def extract_max_bullets(cfg: dict, src: dict) -> int:
+def extract_max_bullets(cfg: dict[str, Any], src: dict[str, Any]) -> int:
     if src.get("extract_max_bullets") is not None:
         return max(0, int(src["extract_max_bullets"]))
     return max(0, int(cfg.get("extract_max_bullets") or 100))
 
 
-def _migrate_source(src: dict) -> dict:
+def _migrate_source(src: dict[str, Any]) -> dict[str, Any]:
     """Rename legacy generic ids to product-specific ones."""
     src = dict(src)
     if src.get("id") in ("agent-transcripts", "cursor-transcripts"):
@@ -58,13 +58,13 @@ def _migrate_source(src: dict) -> dict:
     return src
 
 
-def normalize_ingest(raw: dict) -> dict:
+def normalize_ingest(raw: dict[str, Any]) -> dict[str, Any]:
     """Accept legacy split keys or unified sources list."""
     defaults = ingest_defaults(raw)
     if raw.get("sources"):
-        sources = [_migrate_source(s) for s in raw["sources"]]
+        sources: List[dict[str, Any]] = [_migrate_source(s) for s in raw["sources"]]
         return {"version": int(raw.get("version") or 1), "sources": sources, **defaults}
-    sources: List[dict] = []
+    sources: List[dict[str, Any]] = []
     for item in raw.get("openai_export_dirs") or []:
         sources.append(
             {
@@ -162,7 +162,7 @@ def migrate_ingest_legacy_ids() -> List[str]:
     return notes
 
 
-def load_ingest(path: Path | None = None) -> dict:
+def load_ingest(path: Path | None = None) -> dict[str, Any]:
     from .store import USER_MEMORY
 
     ingest_json = path or (USER_MEMORY / "ingest.json")
@@ -174,19 +174,19 @@ def load_ingest(path: Path | None = None) -> dict:
     return default_ingest()
 
 
-def list_sources(cfg: dict | None = None) -> List[dict]:
+def list_sources(cfg: dict[str, Any] | None = None) -> List[dict[str, Any]]:
     cfg = cfg or load_ingest()
     return [s for s in cfg.get("sources") or [] if isinstance(s, dict) and s.get("id")]
 
 
-def get_source(source_id: str, cfg: dict | None = None) -> dict | None:
+def get_source(source_id: str, cfg: dict[str, Any] | None = None) -> dict[str, Any] | None:
     for src in list_sources(cfg):
         if src.get("id") == source_id:
             return src
     return None
 
 
-def chat_sources(cfg: dict | None = None) -> List[dict]:
+def chat_sources(cfg: dict[str, Any] | None = None) -> List[dict[str, Any]]:
     """Non-OpenAI sources that participate in chats-index (legacy name)."""
     return [
         s
@@ -195,18 +195,18 @@ def chat_sources(cfg: dict | None = None) -> List[dict]:
     ]
 
 
-def discover_openai_exports(cfg: dict | None = None) -> List[Path]:
+def discover_openai_exports(cfg: dict[str, Any] | None = None) -> List[Path]:
     src = get_source("openai-export", cfg)
     if not src:
         return []
     return resolve_source_roots(src)
 
 
-def resolve_source_paths(src: dict) -> List[Path]:
+def resolve_source_paths(src: dict[str, Any]) -> List[Path]:
     return resolve_source_roots(src)
 
 
-def resolve_source_roots(src: dict) -> List[Path]:
+def resolve_source_roots(src: dict[str, Any]) -> List[Path]:
     roots: List[Path] = []
     seen: set[str] = set()
     for item in src.get("paths") or []:

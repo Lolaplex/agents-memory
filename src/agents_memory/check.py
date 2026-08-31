@@ -1,14 +1,11 @@
 """Mechanical store health checks — read-only, zero AI.
 
-The Wave 5 primitive: `python -m agents_memory check [--json]`.
+Wave 5 primitive: `python -m agents_memory check [--json]`.
 Exit code = number of failing checks (runner-friendly). Designed to be
-invoked by external scheduling (agents-runner); never self-triggers.
+invoked by agents-harness / later plexd; never self-triggers.
 
-Checks:
-  staging     bullets left in staging/ (unprocessed ingest)
-  duplicates  identical normalized note bodies across files
-  stubs       notes with suspiciously little content
-  index-stale FTS index older than the newest note (if index exists)
+Each result uses a stable `check` id so a care-schedule can name failures
+instead of one boolean kitchen sink.
 """
 
 from __future__ import annotations
@@ -16,34 +13,33 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-from .store import USER_MEMORY, _collect_staging_paths, parse_projects
+from . import frontmatter as fm_schema
+from . import store
+from .index import parse_frontmatter_and_content
+
+SKIP_PARTS = frozenset({".index", "export", "staging", "orphans"})
 
 
-def _iter_notes():
-    for md in USER_MEMORY.rglob("*.md"):
-        if (
-            "/staging/" in str(md.as_posix())
-            or "\\staging\\" in str(md)
-            or ".index" in md.parts
-            or "export" in md.parts
-        ):
+def _iter_notes() -> list[Path]:
+    files: list[Path] = []
+    for md in store.iter_user_memory_files():
+        if SKIP_PARTS.intersection(md.parts):
             continue
-        yield md
-    for proj in parse_projects():
-        mem_dir = proj.memory_dir
-        if mem_dir.is_dir():
-            for md in mem_dir.rglob("*.md"):
-                if "/staging/" in str(md.as_posix()) or "\\staging\\" in str(md):
-                    continue
-                yield md
+        files.append(md)
+    for md in store.iter_project_memory_files():
+        if SKIP_PARTS.intersection(md.parts):
+            continue
+        files.append(md)
+    return files
 
 
 def check_staging() -> dict:
     try:
-        paths = _collect_staging_paths()
+        paths = store._collect_staging_paths()
     except Exception:
         paths = []
     bullets = 0
@@ -58,9 +54,45 @@ def check_staging() -> dict:
     }
 
 
+def _is_user_project_card(path: Path) -> bool:
+    """user/projects/<slug>/README.md is a generated mirror of the in-tree card."""
+    try:
+        rel = path.resolve().relative_to(store.USER_MEMORY.resolve())
+    except ValueError:
+        return False
+    parts = rel.parts
+    return len(parts) >= 3 and parts[0] == "projects" and parts[-1] == "README.md"
+
+
+def _resolve_relation_target(source: Path, target: str) -> Path | None:
+    candidates = [target]
+    if not target.endswith(".md"):
+        candidates.append(target + ".md")
+    for cand in candidates:
+        try:
+            path = store.resolve_memory_path(cand)
+        except FileNotFoundError:
+            continue
+        if path.is_file():
+            return path
+    if target.startswith(".agents/memory/"):
+        for parent in source.parents:
+            if parent.name == "memory" and parent.parent.name == ".agents":
+                inner = target[len(".agents/memory/") :]
+                path = parent / inner
+                if path.suffix != ".md":
+                    path = path.with_suffix(".md")
+                if path.is_file():
+                    return path
+                break
+    return None
+
+
 def check_duplicates() -> dict:
     by_hash: dict[str, list[str]] = defaultdict(list)
     for md in _iter_notes():
+        if _is_user_project_card(md):
+            continue
         text = md.read_text(encoding="utf-8", errors="replace")
         body = re.sub(r"[-#`\s]", "", text.lower())
         if len(body) < 20:
@@ -76,11 +108,21 @@ def check_duplicates() -> dict:
     }
 
 
+def check_near_duplicate_slugs() -> dict:
+    pairs = fm_schema.near_duplicate_stems(_iter_notes())
+    files = [p for pair in pairs for p in pair]
+    return {
+        "check": "near-duplicate-slugs",
+        "ok": not pairs,
+        "detail": f"{len(pairs)} prefix-stem pairs in the same directory",
+        "files": files[:20],
+    }
+
+
 def check_stubs(min_chars: int = 40) -> dict:
     stubs = []
     for md in _iter_notes():
         text = md.read_text(encoding="utf-8", errors="replace").strip()
-        # strip frontmatter-ish header lines starting with #
         body = "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
         if len(body.strip()) < min_chars:
             stubs.append(str(md))
@@ -102,7 +144,8 @@ def check_index_stale() -> dict:
             "ok": True,
             "detail": "no FTS index built (skipped)",
         }
-    newest = max((f.stat().st_mtime for f in _iter_notes()), default=0)
+    notes = _iter_notes()
+    newest = max((f.stat().st_mtime for f in notes), default=0)
     stale = db.stat().st_mtime < newest
     return {
         "check": "index-stale",
@@ -113,12 +156,55 @@ def check_index_stale() -> dict:
     }
 
 
+def check_frontmatter_schema() -> dict:
+    files: list[str] = []
+    n_issues = 0
+    for md in _iter_notes():
+        text = md.read_text(encoding="utf-8", errors="replace")
+        issues = fm_schema.lint_frontmatter_text(text)
+        if issues:
+            n_issues += len(issues)
+            files.append(f"{md}: {'; '.join(issues)}")
+    return {
+        "check": "frontmatter-schema",
+        "ok": n_issues == 0,
+        "detail": f"{n_issues} schema issues in {len(files)} files"
+        if files
+        else "all fenced frontmatter matches SCHEMA_KEYS",
+        "files": files[:20],
+    }
+
+
+def check_dangling_refs() -> dict:
+    dangling: list[str] = []
+    for md in _iter_notes():
+        text = md.read_text(encoding="utf-8", errors="replace")
+        if not text.lstrip().startswith("---"):
+            continue
+        parsed, _, _, _ = parse_frontmatter_and_content(text)
+        for target in fm_schema.relation_targets(parsed):
+            if fm_schema.is_external_target(target):
+                continue
+            path = _resolve_relation_target(md, target)
+            if path is None:
+                dangling.append(f"{md} -> {target}")
+    return {
+        "check": "dangling-refs",
+        "ok": not dangling,
+        "detail": f"{len(dangling)} unresolved relation targets",
+        "files": dangling[:20],
+    }
+
+
 def run_all(as_json: bool = False) -> int:
     results = [
         check_staging(),
         check_duplicates(),
+        check_near_duplicate_slugs(),
         check_stubs(),
         check_index_stale(),
+        check_frontmatter_schema(),
+        check_dangling_refs(),
     ]
     failures = sum(1 for r in results if not r["ok"])
     if as_json:

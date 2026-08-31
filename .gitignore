@@ -22,3 +22,5 @@ examples/orphans/
 
 # Old path name during migration
 memory-bootstrap/
+*.log
+.env

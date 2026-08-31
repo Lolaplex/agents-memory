@@ -542,7 +542,11 @@ def injection_agent_rule() -> Path:
     return canonical_agent_rule()
 
 
-HOST_RULE_DIRS = (Path.home() / ".cursor" / "rules",)
+HOST_RULE_DIRS = (
+    Path.home() / ".cursor" / "rules",
+    Path.home() / ".gemini" / "config" / "rules",
+    Path.home() / ".codeium" / "windsurf" / "rules",
+)
 
 
 def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
@@ -615,10 +619,14 @@ def known_host_mcp_paths() -> List[Path]:
     paths: List[Path] = [
         # Cursor
         home / ".cursor" / "mcp.json",
-        # Windsurf
-        home / ".codeium" / "windsurf" / "mcp_config.json",
+        # Claude Code CLI
+        home / ".claude.json",
+        home / ".claude" / "mcp.json",
+        home / ".claude" / "settings.json",
         # Claude Desktop
         claude_desktop_config_path(),
+        # Windsurf
+        home / ".codeium" / "windsurf" / "mcp_config.json",
         # Antigravity / Gemini CLI
         home / ".gemini" / "antigravity-ide" / "mcp_config.json",
         home / ".gemini" / "config" / "mcp_config.json",
@@ -2150,6 +2158,30 @@ def memory_file_for(
             )
         return USER_MEMORY / "notes" / "scratch" / f"{stem}.md"
 
+    if kind in {"preference", "preferences"}:
+        stem = slugify_name(name or "preferences")
+        if project:
+            p = projects_by_slug().get(project)
+            if p:
+                return p.memory_dir / "notes" / "preferences" / f"{stem}.md"
+        return USER_MEMORY / "notes" / "preferences" / f"{stem}.md"
+
+    if kind in {"rule", "rules"}:
+        stem = slugify_name(name or "rules")
+        if project:
+            p = projects_by_slug().get(project)
+            if p:
+                return p.memory_dir / "notes" / "rules" / f"{stem}.md"
+        return AGENTS_RULES / f"{stem}.mdc"
+
+    if kind in {"convention", "conventions"}:
+        stem = slugify_name(name or "conventions")
+        if project:
+            p = projects_by_slug().get(project)
+            if p:
+                return p.memory_dir / "notes" / "conventions" / f"{stem}.md"
+        return USER_MEMORY / "notes" / "conventions" / f"{stem}.md"
+
     if kind in {"project", "projects"}:
         slug = slugify_name(name or project)
         p = projects_by_slug().get(slug)
@@ -2335,6 +2367,14 @@ def remove_staging_bullet(
             if f not in candidate_paths:
                 candidate_paths.append(f)
 
+    for p in parse_projects():
+        if p.memory_dir.is_dir():
+            p_staging = p.memory_dir / "staging"
+            if p_staging.is_dir():
+                for f in sorted(p_staging.rglob("*.md")):
+                    if f not in candidate_paths:
+                        candidate_paths.append(f)
+
     for path in candidate_paths:
         if not path.is_file():
             continue
@@ -2438,6 +2478,13 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
             for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
                 if f not in candidate_paths:
                     candidate_paths.append(f)
+        for p in parse_projects():
+            if p.memory_dir.is_dir():
+                p_staging = p.memory_dir / "staging"
+                if p_staging.is_dir():
+                    for f in sorted(p_staging.rglob("*.md")):
+                        if f not in candidate_paths:
+                            candidate_paths.append(f)
     return candidate_paths
 
 

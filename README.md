@@ -1,7 +1,7 @@
 # agents-memory
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.0.1-blue.svg?style=flat-square" alt="Version 1.0.1"></a>
+  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.0.2-blue.svg?style=flat-square" alt="Version 1.0.2"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-memory/"><img src="https://img.shields.io/pypi/v/agents-memory.svg?style=flat-square" alt="PyPI"></a>
@@ -47,7 +47,8 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 
 - **Local & Offline:** Your identity and repo memory live in plain files (`~/.agents/memory/` and `<repo>/.agents/memory/`).
 - **Human-Readable & Git-Friendly:** Edit with any text editor, diff with git, commit when you want.
-- **Universal MCP Server:** Exposes memory tools (`search_memory`, `add_memory`, `get_project_memories`, `distill_batch`) to all modern agents.
+- **Universal MCP Server:** Exposes memory tools (`search_memory`, `add_memory`, `get_project_memories`, `distill_batch`, `get_baton`, `set_baton`, `append_chronicle`, `session_snap`, `session_grep`, `search_hybrid`, `get_related`, `suggest_links`, `check_memory_freshness`) to all modern agents.
+- **Ranked Hybrid Retrieval:** Exact-substring precision first with SQLite FTS5 fallback and bidirectional wikilink relation navigation.
 - **Autonomous Ingest & Distillation:** Extracts durable rules and architecture decisions from session logs (OpenAI, Claude, Cursor, Copilot, Antigravity, Pi).
 
 ---
@@ -93,6 +94,11 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 | `agents-memory inventory --register SLUG PATH ROLE STACK` | Registers a new repository |
 | `agents-memory ingest catalog` | Indexes local chat transcripts across all supported providers |
 | `agents-memory ingest extract` | Runs heuristic filters to extract durable facts into staging |
+| `agents-memory distill` | Inspects staging inbox for distillation |
+| `agents-memory check` | Zero-AI mechanical store health checks (stubs, duplicates, leaks) |
+| `agents-memory rebuild-index` | Rebuilds the disposable local SQLite FTS5 search index |
+| `agents-memory serve` | Starts local interactive memory browser on localhost:8765 |
+| `agents-memory web` | Exports static HTML documentation site for your memory store |
 | `agents-memory consolidate` | Ensures no private state leaked into working repository |
 
 ---
@@ -116,6 +122,7 @@ The formal, implementation-agnostic layout specification lives in [`abi/`](abi/)
 - [`abi/WHY.md`](abi/WHY.md) — Architecture decisions & why Markdown wins over RAG.
 - [`abi/LAYOUT.md`](abi/LAYOUT.md) — Directory taxonomy and path contracts.
 - [`abi/KINDS.md`](abi/KINDS.md) — Typed memory taxonomy (`concepts`, `facts`, `decisions`).
+- [`abi/HYGIENE.md`](abi/HYGIENE.md) — Store hygiene doctrine, anti-bloat rules, and health checks.
 - [`abi/MCP.md`](abi/MCP.md) — Tool surface definitions and request/response specifications.
 - [`abi/INGEST.md`](abi/INGEST.md) — Catalog, extract, and distillation pipeline.
 - [`abi/INJECTION.md`](abi/INJECTION.md) — Host rule injection mechanisms.

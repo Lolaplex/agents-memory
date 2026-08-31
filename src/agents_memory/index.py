@@ -110,6 +110,16 @@ def parse_frontmatter_and_content(text: str) -> Tuple[Dict[str, Any], str, str, 
                     else:
                         frontmatter[k] = []
 
+    # Extract wikilinks from content into refs
+    wikilinks = re.findall(r"\[\[([^\]\|#]+)(?:[\|#][^\]]*)?\]\]", content)
+    if wikilinks:
+        refs = frontmatter.setdefault("refs", [])
+        if isinstance(refs, list):
+            for wl in wikilinks:
+                wl_clean = wl.strip()
+                if wl_clean and wl_clean not in refs:
+                    refs.append(wl_clean)
+
     # Title extraction
     title = str(frontmatter.get("title") or "")
     for line in content.splitlines():
@@ -281,7 +291,7 @@ def get_related(
     limit: int = 5,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Retrieve explicit relations (refs/supersedes/same_as) and content-related documents."""
+    """Retrieve explicit relations (refs/supersedes/same_as/backlinks) and content-related documents."""
     target_path = db_path or (INDEX_DIR / "fts.sqlite")
     if not target_path.exists():
         rebuild_index(target_path)
@@ -289,7 +299,7 @@ def get_related(
     conn = get_db(target_path)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, title, frontmatter_json, headings, content FROM documents WHERE id = ? OR id LIKE ?",
+        "SELECT id, title, project, frontmatter_json, headings, content FROM documents WHERE id = ? OR id LIKE ?",
         (memory_id, f"%{memory_id}%"),
     )
     row = cur.fetchone()
@@ -297,22 +307,45 @@ def get_related(
         conn.close()
         return {"id": memory_id, "explicit_relations": {}, "related_documents": []}
 
-    doc_id, title, fm_json, headings, content = row
+    doc_id, title, proj, fm_json, headings_str, content = row
     fm = json.loads(fm_json) if fm_json else {}
+
+    # 1. Backlink discovery across documents table
+    stem = Path(doc_id).stem
+    cur.execute(
+        """
+        SELECT d.id, d.title FROM documents d
+        WHERE d.id != ? AND (
+            d.frontmatter_json LIKE ? OR d.content LIKE ? OR d.content LIKE ?
+        ) LIMIT 20
+        """,
+        (doc_id, f"%{doc_id}%", f"%[[{doc_id}]]%", f"%[[{stem}]]%"),
+    )
+    backlinks = [{"id": r[0], "title": r[1]} for r in cur.fetchall()]
 
     explicit = {
         "refs": fm.get("refs") or [],
+        "backlinks": backlinks,
         "supersedes": fm.get("supersedes") or "",
         "same_as": fm.get("same_as") or "",
         "at_project": fm.get("at_project") or "",
     }
 
-    # Query for related docs using title terms
-    clean_terms = [t for t in re.findall(r"\w+", title) if len(t) > 2]
-    related: List[Dict[str, Any]] = []
+    # 2. Distinctive search terms for content overlap (avoid generic stop words like facts/notes)
+    generic_terms = {
+        "facts", "fact", "readme", "note", "notes", "project", "projects",
+        "untitled", "index", "rules", "preferences", "preference", "global",
+        "the", "and", "for", "with", "from", "that", "this", "file", "memory",
+    }
+    raw_terms = re.findall(r"\w+", f"{title} {headings_str or ''}")
+    clean_terms = [t for t in raw_terms if len(t) > 2 and t.lower() not in generic_terms]
+    if not clean_terms:
+        content_words = re.findall(r"\w+", content[:600])
+        clean_terms = [t for t in content_words if len(t) > 3 and t.lower() not in generic_terms]
 
+    related: List[Dict[str, Any]] = []
     if clean_terms:
-        fts_query = " OR ".join(f'"{t}"' for t in clean_terms[:5])
+        fts_query = " OR ".join(f'"{t}"' for t in clean_terms[:6])
         cur.execute(
             """
             SELECT d.id, d.title, snippet(documents_fts, 3, '<b>', '</b>', '...', 12) as snip
@@ -346,10 +379,11 @@ def suggest_links(
     rel = get_related(from_id, limit=limit, db_path=db_path)
     suggestions: List[Dict[str, Any]] = []
     existing_refs = set(rel.get("explicit_relations", {}).get("refs", []))
+    backlink_ids = {b.get("id") for b in rel.get("explicit_relations", {}).get("backlinks", []) if isinstance(b, dict)}
 
     for doc in rel.get("related_documents", []):
         doc_id = doc.get("id")
-        if not doc_id or doc_id == from_id or doc_id in existing_refs:
+        if not doc_id or doc_id == from_id or doc_id in existing_refs or doc_id in backlink_ids:
             continue
         suggestions.append({
             "from": from_id,

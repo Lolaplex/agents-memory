@@ -229,15 +229,24 @@ class MCPServerTests(unittest.TestCase):
     def test_session_snap_grep_tail(self):
         # set baton so snap includes header
         mcp_server.set_baton("Current focus: Wave 002 temporal layer", project="demo")
-        snap = mcp_server.session_snap(project="demo")
-        self.assertIn("=== BATON RITUAL (demo) ===", snap)
-        self.assertIn("Current focus: Wave 002 temporal layer", snap)
+        mock_lines = [
+            {"source": "cursor", "title": "Test Session", "text": "Implemented temporal session layer", "file": "test.jsonl"}
+        ]
+        with patch.object(store, "_collect_raw_session_user_lines", return_value=mock_lines):
+            snap = mcp_server.session_snap(project="demo")
+            self.assertIn("=== BATON RITUAL (demo) ===", snap)
+            self.assertIn("Current focus: Wave 002 temporal layer", snap)
+            self.assertIn("Implemented temporal session layer", snap)
 
-        grep_res = mcp_server.session_grep(pattern="nonexistent_pattern_12345")
-        self.assertIn("No session lines matching", grep_res)
+            grep_res = mcp_server.session_grep(pattern="temporal")
+            self.assertIn("Implemented temporal session layer", grep_res)
 
-        tail_res = mcp_server.session_tail(limit=5)
-        self.assertIn("Session", tail_res)
+            grep_no = mcp_server.session_grep(pattern="nonexistent_pattern_12345")
+            self.assertIn("No session lines matching", grep_no)
+
+            tail_res = mcp_server.session_tail(limit=5)
+            self.assertIn("Session tail", tail_res)
+            self.assertIn("Implemented temporal session layer", tail_res)
 
 
 if __name__ == "__main__":

@@ -140,7 +140,15 @@ async def get_file_endpoint(request: Request) -> Response:
     if not rel_path or ".." in rel_path:
         return JSONResponse({"error": "Invalid path"}, status_code=400)
 
-    target = USER_MEMORY / rel_path
+    target = (USER_MEMORY / rel_path).resolve()
+    try:
+        if not target.is_relative_to(USER_MEMORY.resolve()):
+            return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
+    except AttributeError:
+        # Python < 3.9 fallback
+        if not str(target).startswith(str(USER_MEMORY.resolve())):
+            return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
+
     if not target.is_file():
         return JSONResponse({"error": "File not found"}, status_code=404)
 
@@ -160,7 +168,14 @@ async def put_file_endpoint(request: Request) -> JSONResponse:
     if not rel_path or ".." in rel_path:
         return JSONResponse({"error": "Invalid path"}, status_code=400)
 
-    target = USER_MEMORY / rel_path
+    target = (USER_MEMORY / rel_path).resolve()
+    try:
+        if not target.is_relative_to(USER_MEMORY.resolve()):
+            return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
+    except AttributeError:
+        if not str(target).startswith(str(USER_MEMORY.resolve())):
+            return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
+
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
 

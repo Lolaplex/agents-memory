@@ -41,6 +41,7 @@ def build_remote_parser() -> argparse.ArgumentParser:
     connect_p.add_argument("--merge", "-m", action="store_true", default=True, help="Merge local memory into remote (default: True)")
     connect_p.add_argument("--pull-only", action="store_true", help="Do not upload local files; pull remote state only")
     connect_p.add_argument("--no-auto-pull", action="store_true", help="Do not auto-pull prompt files on client bridge start")
+    connect_p.add_argument("--insecure", "-k", action="store_true", help="Allow self-signed or unverified TLS certificates")
 
     # disconnect
     disconnect_p = subparsers.add_parser("disconnect", help="Disconnect from remote server and restore local mode")
@@ -85,10 +86,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     elif cmd == "connect":
         url = args.url.strip().rstrip("/")
         token = args.token.strip()
+        verify_ssl = not args.insecure
 
         print(f"Connecting to remote memory at {url}...")
         try:
-            health = remote_health_check(url, token=token)
+            health = remote_health_check(url, token=token, verify_ssl=verify_ssl)
             print(f"Connection OK! Remote running agents-memory v{health.get('version', '?')}")
             print(f"Remote files in store: {health.get('files_count', 0)}")
         except PermissionError:
@@ -100,11 +102,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if args.pull_only:
             print("Pulling remote memory snapshot...")
-            res = remote_pull(url, token=token)
+            res = remote_pull(url, token=token, verify_ssl=verify_ssl)
             print(f"Pulled {res.get('total_files', 0)} files.")
         else:
             print("Performing deterministic multi-device merge...")
-            res = remote_push_merge(url, token=token)
+            res = remote_push_merge(url, token=token, verify_ssl=verify_ssl)
             report = res.get("server_report", {})
             print(
                 f"Merge complete: {len(report.get('added', []))} added, "
@@ -113,7 +115,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             )
 
         # Save config
-        save_remote_config(url=url, token=token, auto_pull=not args.no_auto_pull)
+        save_remote_config(
+            url=url,
+            token=token,
+            auto_pull=not args.no_auto_pull,
+            extra={"verify_ssl": verify_ssl},
+        )
         print(f"Saved remote config to {USER_MEMORY / 'remote_config.json'}")
 
         # Update host MCP configs to point to client bridge

@@ -10,7 +10,6 @@ from typing import Any, Optional
 import uvicorn
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
@@ -47,20 +46,21 @@ def get_all_memory_files(memory_dir: Optional[Path] = None) -> dict[str, str]:
     return files
 
 
-class TokenAuthMiddleware(BaseHTTPMiddleware):
-    """Authenticate requests via Bearer token header or token query parameter."""
+class TokenAuthMiddleware:
+    """Authenticate requests via Bearer token header or token query parameter (pure ASGI)."""
 
     def __init__(self, app, expected_token: str = ""):
-        super().__init__(app)
+        self.app = app
         self.expected_token = expected_token.strip()
 
-    async def dispatch(self, request: Request, call_next):
-        if not self.expected_token:
-            return await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not self.expected_token:
+            return await self.app(scope, receive, send)
 
+        request = Request(scope)
         # Allow open preflight CORS if any
         if request.method == "OPTIONS":
-            return await call_next(request)
+            return await self.app(scope, receive, send)
 
         auth_header = request.headers.get("Authorization", "")
         token = ""
@@ -70,12 +70,13 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             token = request.query_params["token"].strip()
 
         if not token or not secrets.compare_digest(token, self.expected_token):
-            return JSONResponse(
+            response = JSONResponse(
                 {"error": "Unauthorized: invalid or missing token"},
                 status_code=401,
             )
+            return await response(scope, receive, send)
 
-        return await call_next(request)
+        return await self.app(scope, receive, send)
 
 
 async def health_endpoint(request: Request) -> JSONResponse:

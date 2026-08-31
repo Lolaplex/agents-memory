@@ -120,10 +120,14 @@ Connect any local machine to the cloud server with deterministic multi-device me
 agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
 ```
 
-- **Zero Data Loss:** Deduplicates bullet lists, merges project tables by slug, and consolidates staging inboxes.
-- **Universal Bridge:** Automatically configures local IDEs (Cursor, Antigravity, Zed, Claude) via stdio-to-remote proxy.
-- **Fast Offline Injection:** Mirrors local prompt files (`AGENTS.md`) for 0ms IDE startup latency.
-- **Disconnect anytime:** `agents-memory disconnect` pulls a final snapshot and restores local stdio mode.
+- **Mirror sync:** Cloud holds merged bundle; local files are the working copy on each device.
+- **All MCP local:** Ingest, distill, search, CRUD run on workstation; push/pull keeps devices aligned.
+- **Project memory synced:** `<repo>/.agents/memory/` mirrored via `mirror/projects/<slug>/` in bundle.
+- **Auto-push:** Writes (ingest, distill, `add_memory`) push mirror bundle after mutation.
+- **Fast offline injection:** Local `AGENTS.md` / rules for 0ms IDE startup; pull on MCP start.
+- **Disconnect anytime:** `agents-memory disconnect` pulls final snapshot and restores local stdio mode.
+
+See [`abi/REMOTE.md`](abi/REMOTE.md) for bundle layout and merge rules.
 
 ---
 

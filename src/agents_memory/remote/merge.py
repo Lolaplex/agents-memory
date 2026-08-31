@@ -1,6 +1,7 @@
 """Deterministic markdown merge engine for multi-device sync without data loss."""
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -111,10 +112,19 @@ def merge_bullet_markdown(base_text: str, incoming_text: str) -> str:
 
 def merge_table_markdown(base_text: str, incoming_text: str, pk_col_index: int = 0) -> str:
     """Merge two markdown tables (e.g. in PROJECTS.md) by primary key column (slug)."""
+    merged, _ = merge_table_markdown_with_conflicts(base_text, incoming_text, pk_col_index)
+    return merged
+
+
+def merge_table_markdown_with_conflicts(
+    base_text: str, incoming_text: str, pk_col_index: int = 0
+) -> tuple[str, list[dict[str, str]]]:
+    """Merge PROJECTS-style tables; incoming wins on row edits; log conflicts."""
+    conflicts: list[dict[str, str]] = []
     if not base_text.strip():
-        return incoming_text
+        return incoming_text, conflicts
     if not incoming_text.strip():
-        return base_text
+        return base_text, conflicts
 
     def extract_rows(text: str) -> tuple[list[str], dict[str, str], list[str]]:
         header_lines: list[str] = []
@@ -128,13 +138,11 @@ def merge_table_markdown(base_text: str, incoming_text: str, pk_col_index: int =
             if sline.startswith("|") and sline.endswith("|"):
                 if not in_table:
                     in_table = True
-                # Check if separator row (e.g. |---|---|)
                 if re.match(r"^\|(?:\s*[-:]+\s*\|)+$", sline):
                     header_lines.append(line)
                     continue
                 cells = [c.strip() for c in sline[1:-1].split("|")]
                 if len(header_lines) == 0:
-                    # First line is column header
                     header_lines.append(line)
                 else:
                     if len(cells) > pk_col_index:
@@ -154,20 +162,27 @@ def merge_table_markdown(base_text: str, incoming_text: str, pk_col_index: int =
     inc_headers, inc_rows, inc_footers = extract_rows(incoming_text)
 
     if not base_rows and not inc_rows:
-        return merge_bullet_markdown(base_text, incoming_text)
+        return merge_bullet_markdown(base_text, incoming_text), conflicts
 
-    # Merge rows: base first, then append incoming unique
     merged_rows = dict(base_rows)
     for pk, row_line in inc_rows.items():
         if pk not in merged_rows:
             merged_rows[pk] = row_line
+        elif merged_rows[pk].strip() != row_line.strip():
+            conflicts.append(
+                {
+                    "slug": pk,
+                    "file": "PROJECTS.md",
+                    "base": merged_rows[pk],
+                    "incoming": row_line,
+                }
+            )
+            merged_rows[pk] = row_line
 
     out_lines: list[str] = []
-    # Use base headers if present, else inc headers
     headers = base_headers if base_headers else inc_headers
     out_lines.extend(headers)
 
-    # Output rows in stable order: base keys first, then new incoming keys
     seen = set()
     for pk in base_rows.keys():
         if pk in merged_rows:
@@ -181,7 +196,7 @@ def merge_table_markdown(base_text: str, incoming_text: str, pk_col_index: int =
     if footers:
         out_lines.extend(footers)
 
-    return "\n".join(out_lines).strip() + "\n"
+    return "\n".join(out_lines).strip() + "\n", conflicts
 
 
 def merge_staging_markdown(base_text: str, incoming_text: str) -> str:

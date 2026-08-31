@@ -685,7 +685,7 @@ def mcp_entry() -> dict[str, Any]:
     if cfg and cfg.get("url"):
         entry: dict[str, Any] = {
             "command": sys.executable,
-            "args": ["-m", "agents_memory", "remote", "client"],
+            "args": ["-m", "agents_memory.remote.sync_mcp"],
         }
     else:
         entry = {
@@ -1974,10 +1974,7 @@ def write_memory_file(
     _write(path, content)
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     return file_id(path)
 
 
@@ -2026,6 +2023,20 @@ _MEMORY_FILE_CACHE: dict[str, Tuple[float, List[str]]] = {}
 
 def clear_memory_cache() -> None:
     _MEMORY_FILE_CACHE.clear()
+
+
+def _finish_store_write() -> None:
+    """Rewrite IDE injection and push mirror bundle to remote when connected."""
+    try:
+        sync_injection(include_repos=True)
+    except Exception:
+        pass
+    try:
+        from .remote.sync_hooks import after_memory_mutation
+
+        after_memory_mutation()
+    except Exception:
+        pass
 
 
 def _read_cached_lines(path: Path) -> List[str]:
@@ -2355,10 +2366,7 @@ def add_memory(
     loc = _append_bullet(path, fact)
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     k = (kind or "").strip().lower()
     if k in REVISE_IN_PLACE_KINDS and existed:
         return (
@@ -2406,10 +2414,7 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     _write(path, "\n".join(lines))
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     return removed
 
 
@@ -2512,10 +2517,7 @@ def promote_bullet(
     )
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     return loc, removed
 
 
@@ -2731,10 +2733,7 @@ def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[s
 
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
 
     remaining = count_staging_bullets()
     return {

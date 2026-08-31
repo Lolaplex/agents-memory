@@ -307,6 +307,9 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
 def ingest_catalog() -> str:
     """Catalog phase: rebuild chats-index.md + entity cards (titles/paths only). Bodies stay in product folders. Same contract for every ingest source."""
     try:
+        from .remote.locality import assert_ingest_runs_locally
+
+        assert_ingest_runs_locally()
         from .ingest_catalog import run_catalog
 
         result = run_catalog()
@@ -319,6 +322,9 @@ def ingest_catalog() -> str:
 def ingest_extract(source_id: str = "") -> str:
     """Extract phase: filter durable user lines into staging/ingest/<id>/captured.md (inbox, not memory). Distill explicitly afterward."""
     try:
+        from .remote.locality import assert_ingest_runs_locally
+
+        assert_ingest_runs_locally()
         from .ingest_extractors import run_extract
 
         result = run_extract(source_id=source_id)

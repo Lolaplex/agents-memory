@@ -115,10 +115,9 @@ class TestRemoteE2E(unittest.TestCase):
         cfg = get_remote_config()
         self.assertIsNotNone(cfg)
 
-        # Test mcp_entry uses remote bridge
+        # Test mcp_entry uses mirror sync MCP
         entry = mcp_entry()
-        self.assertIn("remote", entry["args"])
-        self.assertIn("client", entry["args"])
+        self.assertIn("sync_mcp", entry["args"][-1])
 
         # Disconnect restores local mode
         clear_remote_config()

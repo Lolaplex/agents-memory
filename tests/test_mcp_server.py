@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
@@ -228,19 +228,25 @@ class MCPServerTests(unittest.TestCase):
 
     def test_session_snap_grep_tail(self):
         mcp_server.set_baton("Current focus: Wave 002 temporal layer", project="demo")
-        with patch(
-            "agents_traces.session_view.session_snap",
-            return_value="Implemented temporal session layer",
-        ), patch(
-            "agents_traces.session_view.session_grep",
+        mock_traces = MagicMock()
+        mock_view = MagicMock()
+        mock_view.session_snap = MagicMock(return_value="Implemented temporal session layer")
+        mock_view.session_grep = MagicMock(
             side_effect=lambda pattern, since="": (
                 "Implemented temporal session layer"
                 if "temporal" in pattern
                 else "No session lines matching"
-            ),
-        ), patch(
-            "agents_traces.session_view.session_tail",
-            return_value="Session tail\nImplemented temporal session layer",
+            )
+        )
+        mock_view.session_tail = MagicMock(return_value="Session tail\nImplemented temporal session layer")
+        mock_traces.session_view = mock_view
+
+        with patch.dict(
+            sys.modules,
+            {
+                "agents_traces": mock_traces,
+                "agents_traces.session_view": mock_view,
+            },
         ):
             snap = mcp_server.session_snap(project="demo")
             self.assertIn("=== BATON RITUAL (demo) ===", snap)

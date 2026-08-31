@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
@@ -532,12 +532,18 @@ class RegisterBootstrapTests(unittest.TestCase):
         root = Path(tmp.name)
         user = root / "user"
         user.mkdir()
-        with patch.object(store, "USER_MEMORY", user), patch(
-            "agents_traces.session_view.session_snap",
-            return_value="Setup FastAPI backend",
-        ), patch(
-            "agents_traces.session_view.session_grep",
-            return_value="Setup FastAPI backend",
+        mock_traces = MagicMock()
+        mock_view = MagicMock()
+        mock_view.session_snap = MagicMock(return_value="Setup FastAPI backend")
+        mock_view.session_grep = MagicMock(return_value="Setup FastAPI backend")
+        mock_traces.session_view = mock_view
+
+        with patch.object(store, "USER_MEMORY", user), patch.dict(
+            sys.modules,
+            {
+                "agents_traces": mock_traces,
+                "agents_traces.session_view": mock_view,
+            },
         ):
             snap = store.session_snap(limit=10)
             self.assertIn("Setup FastAPI backend", snap)

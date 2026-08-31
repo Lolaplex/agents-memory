@@ -189,8 +189,32 @@ def merge_staging_markdown(base_text: str, incoming_text: str) -> str:
     return merge_bullet_markdown(base_text, incoming_text)
 
 
+def merge_json_content(base_str: str, incoming_str: str) -> str:
+    """Deterministically merge two JSON strings (dicts/lists)."""
+    try:
+        base_obj = json.loads(base_str)
+        inc_obj = json.loads(incoming_str)
+        if isinstance(base_obj, dict) and isinstance(inc_obj, dict):
+            merged_obj = dict(base_obj)
+            for k, v in inc_obj.items():
+                if k not in merged_obj:
+                    merged_obj[k] = v
+                elif isinstance(merged_obj[k], list) and isinstance(v, list):
+                    for item in v:
+                        if item not in merged_obj[k]:
+                            merged_obj[k].append(item)
+                elif isinstance(merged_obj[k], dict) and isinstance(v, dict):
+                    merged_obj[k].update(v)
+                else:
+                    merged_obj[k] = v
+            return json.dumps(merged_obj, indent=2)
+    except Exception:
+        pass
+    return incoming_str
+
+
 def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, bool]:
-    """Merge incoming markdown string into existing file at base_path.
+    """Merge incoming markdown or json string into existing file at base_path.
     
     Returns (merged_content, was_modified).
     """
@@ -200,6 +224,10 @@ def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, b
     base_content = base_path.read_text(encoding="utf-8", errors="replace")
     if base_content.strip() == incoming_content.strip():
         return base_content, False
+
+    if base_path.suffix.lower() == ".json":
+        merged = merge_json_content(base_content, incoming_content)
+        return merged, (merged.strip() != base_content.strip())
 
     name_lower = base_path.name.lower()
     if name_lower == "projects.md":

@@ -192,7 +192,16 @@ def create_remote_app(token: str = "") -> Starlette:
     ensure_memory_layout()
     token = token or os.environ.get("AGENTS_MEMORY_TOKEN", "")
 
-    # FastMCP SSE sub-app
+    # FastMCP SSE sub-app (disable DNS rebinding host checks for domain / reverse proxy traffic)
+    try:
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+    except Exception:
+        pass
+
     sse_subapp = mcp.sse_app()
 
     routes = [

@@ -104,6 +104,15 @@ class TestRemoteServerClient(unittest.TestCase):
         self.assertTrue(cleared)
         self.assertIsNone(get_remote_config())
 
+    def test_sse_custom_host_header(self):
+        app = create_remote_app(token="testtoken")
+        client = TestClient(app)
+        # Should not raise 421 Invalid Host header when connecting with custom domain
+        with client.stream("GET", "/sse", headers={"Authorization": "Bearer testtoken", "Host": "memory.lolax.dev"}) as resp:
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn("text/event-stream", resp.headers.get("content-type", ""))
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,8 +23,6 @@ pip install agents-memory && agents-memory sync --init
 
 Scaffolds `~/.agents/memory/`, autowires MCP configurations into your installed IDEs, and registers assistant skills.
 
-### 2. Agent-Driven Setup (Zero Friction)
-
 > [!TIP]
 > **🤖 Agent-Driven Setup (Zero Friction):**  
 > Simply tell your coding agent: **"Install and set up agents-memory for me."**  
@@ -87,7 +85,7 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 ## CLI Reference
 
 | Command | Purpose |
-| --------- | --------- |
+|---------|---------|
 | `agents-memory sync` | Updates canonical `AGENTS.md`, host rules, and MCP registrations |
 | `agents-memory sync --init` | First-time scaffolding, example creation, and host discovery |
 | `agents-memory inventory` | Discovers unregistered local repositories across workspace roots |
@@ -100,6 +98,28 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 | `agents-memory serve` | Starts local interactive memory browser on localhost:8765 |
 | `agents-memory web` | Exports static HTML documentation site for your memory store |
 | `agents-memory consolidate` | Ensures no private state leaked into working repository |
+
+---
+
+## MCP Tools Reference
+
+| Tool | Parameters | Description |
+| :--- | :--- | :--- |
+| `search_memory` | `query`, `project`, `limit` | Exact-substring precision first with ranked SQLite FTS5 fallback. |
+| `add_memory` | `fact`, `kind`, `name`, `project` | Proactively save durable facts, concepts, ADRs, or rules directly to memory. |
+| `get_project_memories` | `project`, `cwd` | Retrieve project-specific facts, architecture decisions, and active work files. |
+| `get_staging_inbox` | *None* | Retrieve unreviewed captured bullets across user and project staging files. |
+| `distill_batch` | `items_json` | Batch promote durable facts to permanent files or discard throwaway noise. |
+| `promote_bullet` | `bullet`, `kind`, `name`, `project` | Promote a single staging bullet to permanent memory. |
+| `get_baton` | `project`, `cwd` | Read the active session baton handover note for context continuity. |
+| `set_baton` | `text`, `project`, `cwd` | Update the session baton handover note for the next agent session. |
+| `append_chronicle` | `beat`, `project`, `emoji`, `refs` | Record a major milestone or beat in the project's temporal chronicle. |
+| `session_snap` | `limit`, `project`, `cwd` | Snapshot recent user query history and active session baton. |
+| `session_grep` | `pattern`, `since`, `project` | Fast regex search across indexed session transcripts. |
+| `session_tail` | `session_id`, `limit` | Tail recent user interaction lines from session logs. |
+| `search_hybrid` | `query`, `limit` | Hybrid search combining SQLite FTS5 text rank with wikilink relations. |
+| `get_related` | `file_path`, `depth` | Traverse explicit wikilink relations, references, and backlinks. |
+| `check_memory_freshness` | *None* | Mechanical audit of staging backlog and stale project batons. |
 
 ---
 

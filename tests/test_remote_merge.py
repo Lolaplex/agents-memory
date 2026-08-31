@@ -64,6 +64,13 @@ class TestRemoteMerge(unittest.TestCase):
         self.assertEqual(merged.count("demo"), 1)
         self.assertEqual(merged.count("web-app"), 1)
 
+    def test_merge_table_incoming_wins_on_edit(self):
+        base = """| slug | path |\n| --- | --- |\n| demo | /old/path |\n"""
+        incoming = """| slug | path |\n| --- | --- |\n| demo | /new/path |\n"""
+        merged = merge_table_markdown(base, incoming)
+        self.assertIn("/new/path", merged)
+        self.assertNotIn("/old/path", merged)
+
     def test_merge_staging_markdown(self):
         base = """# Staging Inbox
 ## Session 1

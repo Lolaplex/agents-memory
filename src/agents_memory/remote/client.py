@@ -20,7 +20,7 @@ from ..store import (
     ensure_memory_layout,
     sync_injection,
 )
-from .merge import merge_file_trees
+from .sync_bundle import apply_sync_bundle, collect_sync_bundle
 
 CONFIG_FILE = USER_MEMORY / "remote_config.json"
 
@@ -89,6 +89,35 @@ def _get_http_client(timeout: float = 30.0, verify_ssl: bool = True) -> httpx.Cl
     return httpx.Client(timeout=timeout, verify=verify_ssl)
 
 
+def verify_remote_tool_api(
+    url: str,
+    token: str = "",
+    timeout: float = 10.0,
+    verify_ssl: Optional[bool] = None,
+) -> dict[str, Any]:
+    """Confirm remote server supports hybrid REST tool proxy (/api/v1/tool)."""
+    clean_url = url.strip().rstrip("/")
+    headers = _get_auth_headers(token)
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+        resp = client.post(
+            f"{clean_url}/api/v1/tool",
+            json={"name": "__probe__", "arguments": {}},
+            headers={**headers, "Content-Type": "application/json"},
+        )
+        # 404 unknown tool = API present; 401 = auth issue; connection error = missing deploy
+        if resp.status_code == 404:
+            return {"ok": True, "tool_api": True}
+        if resp.status_code == 401:
+            raise PermissionError("Unauthorized: token rejected by remote server.")
+        if resp.status_code == 400:
+            data = resp.json()
+            if data.get("locality") == "local":
+                return {"ok": True, "tool_api": True}
+        resp.raise_for_status()
+        return {"ok": True, "tool_api": True}
+
+
 def remote_health_check(
     url: str,
     token: str = "",
@@ -131,12 +160,7 @@ def remote_pull(
         data = resp.json()
 
     files = data.get("files", {})
-    report = merge_file_trees(dest_root, files)
-
-    try:
-        sync_injection()
-    except Exception:
-        pass
+    report = apply_sync_bundle(files, target_root=dest_root, apply_to_repos=True)
 
     return {
         "status": "ok",
@@ -152,16 +176,16 @@ def remote_push_merge(
     timeout: float = 30.0,
     verify_ssl: Optional[bool] = None,
 ) -> dict[str, Any]:
-    """Upload local memory files to remote server for deterministic merging."""
-    from .server import get_all_memory_files
-
+    """Upload local mirror bundle to remote server for deterministic merging."""
     clean_url = url.strip().rstrip("/")
     target = f"{clean_url}/api/v1/merge"
     headers = _get_auth_headers(token)
-    src_root = source_dir or USER_MEMORY
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
 
-    local_files = get_all_memory_files(src_root)
+    local_files = collect_sync_bundle(
+        include_projects=True,
+        memory_root=source_dir or USER_MEMORY,
+    )
     payload = {"files": local_files}
 
     with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
@@ -171,14 +195,9 @@ def remote_push_merge(
         resp.raise_for_status()
         data = resp.json()
 
-    # Mirror server response back locally
     server_snapshot = data.get("snapshot", {})
     if server_snapshot:
-        merge_file_trees(src_root, server_snapshot)
-        try:
-            sync_injection()
-        except Exception:
-            pass
+        apply_sync_bundle(server_snapshot, target_root=USER_MEMORY, apply_to_repos=True)
 
     return {
         "status": "ok",
@@ -261,12 +280,7 @@ async def run_client_bridge(
 
 
 def main_bridge() -> int:
-    """Entrypoint for `python -m agents_memory remote client`."""
-    try:
-        anyio.run(run_client_bridge)
-        return 0
-    except KeyboardInterrupt:
-        return 0
-    except Exception as e:
-        print(f"agents-memory client error: {e}", file=sys.stderr)
-        return 1
+    """Entrypoint for `python -m agents_memory remote client` (mirror sync MCP)."""
+    from .sync_mcp import main as sync_main
+
+    return sync_main()

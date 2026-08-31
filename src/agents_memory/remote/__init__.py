@@ -11,6 +11,13 @@ from .client import (
     run_client_bridge,
     save_remote_config,
 )
+from .locality import (
+    LOCAL_TOOLS,
+    REMOTE_TOOLS,
+    HYBRID_TOOLS,
+    assert_ingest_runs_locally,
+    tool_locality,
+)
 from .merge import (
     merge_bullet_markdown,
     merge_file_trees,
@@ -36,4 +43,9 @@ __all__ = [
     "run_client_bridge",
     "run_server",
     "save_remote_config",
+    "LOCAL_TOOLS",
+    "REMOTE_TOOLS",
+    "HYBRID_TOOLS",
+    "assert_ingest_runs_locally",
+    "tool_locality",
 ]

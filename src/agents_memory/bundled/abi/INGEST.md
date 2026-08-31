@@ -16,6 +16,8 @@ Run both catalog and extract: `python -m agents_memory ingest run`. Status: `pyt
 
 Distill is intentional human/agent work — no auto-promotion to memory. Use `get_staging_inbox` (grouped by source) then `distill_batch` with `source_path` on each item.
 
+**Remote mode:** catalog + extract run on the workstation (chat graves are local); hybrid MCP auto-pushes staging to the canonical remote store. Distill runs on remote. See [`REMOTE.md`](REMOTE.md).
+
 ## Division of labor
 
 | Who | Phases | Why |

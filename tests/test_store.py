@@ -499,7 +499,7 @@ class RegisterBootstrapTests(unittest.TestCase):
         )
         with patch.object(store, "USER_MEMORY", user), patch.object(
             store, "sync_injection", lambda **k: ([], [])
-        ):
+        ), patch.object(store, "parse_projects", return_value=[]):
             res = store.auto_distill(limit=50, discard_noise=True, auto_sync=False)
             self.assertEqual(res["discarded"], 3)  # 'ok', 'Wie kann ich...', 'hi'
             self.assertEqual(res["promoted"], 1)   # 'Always use Tailwind v3...'
@@ -532,19 +532,13 @@ class RegisterBootstrapTests(unittest.TestCase):
         root = Path(tmp.name)
         user = root / "user"
         user.mkdir()
-        # Mock ingest config with a dummy cursor transcript
-        cursor_dir = root / "cursor_transcripts"
-        cursor_dir.mkdir()
-        tf = cursor_dir / "test.jsonl"
-        tf.write_text(
-            json.dumps({"role": "user", "message": {"content": [{"type": "text", "text": "<user_query>Setup FastAPI backend</user_query>"}]}}) + "\n",
-            encoding="utf-8",
-        )
-        mock_cfg = {
-            "version": 1,
-            "sources": [{"id": "cursor", "kind": "agent-jsonl", "paths": [str(cursor_dir)], "catalog": True, "extract": True}]
-        }
-        with patch.object(store, "USER_MEMORY", user), patch("agents_memory.ingest_config.load_ingest", return_value=mock_cfg):
+        with patch.object(store, "USER_MEMORY", user), patch(
+            "agents_traces.session_view.session_snap",
+            return_value="Setup FastAPI backend",
+        ), patch(
+            "agents_traces.session_view.session_grep",
+            return_value="Setup FastAPI backend",
+        ):
             snap = store.session_snap(limit=10)
             self.assertIn("Setup FastAPI backend", snap)
             self.assertNotIn("<user_query>", snap)

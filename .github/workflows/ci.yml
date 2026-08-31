@@ -2,9 +2,9 @@ name: CI Test Matrix
 
 on:
   push:
-    branches: [main, "feat/*"]
+    branches: [main, dev, "feat/*", "cloud-sync"]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 jobs:
@@ -45,7 +45,13 @@ jobs:
           agents-memory version
           agents-memory --help
           agents-memory help
+          agents-memory remote --help
           agents-memory inventory --json
+
+      - name: Verify Docker build
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: |
+          docker build -t agents-memory:test .
 
       - name: Build package distribution
         run: |

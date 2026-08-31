@@ -77,13 +77,31 @@ def _get_auth_headers(token: str) -> dict[str, str]:
     return headers
 
 
-def remote_health_check(url: str, token: str = "", timeout: float = 10.0) -> dict[str, Any]:
+def _is_ssl_verify_enabled(cfg: Optional[dict[str, Any]] = None) -> bool:
+    if os.environ.get("AGENTS_MEMORY_INSECURE", "").lower() in ("1", "true", "yes"):
+        return False
+    if cfg and cfg.get("verify_ssl") is False:
+        return False
+    return True
+
+
+def _get_http_client(timeout: float = 30.0, verify_ssl: bool = True) -> httpx.Client:
+    return httpx.Client(timeout=timeout, verify=verify_ssl)
+
+
+def remote_health_check(
+    url: str,
+    token: str = "",
+    timeout: float = 10.0,
+    verify_ssl: Optional[bool] = None,
+) -> dict[str, Any]:
     """Check connectivity and authentication against remote memory server."""
     clean_url = url.strip().rstrip("/")
     target = f"{clean_url}/api/v1/health"
     headers = _get_auth_headers(token)
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
 
-    with httpx.Client(timeout=timeout) as client:
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.get(target, headers=headers)
         if resp.status_code == 401:
             raise PermissionError("Unauthorized: Token rejected by remote server.")
@@ -96,14 +114,16 @@ def remote_pull(
     token: str = "",
     target_dir: Optional[Path] = None,
     timeout: float = 30.0,
+    verify_ssl: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Download memory snapshot from remote and update target directory."""
     clean_url = url.strip().rstrip("/")
     target = f"{clean_url}/api/v1/snapshot"
     headers = _get_auth_headers(token)
     dest_root = target_dir or USER_MEMORY
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
 
-    with httpx.Client(timeout=timeout) as client:
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.get(target, headers=headers)
         if resp.status_code == 401:
             raise PermissionError("Unauthorized: Token rejected by remote server.")
@@ -130,6 +150,7 @@ def remote_push_merge(
     token: str = "",
     source_dir: Optional[Path] = None,
     timeout: float = 30.0,
+    verify_ssl: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Upload local memory files to remote server for deterministic merging."""
     from .server import get_all_memory_files
@@ -138,11 +159,12 @@ def remote_push_merge(
     target = f"{clean_url}/api/v1/merge"
     headers = _get_auth_headers(token)
     src_root = source_dir or USER_MEMORY
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
 
     local_files = get_all_memory_files(src_root)
     payload = {"files": local_files}
 
-    with httpx.Client(timeout=timeout) as client:
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.post(target, json=payload, headers=headers)
         if resp.status_code == 401:
             raise PermissionError("Unauthorized: Token rejected by remote server.")

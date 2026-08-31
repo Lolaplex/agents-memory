@@ -20,6 +20,7 @@ Every piece of information lives in exactly one lifetime. Promote deliberately; 
 Chat bodies, transcripts, brain folders, and export archives remain in their product directories.
 Ingest catalog creates **pointers** (`chats-index.md`). Ingest extract creates **filtered bullets** in staging.
 Neither phase copies bodies into `~/.agents/memory`.
+The derived execution log — tools, messages, live MCP and ingested vendor chats — is **agents-traces** (`~/.agents/traces`). Memory `session_snap` / `session_grep` / `session_tail` read that store. They do not open product jsonl.
 
 Wholesale import — symlink-all-histories, dump-entire-exports — floods search with one-shots and duplicates product stores. We do not want to remember everything ever said.
 
@@ -43,6 +44,7 @@ Who may write what. Violations are bugs, not edge cases.
 |---------|--------|------------|
 | Evidence (product folders) | Product only | agents-memory never writes to chat/brain/export archives |
 | `chats-index.md`, `entities/chat-source-*.md` | Ingest catalog | Pointers and titles. Rebuild from `ingest.json` at any time |
+| `~/.agents/traces` | agents-traces ingest + live interceptor | Conversation/tool log. Memory reads it; memory never writes it |
 | `staging/` | Ingest extract, `add_memory(project=)`, manual | Append bullets. Distill gate before typed memory |
 | Typed memory (`concepts/`, `decisions/`, `notes/`, …) | `promote_bullet`, `distill_batch`, `add_memory(kind=, name=)`, direct file edit | Explicit kind + name required. No auto-promotion from staging |
 | `~/.agents/AGENTS.md`, host rules, per-repo `.agents/` inject | `sync` (generated) | Short identity + project map. Not transcripts, not extracted bullets |
@@ -101,7 +103,11 @@ Embedding caches missing configuration metadata or generated with mismatched ins
 
 ## Relation frontmatter
 
-Memory files may carry explicit relations in YAML frontmatter:
+Memory files may carry explicit relations in YAML frontmatter. Files with no
+`---` fence are valid. A file that opens a fence MUST close it and MUST only
+use keys from the schema below (`python -m agents_memory check` /
+`frontmatter-schema` + `dangling-refs`). Unknown keys fail: that keeps
+UMP-shaped envelopes (DID, integrity, consent blobs) out of the vault.
 
 ```yaml
 ---
@@ -111,8 +117,30 @@ refs:
 supersedes: user/notes/programming/old-approach
 at_project: demo
 same_as: external:resource:abc123
+provenance: human
+checked_at: 2026-08-29
+pin_kind: correction
 ---
 ```
+
+### Frontmatter schema (closed)
+
+| Key | Type | Role |
+|-----|------|------|
+| `slug` `path` `role` `stack` `status` | string | Project card (`stub_project_md`) |
+| `title` `kind` `name` `collection` `date` `id` | string | Optional identity (`id` on chat-source entities) |
+| `refs` | YAML list | Directional references (memory ids or `survey:` / `record:` / `external:` / `entity:` / `urn:` / `http(s):` / `did:`) |
+| `supersedes` `same_as` `at_project` `at_landmark` `part_of` `next` `near` `survey_ref` `on_trail` | string or list | Relation vocabulary |
+| `provenance` | `human` \| `agent` \| `import` | Pin / assertion source |
+| `checked_at` | date string | When an external claim was last verified |
+| `pin_kind` | `correction` \| `addition` \| `deletion` | Human pin that must survive recompile |
+
+`status` on a project card is `active` \| `sandbox` \| `paused` \| `archived`.
+Lifecycle notes also use `proposed` \| `implemented` \| `rejected` \| `accepted`.
+`planned` is reserved for ingest placeholders (slug reservation).
+
+Machine copy: `agents_memory.frontmatter.SCHEMA_KEYS`. Do not add keys in prose
+without adding them there.
 
 | Key | Semantics |
 |-----|-----------|
@@ -125,6 +153,11 @@ same_as: external:resource:abc123
 | `next` | Sequence ordering |
 | `near` | Proximity relation (symmetric) |
 | `survey_ref` | Survey pointer from catalog/index to external body |
+| `on_trail` | Sequential progression step |
+
+Named check ids for the harness: `staging-leftovers`, `duplicate-notes`,
+`near-duplicate-slugs`, `stub-notes`, `index-stale`, `frontmatter-schema`,
+`dangling-refs`.
 
 Explicit typed edges take precedence over similarity ranking. The index may surface related files, but the frontmatter is the ground truth.
 

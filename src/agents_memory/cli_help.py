@@ -95,6 +95,7 @@ def injection_spec() -> dict[str, Any]:
                 "path": "<repo>/.agents/AGENTS.md + CLAUDE.md",
                 "when": "registered project with path on disk",
                 "marker": "<!-- agents-memory-sync -->",
+                "marker_end": "<!-- /agents-memory-sync -->",
                 "note": "No <repo>/.cursor/ — scan skips .cursor; no empty memory subfolders",
             },
             {
@@ -114,6 +115,8 @@ def injection_spec() -> dict[str, Any]:
             {"path": "~/.agents/memory/LAYOUT.md", "source": "abi/LAYOUT.md in engine clone"},
         ],
         "marker": "<!-- agents-memory-sync -->",
+        "marker_end": "<!-- /agents-memory-sync -->",
+        "inject": "splice marked block; never replace the rest of AGENTS.md",
     }
 
 

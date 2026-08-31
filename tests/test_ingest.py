@@ -78,6 +78,8 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(list_sources(cfg)[0]["id"], "x")
         self.assertEqual(cfg["extract_max_bullets"], 100)
         self.assertEqual(cfg["staging_nag_threshold"], 50)
+        self.assertTrue(cfg["auto_distill_on_start"])
+        self.assertEqual(cfg["auto_distill_max_rounds"], 3)
 
 
 class StagingTests(unittest.TestCase):

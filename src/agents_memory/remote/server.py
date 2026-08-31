@@ -29,13 +29,8 @@ os.environ.setdefault("AGENTS_MEMORY_REMOTE_SERVER", "1")
 
 
 def get_all_memory_files(memory_dir: Optional[Path] = None) -> dict[str, str]:
-    """Collect full mirror sync bundle (user store + rules + project mirrors)."""
-    if memory_dir is not None and memory_dir.resolve() != USER_MEMORY.resolve():
-        # Legacy: single-tree collection for isolated tests
-        from .sync_bundle import _collect_tree
-
-        return _collect_tree(memory_dir)
-    return collect_sync_bundle(include_projects=True)
+    """Collect full mirror sync bundle (user store + rules + stored project mirrors)."""
+    return collect_sync_bundle(include_projects=True, memory_root=memory_dir or USER_MEMORY)
 
 
 class TokenAuthMiddleware:

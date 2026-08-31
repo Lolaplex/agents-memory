@@ -55,11 +55,13 @@ Who may write what. Violations are bugs, not edge cases.
 
 Auto-distill (`auto_distill`) may **discard** obvious noise and **categorize** standard facts, but it does not rewrite bullet text or invent facts not present in staging.
 
+A deterministic **noise pass** (`auto_distill_noise_pass`) may run on MCP start and after ingest extract when the inbox is at or above `staging_nag_threshold`. That pass only discards obvious noise and files heuristic matches (`always`/`never`/`prefer`). It is not auto-promotion of leftover bullets.
+
 ### No auto-promotion
 
-Staging → typed memory requires an explicit distill call with `kind` and `name`. No background job, no timer, no "smart inbox" that silently graduates bullets.
+Staging → typed memory requires an explicit distill call with `kind` and `name`. No background LLM, no timer, no "smart inbox" that silently graduates remaining bullets.
 
-If the inbox is too large, the nag fires. The response is distill or delete — not auto-file.
+If the inbox is too large, the nag fires. The response is distill or delete — not auto-file the rest.
 
 ## Filter rules (extract phase)
 

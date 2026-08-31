@@ -26,6 +26,13 @@ def main() -> int:
     else:
         print("Starting local agents-memory MCP on stdio...", file=sys.stderr)
 
+    try:
+        from ..store import maybe_run_startup_noise_pass
+
+        maybe_run_startup_noise_pass()
+    except Exception:
+        pass
+
     from ..mcp_server import main as local_main
 
     return local_main()

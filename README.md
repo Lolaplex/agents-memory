@@ -1,7 +1,7 @@
 # agents-memory
 
 <p align="left">
-  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.0.2-blue.svg?style=flat-square" alt="Version 1.0.2"></a>
+  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=flat-square" alt="Version 1.1.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-memory/"><img src="https://img.shields.io/pypi/v/agents-memory.svg?style=flat-square" alt="PyPI"></a>
@@ -96,8 +96,34 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 | `agents-memory check` | Zero-AI mechanical store health checks (stubs, duplicates, leaks) |
 | `agents-memory rebuild-index` | Rebuilds the disposable local SQLite FTS5 search index |
 | `agents-memory serve` | Starts local interactive memory browser on localhost:8765 |
+| `agents-memory remote serve` | Starts remote MCP & cloud sync server (FastMCP SSE + REST) |
+| `agents-memory connect` | Connects local machine to remote cloud memory server |
+| `agents-memory disconnect` | Disconnects from cloud and restores local stdio mode |
 | `agents-memory web` | Exports static HTML documentation site for your memory store |
 | `agents-memory consolidate` | Ensures no private state leaked into working repository |
+
+---
+
+## Cloud Sync & Multi-Device Coordination (v1.1.0)
+
+Sync memory across multiple development machines, remote servers, and VPS assistants without data loss:
+
+### 1. Host Server (VPS / Cloud)
+Start the authenticated remote MCP and synchronization server:
+```bash
+agents-memory remote serve --port 8443 --token <YOUR_SECRET_TOKEN>
+```
+
+### 2. Connect Local Clients (Laptops / Workstations)
+Connect any local machine to the cloud server with deterministic multi-device merge:
+```bash
+agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
+```
+
+- **Zero Data Loss:** Deduplicates bullet lists, merges project tables by slug, and consolidates staging inboxes.
+- **Universal Bridge:** Automatically configures local IDEs (Cursor, Antigravity, Zed, Claude) via stdio-to-remote proxy.
+- **Fast Offline Injection:** Mirrors local prompt files (`AGENTS.md`) for 0ms IDE startup latency.
+- **Disconnect anytime:** `agents-memory disconnect` pulls a final snapshot and restores local stdio mode.
 
 ---
 

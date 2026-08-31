@@ -23,6 +23,9 @@ Commands:
   distill          Inspect staging inbox for distillation
   check            Mechanical store health checks (read-only, zero AI)
   serve            Start local memory browser (localhost:8765)
+  remote           Multi-device cloud sync & remote server (serve/connect/push/pull)
+  connect          Connect to a remote memory server
+  disconnect       Disconnect from remote and restore local mode
   web              Export static HTML website
   rebuild-index    Rebuild disposable FTS index cache
   mcp              stdio MCP server
@@ -124,6 +127,18 @@ def main(argv: list[str] | None = None) -> int:
             f"Exported static memory website: {res['files']} files to {res['export_dir']}"
         )
         return 0
+    if cmd in ("remote", "cloud"):
+        from .remote.cli import main as run_remote
+
+        return run_remote(rest)
+    if cmd == "connect":
+        from .remote.cli import main as run_remote
+
+        return run_remote(["connect", *rest])
+    if cmd == "disconnect":
+        from .remote.cli import main as run_remote
+
+        return run_remote(["disconnect", *rest])
     if cmd in ("rebuild-index", "rebuild_index", "index"):
         from .index import rebuild_index
 

@@ -580,10 +580,19 @@ def scan_roots() -> List[str]:
 
 
 def mcp_entry() -> dict[str, Any]:
-    entry: dict[str, Any] = {
-        "command": sys.executable,
-        "args": ["-m", "agents_memory.mcp_server"],
-    }
+    from .remote.client import get_remote_config
+
+    cfg = get_remote_config()
+    if cfg and cfg.get("url"):
+        entry: dict[str, Any] = {
+            "command": sys.executable,
+            "args": ["-m", "agents_memory", "remote", "client"],
+        }
+    else:
+        entry = {
+            "command": sys.executable,
+            "args": ["-m", "agents_memory.mcp_server"],
+        }
     src_dir = ROOT / "src"
     if src_dir.is_dir():
         entry["env"] = {"PYTHONPATH": str(src_dir.resolve())}

@@ -25,6 +25,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="copy example memory files if missing, sync injection, merge your Agent MCP config",
     )
     parser.add_argument(
+        "--push",
+        action="store_true",
+        help="push local mirror bundle to remote if connected (for hand-edits)",
+    )
+    parser.add_argument(
         "--help-json",
         action="store_true",
         help="print machine-readable CLI spec as JSON and exit",
@@ -60,6 +65,14 @@ def main(argv: list[str] | None = None) -> int:
                 "then run: python -m agents_memory sync"
             )
         print("\nReload your Agent so MCP `agents-memory` appears.")
+    if args.push:
+        from .remote.sync_hooks import push_if_connected
+
+        res = push_if_connected(refresh_index=True)
+        if res:
+            print("sync: pushed mirror bundle to remote")
+        else:
+            print("sync: remote push skipped or failed (see staging/sync-errors.md if connected)")
     return 0
 
 

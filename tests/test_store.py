@@ -478,7 +478,7 @@ class RegisterBootstrapTests(unittest.TestCase):
 
             body_with_alert = store.always_on_body()
             self.assertIn("Active Alerts", body_with_alert)
-            self.assertIn("55 staging bullets waiting", body_with_alert)
+            self.assertIn("55 staging bullets", body_with_alert)
 
     def test_auto_distill_heuristics(self):
         tmp = tempfile.TemporaryDirectory()
@@ -507,6 +507,35 @@ class RegisterBootstrapTests(unittest.TestCase):
             pref_file = user / "notes" / "preferences" / "preferences.md"
             self.assertTrue(pref_file.exists())
             self.assertIn("Always use Tailwind v3", pref_file.read_text(encoding="utf-8"))
+
+    def test_auto_distill_noise_pass_stops_when_stuck(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        user = Path(tmp.name) / "user"
+        user.mkdir()
+        staging = user / "staging"
+        staging.mkdir()
+        (staging / "captured.md").write_text(
+            "# Staging\n\n- Durable sentence without heuristic keywords here\n",
+            encoding="utf-8",
+        )
+        ingest = {
+            "version": 1,
+            "sources": [],
+            "staging_nag_threshold": 1,
+            "auto_distill_on_start": True,
+            "auto_distill_max_rounds": 3,
+        }
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "sync_injection", lambda **k: ([], [])
+        ), patch.object(store, "parse_projects", return_value=[]), patch(
+            "agents_memory.ingest_config.load_ingest", lambda: ingest
+        ):
+            res = store.auto_distill_noise_pass(max_rounds=3, auto_sync=False)
+            self.assertEqual(res["discarded"], 0)
+            self.assertEqual(res["promoted"], 0)
+            self.assertEqual(res["rounds"], 1)
+            self.assertEqual(res["remaining_staging_count"], 1)
 
     def test_baton_and_chronicle(self):
         tmp = tempfile.TemporaryDirectory()

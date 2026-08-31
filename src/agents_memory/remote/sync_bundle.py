@@ -80,6 +80,14 @@ def collect_sync_bundle(
             prefix = f"{MIRROR_PREFIX}{proj.slug}/"
             files.update(_collect_tree(mem, prefix=prefix))
 
+        # VPS has no repo paths; keep stored slug mirrors as fallback.
+        # Live repo trees win via setdefault (already in `files`).
+        mirror_store = root / "mirror" / "projects"
+        if mirror_store.is_dir():
+            stored = _collect_tree(mirror_store, prefix=MIRROR_PREFIX)
+            for key, content in stored.items():
+                files.setdefault(key, content)
+
     return files
 
 
@@ -259,4 +267,4 @@ def apply_sync_bundle(
 
 def get_all_memory_files(memory_dir: Optional[Path] = None) -> dict[str, str]:
     """Backward-compatible alias: full mirror sync bundle."""
-    return collect_sync_bundle(include_projects=True)
+    return collect_sync_bundle(include_projects=True, memory_root=memory_dir)

@@ -35,9 +35,17 @@ def default_ingest() -> dict[str, Any]:
 
 
 def ingest_defaults(raw: dict[str, Any]) -> dict[str, Any]:
+    on_start = raw.get("auto_distill_on_start")
+    if on_start is None:
+        on_start = True
+    rounds = raw.get("auto_distill_max_rounds")
+    if rounds is None:
+        rounds = 3
     return {
         "extract_max_bullets": max(0, int(raw.get("extract_max_bullets") or 100)),
         "staging_nag_threshold": max(0, int(raw.get("staging_nag_threshold") or 50)),
+        "auto_distill_on_start": bool(on_start),
+        "auto_distill_max_rounds": max(1, min(int(rounds), 10)),
     }
 
 

@@ -47,13 +47,8 @@ Cloud = source of truth; local files = working copy. All MCP tools run **locally
 |------|-------|---------------|
 | Connect | Workstation | `python -m agents_memory connect <URL> --token <TOKEN>` |
 | Ingest catalog+extract | **Workstation** (chat graves local) | MCP `ingest_catalog` + `ingest_extract` or `ingest run` — auto-pushes |
-| Distill staging | **Local** | MCP `get_staging_inbox` → `distill_batch` / `auto_distill` — auto-pushes |
-| Inventory / register | **Local** | MCP `inventory_projects` / `register_project` — auto-pushes |
-| Search / CRUD | **Local** (merged after pull) | MCP `search_memory`, `add_memory`, … |
-| Repo facts | **Local repo** | MCP `add_memory(project=…)` → `<repo>/.agents/memory/` — mirrored to cloud |
-| Status | Either | `python -m agents_memory remote status` |
-| Disconnect | Workstation | `python -m agents_memory disconnect` (final pull) |
-| Manual sync | Workstation | `remote push` / `remote pull` |
+| Distill staging | **Local** | MCP `get_staging_inbox` → `distill_batch` / `auto_distill` — auto-pushes. MCP start + extract run noise-only pass when inbox >= threshold |
+| Manual sync | Workstation | `remote push` / `remote pull` / `python -m agents_memory sync --push` (hand-edits) |
 
 After `connect`, IDE MCP entry is `agents_memory.remote.sync_mcp` (pull on start, push after writes).
 

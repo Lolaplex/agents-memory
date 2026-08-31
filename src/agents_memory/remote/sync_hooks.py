@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from .client import get_remote_config, remote_pull, remote_push_merge
@@ -10,6 +11,8 @@ from .client import get_remote_config, remote_pull, remote_push_merge
 _push_lock = threading.Lock()
 _bg_thread: Optional[threading.Thread] = None
 _bg_stop = threading.Event()
+
+_MAX_RETRIES = 3
 
 
 def _verify_ssl(cfg: dict[str, Any]) -> bool:
@@ -25,40 +28,72 @@ def _refresh_index() -> None:
         pass
 
 
-def push_if_connected(refresh_index: bool = True) -> Optional[dict[str, Any]]:
+def _log_sync_error(action: str, err: BaseException) -> None:
+    try:
+        from ..store import USER_MEMORY, _read, _write
+
+        path = USER_MEMORY / "staging" / "sync-errors.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        prev = _read(path) if path.exists() else ""
+        if not prev.strip():
+            prev = "# Sync errors\n\n"
+        line = f"- [{ts}] {action}: {err}\n"
+        _write(path, prev.rstrip() + "\n" + line)
+    except Exception:
+        pass
+
+
+def push_if_connected(refresh_index: bool = True, retries: int = _MAX_RETRIES) -> Optional[dict[str, Any]]:
     cfg = get_remote_config()
     if not cfg or not cfg.get("url"):
         return None
+    attempts = max(1, min(int(retries), 5))
+    last_err: Optional[BaseException] = None
     with _push_lock:
-        try:
-            res = remote_push_merge(
-                str(cfg["url"]),
-                token=str(cfg.get("token") or ""),
-                verify_ssl=_verify_ssl(cfg),
-            )
-            if refresh_index:
-                _refresh_index()
-            return res
-        except Exception:
-            return None
+        for attempt in range(1, attempts + 1):
+            try:
+                res = remote_push_merge(
+                    str(cfg["url"]),
+                    token=str(cfg.get("token") or ""),
+                    verify_ssl=_verify_ssl(cfg),
+                )
+                if refresh_index:
+                    _refresh_index()
+                return res
+            except Exception as e:
+                last_err = e
+                if attempt < attempts:
+                    time.sleep(0.4 * attempt)
+        if last_err is not None:
+            _log_sync_error("push", last_err)
+        return None
 
 
-def pull_if_connected(refresh_index: bool = True) -> Optional[dict[str, Any]]:
+def pull_if_connected(refresh_index: bool = True, retries: int = _MAX_RETRIES) -> Optional[dict[str, Any]]:
     cfg = get_remote_config()
     if not cfg or not cfg.get("url"):
         return None
+    attempts = max(1, min(int(retries), 5))
+    last_err: Optional[BaseException] = None
     with _push_lock:
-        try:
-            res = remote_pull(
-                str(cfg["url"]),
-                token=str(cfg.get("token") or ""),
-                verify_ssl=_verify_ssl(cfg),
-            )
-            if refresh_index:
-                _refresh_index()
-            return res
-        except Exception:
-            return None
+        for attempt in range(1, attempts + 1):
+            try:
+                res = remote_pull(
+                    str(cfg["url"]),
+                    token=str(cfg.get("token") or ""),
+                    verify_ssl=_verify_ssl(cfg),
+                )
+                if refresh_index:
+                    _refresh_index()
+                return res
+            except Exception as e:
+                last_err = e
+                if attempt < attempts:
+                    time.sleep(0.4 * attempt)
+        if last_err is not None:
+            _log_sync_error("pull", last_err)
+        return None
 
 
 def after_memory_mutation() -> None:

@@ -28,6 +28,8 @@ from .store import (
     staging_status_summary,
     sync_injection,
     write_memory_file as store_write_file,
+    maybe_run_startup_noise_pass,
+    maybe_run_threshold_noise_pass,
 )
 
 ensure_memory_layout()
@@ -328,6 +330,13 @@ def ingest_extract(source_id: str = "") -> str:
         from .ingest_extractors import run_extract
 
         result = run_extract(source_id=source_id)
+        maybe_run_threshold_noise_pass(auto_sync=True)
+        try:
+            from .remote.sync_hooks import push_if_connected
+
+            push_if_connected(refresh_index=True)
+        except Exception:
+            pass
         return json.dumps(result, indent=2)
     except Exception as e:
         return f"Error running ingest extract: {e}"
@@ -502,6 +511,10 @@ except Exception:
 
 def main() -> int:
     print("Starting local agents-memory MCP on stdio...", file=sys.stderr)
+    try:
+        maybe_run_startup_noise_pass()
+    except Exception:
+        pass
     mcp.run()
     return 0
 

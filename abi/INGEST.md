@@ -16,7 +16,7 @@ Run both catalog and extract: `python -m agents_memory ingest run`. Status: `pyt
 
 Distill is intentional human/agent work — no auto-promotion to memory. Use `get_staging_inbox` (grouped by source) then `distill_batch` with `source_path` on each item.
 
-**Remote mode:** catalog + extract run on the workstation (chat graves are local); hybrid MCP auto-pushes staging to the canonical remote store. Distill runs on remote. See [`REMOTE.md`](REMOTE.md).
+**Remote mode:** catalog + extract run on the workstation (chat graves are local); writes auto-push the mirror bundle. Distill runs locally. A noise pass may discard obvious staging noise after extract; leftover bullets still need `distill_batch`. See [`REMOTE.md`](REMOTE.md).
 
 ## Division of labor
 
@@ -56,6 +56,8 @@ Per source, set `"catalog": false` or `"extract": false` to skip a phase. Extrac
   "version": 1,
   "extract_max_bullets": 100,
   "staging_nag_threshold": 50,
+  "auto_distill_on_start": true,
+  "auto_distill_max_rounds": 3,
   "sources": [
     {
       "id": "openai-export",
@@ -138,6 +140,8 @@ Global options:
 |-----|---------|--------|
 | `extract_max_bullets` | `100` | Max bullets written per source per extract run (0 = unlimited) |
 | `staging_nag_threshold` | `50` | `ingest_status` / MCP `ingest_status` emits `staging.nag` when inbox exceeds this |
+| `auto_distill_on_start` | `true` | Run a noise-only distill pass on MCP start and after extract when inbox >= threshold |
+| `auto_distill_max_rounds` | `3` | Max `auto_distill` rounds per noise pass (stop early if no progress) |
 
 Per-source `"extract_max_bullets"` overrides the global cap.
 

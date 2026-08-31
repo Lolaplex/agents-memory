@@ -100,6 +100,9 @@ class TestRemoteE2E(unittest.TestCase):
         # Client has local facts
         (self.client_dir / "facts.md").write_text("# Master Facts\n- Local Laptop Fact\n", encoding="utf-8")
         (self.client_dir / "USER.md").write_text("# User Profile\n- Name: Felix\n", encoding="utf-8")
+        stored = self.client_dir / "mirror" / "projects" / "e2eproj"
+        stored.mkdir(parents=True)
+        (stored / "facts.md").write_text("# E2E\n- mirrored\n", encoding="utf-8")
 
         # Push & merge into server
         push_res = remote_push_merge(base_url, token=self.token, source_dir=self.client_dir)
@@ -109,6 +112,16 @@ class TestRemoteE2E(unittest.TestCase):
         server_facts = (self.server_dir / "facts.md").read_text(encoding="utf-8")
         self.assertIn("- VPS is live", server_facts)
         self.assertIn("- Local Laptop Fact", server_facts)
+
+        snap = httpx.get(
+            f"{base_url}/api/v1/snapshot",
+            headers={"Authorization": f"Bearer {self.token}"},
+            timeout=10.0,
+        )
+        self.assertEqual(snap.status_code, 200)
+        snap_files = snap.json().get("files", {})
+        self.assertIn("mirror/projects/e2eproj/facts.md", snap_files)
+        self.assertIn("mirrored", snap_files["mirror/projects/e2eproj/facts.md"])
 
         # Save remote config
         save_remote_config(url=base_url, token=self.token)

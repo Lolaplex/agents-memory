@@ -37,6 +37,16 @@ def cmd_catalog(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _after_extract() -> None:
+    try:
+        from .store import maybe_run_threshold_noise_pass
+
+        maybe_run_threshold_noise_pass(auto_sync=True)
+    except Exception as e:
+        print(f"distill warning: noise pass failed: {e}", file=sys.stderr)
+    _push_if_remote()
+
+
 def cmd_extract(args: argparse.Namespace) -> int:
     result = run_extract(source_id=args.source or "")
     active = 0
@@ -46,7 +56,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
             active += 1
     if active == 0:
         print("extract: no new bullets extracted from active sources")
-    _push_if_remote()
+    _after_extract()
     return 0
 
 
@@ -59,7 +69,7 @@ def cmd_run(_args: argparse.Namespace) -> int:
         print(f"run: catalog refreshed, {total} staging bullets across {len(active_sources)} sources")
     else:
         print("run: catalog refreshed, no new staging bullets found")
-    _push_if_remote()
+    _after_extract()
     return 0
 
 

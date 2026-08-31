@@ -1504,8 +1504,10 @@ def always_on_body() -> str:
         alert_section = (
             "\n\n---\n\n"
             "# Active Alerts\n\n"
-            f"> ⚠️ **Memory Staging Action Required**: {nag}\n"
-            "> Proactively process the staging inbox using MCP `get_staging_inbox` + `distill_batch` (or `auto_distill` / skill `memory-distill`).\n"
+            f"> **ALWAYS**: {nag}\n"
+            "> Session start / this alert → first MCP call = `auto_distill`, "
+            "then `get_staging_inbox` + `distill_batch` until inbox is 0 "
+            "(or user says skip).\n"
         )
     return f"{user}\n\n---\n\n{projects}{alert_section}\n"
 
@@ -2680,10 +2682,9 @@ def staging_status_summary() -> dict[str, Any]:
     nag = ""
     if threshold > 0 and total >= threshold:
         nag = (
-            f"{total} staging bullets waiting — call MCP auto_distill FIRST "
-            "(repeat until remaining_staging_count stops dropping), then manually "
-            "process leftovers via get_staging_inbox + distill_batch. "
-            "The inbox MUST reach 0 before you stop."
+            f"{total} staging bullets. FIRST MCP CALL: auto_distill. "
+            "Then get_staging_inbox + distill_batch until total=0 "
+            "(or user says skip). Inbox MUST reach 0."
         )
     return {
         "bullet_count": total,
@@ -2843,6 +2844,71 @@ def auto_distill(
 
     res = distill_batch(items_to_distill, auto_sync=auto_sync)
     return res
+
+
+def auto_distill_noise_pass(
+    max_rounds: Optional[int] = None,
+    batch_size: int = 50,
+    auto_sync: bool = True,
+) -> dict[str, Any]:
+    """Repeat auto_distill until no progress. Discard noise; promote only heuristics."""
+    from .ingest_config import load_ingest
+
+    cfg = load_ingest()
+    rounds = max_rounds if max_rounds is not None else int(cfg.get("auto_distill_max_rounds") or 3)
+    rounds = max(1, min(int(rounds), 10))
+    total_promoted = 0
+    total_discarded = 0
+    errors: List[str] = []
+    remaining = count_staging_bullets()
+    ran = 0
+    for _ in range(rounds):
+        res = auto_distill(limit=batch_size, discard_noise=True, auto_sync=False)
+        ran += 1
+        total_promoted += int(res.get("promoted") or 0)
+        total_discarded += int(res.get("discarded") or 0)
+        errors.extend(res.get("errors") or [])
+        remaining = int(res.get("remaining_staging_count") or count_staging_bullets())
+        if int(res.get("discarded") or 0) == 0 and int(res.get("promoted") or 0) == 0:
+            break
+    if auto_sync and (total_promoted or total_discarded):
+        _finish_store_write()
+    return {
+        "promoted": total_promoted,
+        "discarded": total_discarded,
+        "remaining_staging_count": remaining,
+        "rounds": ran,
+        "errors": errors,
+    }
+
+
+_startup_noise_pass_ran = False
+
+
+def maybe_run_threshold_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
+    """If inbox >= nag threshold, run a deterministic noise pass. No silent promote of leftover bullets."""
+    from .ingest_config import load_ingest
+
+    cfg = load_ingest()
+    if not cfg.get("auto_distill_on_start", True):
+        return None
+    summary = staging_status_summary()
+    threshold = int(summary.get("threshold") or 0)
+    if threshold <= 0 or int(summary.get("bullet_count") or 0) < threshold:
+        return None
+    return auto_distill_noise_pass(auto_sync=auto_sync)
+
+
+def maybe_run_startup_noise_pass() -> Optional[dict[str, Any]]:
+    """Once per process: noise pass on MCP start when inbox exceeds threshold."""
+    global _startup_noise_pass_ran
+    if _startup_noise_pass_ran:
+        return None
+    _startup_noise_pass_ran = True
+    try:
+        return maybe_run_threshold_noise_pass(auto_sync=True)
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------------------

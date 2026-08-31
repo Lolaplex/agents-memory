@@ -68,7 +68,9 @@ STATUS_VALUES = frozenset(
     {
         "active",
         "sandbox",
+        "play",
         "paused",
+        "parked",
         "archived",
         "planned",
         "accepted",

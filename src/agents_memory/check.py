@@ -19,14 +19,26 @@ import re
 from collections import defaultdict
 from pathlib import Path
 
-from .store import USER_MEMORY, _collect_staging_paths
+from .store import USER_MEMORY, _collect_staging_paths, parse_projects
 
 
 def _iter_notes():
     for md in USER_MEMORY.rglob("*.md"):
-        if "/staging/" in str(md.as_posix()) or "\\staging\\" in str(md):
+        if (
+            "/staging/" in str(md.as_posix())
+            or "\\staging\\" in str(md)
+            or ".index" in md.parts
+            or "export" in md.parts
+        ):
             continue
         yield md
+    for proj in parse_projects():
+        mem_dir = proj.memory_dir
+        if mem_dir.is_dir():
+            for md in mem_dir.rglob("*.md"):
+                if "/staging/" in str(md.as_posix()) or "\\staging\\" in str(md):
+                    continue
+                yield md
 
 
 def check_staging() -> dict:
@@ -81,7 +93,9 @@ def check_stubs(min_chars: int = 40) -> dict:
 
 
 def check_index_stale() -> dict:
-    db = USER_MEMORY / ".fts-index.db"
+    from .index import FTS_DB
+
+    db = FTS_DB
     if not db.exists():
         return {
             "check": "index-stale",

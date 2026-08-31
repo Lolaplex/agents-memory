@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -483,6 +484,50 @@ class RegisterBootstrapTests(unittest.TestCase):
             pref_file = user / "notes" / "preferences" / "preferences.md"
             self.assertTrue(pref_file.exists())
             self.assertIn("Always use Tailwind v3", pref_file.read_text(encoding="utf-8"))
+
+    def test_baton_and_chronicle(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "sync_injection", lambda **k: ([], [])
+        ):
+            self.assertEqual(store.get_baton(), "")
+            saved = store.set_baton("Current focus: release v1.0.2")
+            self.assertTrue(Path(saved).exists())
+            self.assertEqual(store.get_baton(), "Current focus: release v1.0.2")
+
+            cpath = store.append_chronicle("Finished release prep")
+            self.assertTrue(Path(cpath).exists())
+            self.assertIn("Finished release prep", Path(cpath).read_text(encoding="utf-8"))
+
+    def test_session_snap_and_grep(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        user = root / "user"
+        user.mkdir()
+        # Mock ingest config with a dummy cursor transcript
+        cursor_dir = root / "cursor_transcripts"
+        cursor_dir.mkdir()
+        tf = cursor_dir / "test.jsonl"
+        tf.write_text(
+            json.dumps({"role": "user", "message": {"content": [{"type": "text", "text": "<user_query>Setup FastAPI backend</user_query>"}]}}) + "\n",
+            encoding="utf-8",
+        )
+        mock_cfg = {
+            "version": 1,
+            "sources": [{"id": "cursor", "kind": "agent-jsonl", "paths": [str(cursor_dir)], "catalog": True, "extract": True}]
+        }
+        with patch.object(store, "USER_MEMORY", user), patch("agents_memory.ingest_config.load_ingest", return_value=mock_cfg):
+            snap = store.session_snap(limit=10)
+            self.assertIn("Setup FastAPI backend", snap)
+            self.assertNotIn("<user_query>", snap)
+
+            grep_res = store.session_grep("FastAPI")
+            self.assertIn("Setup FastAPI backend", grep_res)
 
 
 if __name__ == "__main__":

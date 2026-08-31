@@ -57,13 +57,24 @@ def agent_transcript_rows(root: Path) -> List[Row]:
     rows: List[Row] = []
     if not root.is_dir():
         return rows
-    tdir = root / "agent-transcripts" if (root / "agent-transcripts").is_dir() else root
     workspace = root.name
     if workspace.startswith("c-Users-"):
         parts = workspace.split("-")
         if len(parts) > 3:
             workspace = "/".join(parts[3:])
-    for path in sorted(tdir.glob("*/*.jsonl")):
+
+    if (root / "agent-transcripts").is_dir():
+        paths = sorted((root / "agent-transcripts").glob("*/*.jsonl"))
+    elif root.name == "chatSessions":
+        paths = sorted(root.glob("*.jsonl"))
+    elif (root / "chatSessions").is_dir():
+        paths = sorted((root / "chatSessions").glob("*.jsonl"))
+    else:
+        paths = sorted(root.glob("*/*.jsonl")) + sorted(root.glob("*.jsonl"))
+        if not paths and root.is_dir():
+            paths = sorted(root.rglob("*.jsonl"))
+
+    for path in paths:
         if "subagents" in path.parts:
             continue
         title = path.parent.name[:8]
@@ -71,6 +82,19 @@ def agent_transcript_rows(root: Path) -> List[Row]:
             with path.open(encoding="utf-8", errors="replace") as fh:
                 for line in fh:
                     obj = json.loads(line)
+                    if obj.get("kind") == 1:
+                        v = obj.get("v")
+                        if isinstance(v, dict):
+                            input_text = v.get("inputText") or ""
+                            if not input_text:
+                                for req in v.get("requests") or []:
+                                    if isinstance(req, dict):
+                                        input_text = req.get("message", {}).get("text") or req.get("inputText") or ""
+                                        if input_text:
+                                            break
+                            if input_text.strip():
+                                title = clip(input_text, 90)
+                                break
                     if obj.get("role") != "user":
                         continue
                     msg = obj.get("message") or {}
@@ -79,6 +103,10 @@ def agent_transcript_rows(root: Path) -> List[Row]:
                     for part in content:
                         if isinstance(part, dict) and part.get("type") == "text":
                             texts.append(part.get("text") or "")
+                        elif isinstance(part, str):
+                            texts.append(part)
+                    if not texts and isinstance(content, str):
+                        texts.append(content)
                     blob = "\n".join(texts)
                     m = re.search(r"<user_query>\s*(.*?)\s*</user_query>", blob, re.S)
                     if m:

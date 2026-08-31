@@ -2812,7 +2812,12 @@ def _collect_raw_session_user_lines() -> List[dict]:
     """Gather user message lines from ingest-configured jsonl and transcript sources."""
     try:
         from .ingest_config import list_sources, load_ingest, resolve_source_roots
-        from .ingest_extractors import _jsonl_user_lines, unzip_export, user_messages
+        from .ingest_extractors import (
+            ANTIGRAVITY_TRANSCRIPT,
+            _parse_antigravity_transcript_obj,
+            unzip_export,
+            user_messages,
+        )
     except ImportError:
         return []
 
@@ -2852,10 +2857,44 @@ def _collect_raw_session_user_lines() -> List[dict]:
                                     )
                     except Exception:
                         pass
+            elif kind == "antigravity-brain" or (root / ANTIGRAVITY_TRANSCRIPT).is_file():
+                # Direct or nested Antigravity brain transcripts
+                brain_files = (
+                    [root / ANTIGRAVITY_TRANSCRIPT]
+                    if (root / ANTIGRAVITY_TRANSCRIPT).is_file()
+                    else list(root.glob("*/.system_generated/logs/transcript.jsonl"))
+                )
+                for tpath in brain_files:
+                    title = tpath.parent.parent.parent.name[:12]
+                    try:
+                        with tpath.open(encoding="utf-8", errors="replace") as fh:
+                            for line in fh:
+                                try:
+                                    obj = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                t, text = _parse_antigravity_transcript_obj(obj, title)
+                                if text.strip():
+                                    out.append(
+                                        {
+                                            "source": label,
+                                            "title": t or title,
+                                            "text": text.strip(),
+                                            "file": str(tpath),
+                                        }
+                                    )
+                    except Exception:
+                        pass
             else:
                 files: List[Path] = []
                 if root.is_dir():
-                    files = sorted(root.rglob("*.jsonl"))
+                    if (root / "agent-transcripts").is_dir():
+                        files = sorted((root / "agent-transcripts").glob("*/*.jsonl"))
+                    elif root.name == "chatSessions" or (root / "chatSessions").is_dir():
+                        cs_dir = root if root.name == "chatSessions" else root / "chatSessions"
+                        files = sorted(cs_dir.glob("*.jsonl"))
+                    else:
+                        files = sorted(root.rglob("*.jsonl"))
                 elif root.is_file() and root.suffix == ".jsonl":
                     files = [root]
 
@@ -2863,49 +2902,72 @@ def _collect_raw_session_user_lines() -> List[dict]:
                     if "subagents" in p.parts:
                         continue
                     try:
+                        title = p.parent.name[:12]
                         with p.open(encoding="utf-8", errors="replace") as fh:
                             for line in fh:
                                 try:
                                     obj = json.loads(line)
                                 except json.JSONDecodeError:
                                     continue
+
                                 text = ""
-                                role = (
-                                    obj.get("role")
-                                    or (obj.get("message") or {}).get("role")
-                                    or obj.get("type")
-                                )
-                                if (
-                                    role in ("user", "USER_INPUT")
-                                    or obj.get("kind") == 1
-                                ):
-                                    msg = (
-                                        obj.get("message") or obj.get("content") or obj
+                                # 1. Antigravity type
+                                if obj.get("type") == "USER_INPUT":
+                                    t, text = _parse_antigravity_transcript_obj(obj, title)
+                                    if t:
+                                        title = t
+                                # 2. Copilot / VS Code style
+                                elif obj.get("kind") == 1:
+                                    if obj.get("k") == ["customTitle"] and obj.get("v"):
+                                        title = str(obj["v"])[:12]
+                                    v = obj.get("v")
+                                    if isinstance(v, dict):
+                                        text = v.get("inputText") or ""
+                                        if not text:
+                                            for req in v.get("requests") or []:
+                                                if isinstance(req, dict):
+                                                    text = req.get("message", {}).get("text") or req.get("inputText") or ""
+                                                    if text:
+                                                        break
+                                # 3. Standard role: user / message
+                                if not text:
+                                    role = (
+                                        obj.get("role")
+                                        or (obj.get("message") or {}).get("role")
+                                        or obj.get("type")
                                     )
-                                    if isinstance(msg, dict):
-                                        c = (
-                                            msg.get("content")
-                                            or msg.get("text")
-                                            or msg.get("inputText")
-                                            or ""
-                                        )
-                                        if isinstance(c, str):
-                                            text = c
-                                        elif isinstance(c, list):
-                                            text = " ".join(
-                                                part.get("text") or ""
-                                                for part in c
-                                                if isinstance(part, dict)
-                                                and part.get("type")
-                                                in ("text", "input")
+                                    if role in ("user", "message"):
+                                        msg = obj.get("message") or obj.get("content") or obj
+                                        if isinstance(msg, dict):
+                                            c = (
+                                                msg.get("content")
+                                                or msg.get("text")
+                                                or msg.get("inputText")
+                                                or ""
                                             )
-                                    elif isinstance(msg, str):
-                                        text = msg
+                                            if isinstance(c, str):
+                                                text = c
+                                            elif isinstance(c, list):
+                                                text = " ".join(
+                                                    part.get("text") or ""
+                                                    for part in c
+                                                    if isinstance(part, dict)
+                                                    and part.get("type") in ("text", "input")
+                                                )
+                                        elif isinstance(msg, str):
+                                            text = msg
+
+                                # Strip Cursor <user_query> wrappers if present
+                                if text:
+                                    m = re.search(r"<user_query>\s*(.*?)\s*</user_query>", text, re.S)
+                                    if m:
+                                        text = m.group(1)
+
                                 if text.strip():
                                     out.append(
                                         {
                                             "source": label,
-                                            "title": p.parent.name[:12],
+                                            "title": title,
                                             "text": text.strip(),
                                             "file": str(p),
                                         }

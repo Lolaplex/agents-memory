@@ -114,13 +114,36 @@ def _jsonl_user_lines(path: Path, parse_user) -> List[tuple[str, str]]:
 def extract_agent_jsonl(src: dict) -> List[str]:
     lines: List[str] = []
     for root in resolve_source_roots(src):
-        tdir = root / "agent-transcripts" if (root / "agent-transcripts").is_dir() else root
-        for path in sorted(tdir.glob("*/*.jsonl")):
+        if (root / "agent-transcripts").is_dir():
+            paths = sorted((root / "agent-transcripts").glob("*/*.jsonl"))
+        elif root.name == "chatSessions":
+            paths = sorted(root.glob("*.jsonl"))
+        elif (root / "chatSessions").is_dir():
+            paths = sorted((root / "chatSessions").glob("*.jsonl"))
+        else:
+            paths = sorted(root.glob("*/*.jsonl")) + sorted(root.glob("*.jsonl"))
+            if not paths and root.is_dir():
+                paths = sorted(root.rglob("*.jsonl"))
+
+        for path in paths:
             if "subagents" in path.parts:
                 continue
             title = path.parent.name[:8]
 
             def parse(obj, _title=title, _path=path):
+                # 1. Copilot kind=1 format
+                if obj.get("kind") == 1:
+                    v = obj.get("v")
+                    if isinstance(v, dict):
+                        input_text = v.get("inputText") or ""
+                        if input_text.strip():
+                            return _title, input_text
+                        for req in v.get("requests") or []:
+                            if isinstance(req, dict):
+                                msg_text = req.get("message", {}).get("text") or req.get("inputText") or ""
+                                if msg_text.strip():
+                                    return _title, msg_text
+                # 2. Standard user role
                 if obj.get("role") != "user":
                     return _title, ""
                 msg = obj.get("message") or {}
@@ -129,6 +152,10 @@ def extract_agent_jsonl(src: dict) -> List[str]:
                 for part in content:
                     if isinstance(part, dict) and part.get("type") == "text":
                         texts.append(part.get("text") or "")
+                    elif isinstance(part, str):
+                        texts.append(part)
+                if not texts and isinstance(content, str):
+                    texts.append(content)
                 blob = "\n".join(texts)
                 m = re.search(r"<user_query>\s*(.*?)\s*</user_query>", blob, re.S)
                 if m:

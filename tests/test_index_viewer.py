@@ -29,7 +29,7 @@ class IndexAndViewerTests(unittest.TestCase):
         proj_mem = self.repo / ".agents" / "memory"
         proj_mem.mkdir(parents=True)
         (proj_mem / "README.md").write_text(
-            "# Demo Project\n\nDemonstration repository for memory indexing.\n",
+            "# Demo Project\n\nDemonstration repository referencing [[cache-law]].\n",
             encoding="utf-8",
         )
 
@@ -84,6 +84,9 @@ class IndexAndViewerTests(unittest.TestCase):
         self.assertEqual(rel["id"], "user/concepts/cache-law.md")
         self.assertIn("project/demo/decisions/001", rel["explicit_relations"]["refs"])
         self.assertEqual(rel["explicit_relations"]["supersedes"], "user/notes/old")
+        # Backlink from Demo Project
+        backlinks = rel["explicit_relations"]["backlinks"]
+        self.assertTrue(any("README.md" in b["id"] for b in backlinks))
 
     def test_viewer_markdown_to_html(self):
         md = "# Heading 1\n\nParagraph with **bold** and `code`.\n\n- item 1\n- item 2\n"

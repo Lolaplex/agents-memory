@@ -15,7 +15,12 @@
     {
       "id": "cursor",
       "label": "Cursor",
-      "paths": ["~/.cursor/projects/*/agent-transcripts"],
+      "paths": [
+        "~/.cursor/projects/*/agent-transcripts",
+        "%APPDATA%/Cursor/User/workspaceStorage/*/chatSessions",
+        "~/.config/Cursor/User/workspaceStorage/*/chatSessions",
+        "~/Library/Application Support/Cursor/User/workspaceStorage/*/chatSessions"
+      ],
       "kind": "agent-jsonl",
       "catalog": true,
       "extract": true

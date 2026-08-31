@@ -221,8 +221,21 @@ async def run_client_bridge(
                     except Exception as e:
                         print(f"Bridge sse->stdio error: {e}", file=sys.stderr)
 
+                async def periodic_background_sync():
+                    interval = float(cfg.get("sync_interval_seconds", 60))
+                    while True:
+                        await anyio.sleep(interval)
+                        try:
+                            await anyio.to_thread.run_sync(
+                                remote_mirror_injection, server_url, server_token
+                            )
+                        except Exception:
+                            pass
+
                 tg.start_soon(pipe_stdio_to_sse)
                 tg.start_soon(pipe_sse_to_stdio)
+                if cfg.get("auto_pull", True):
+                    tg.start_soon(periodic_background_sync)
 
 
 def main_bridge() -> int:

@@ -399,8 +399,8 @@ def append_chronicle(
 
 @mcp.tool()
 def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
-    """Fetch verbatim recent user lines from ingest-configured jsonl/transcript sources.
-    Includes active baton header if present.
+    """Recent user lines from agents-traces plus baton header.
+    Memory does not scrape product jsonl; ingest those with `python -m agents_traces ingest`.
     """
     try:
         return store_session_snap(limit=limit, project=project, cwd=cwd)
@@ -410,7 +410,7 @@ def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
 
 @mcp.tool()
 def session_grep(pattern: str, since: str = "", project: str = "") -> str:
-    """Stream search across raw session logs matching pattern."""
+    """Search session messages in agents-traces (not markdown memory)."""
     try:
         return store_session_grep(pattern=pattern, since=since, project=project)
     except Exception as e:
@@ -419,7 +419,7 @@ def session_grep(pattern: str, since: str = "", project: str = "") -> str:
 
 @mcp.tool()
 def session_tail(session_id: str = "", limit: int = 10) -> str:
-    """Tail recent lines from a live or recent session log."""
+    """Tail recent session messages from agents-traces."""
     try:
         return store_session_tail(session_id=session_id, limit=limit)
     except Exception as e:

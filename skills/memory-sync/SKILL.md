@@ -77,10 +77,10 @@ If you scaffold a repo under a scan root:
 - Throw-away → `kind="scratch"`
 - No `facts.md`. Path encodes the home.
 - Chat titles → `python -m agents_memory ingest catalog`. Extract → `python -m agents_memory ingest extract` then distill staging bullets with `add_memory`. See `abi/INGEST.md`.
-- `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink → hardlink → copy). Edit `AGENTS.md`. See `abi/PLATFORM.md` for Windows vs macOS/Linux.
-- `python -m agents_memory sync` replaces foreign `~/.claude/CLAUDE.md` — back up first if another tool wrote it.
+- `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink → hardlink → copy) **only when CLAUDE.md has no text outside the memory block**. Edit `AGENTS.md`. See `abi/PLATFORM.md` for Windows vs macOS/Linux.
+- `python -m agents_memory sync` splices `<!-- agents-memory-sync -->` … `<!-- /agents-memory-sync -->` into existing `AGENTS.md`. It does not replace the file.
 - Do not copy secrets, tokens, SSH keys, emails, phones, or `.env` values into memory
-- Do not overwrite a repo root `AGENTS.md` unless it contains `<!-- agents-memory-sync -->`
+- Do not overwrite a repo root `AGENTS.md`. If you inject there, append the memory brackets only.
 
 ## Off / parked
 

@@ -104,15 +104,15 @@ Append an observation beat to `~/.agents/memory/events/chronicle/<slug>.md`. Inc
 
 ### `session_snap(limit=20, project="", cwd="")`
 
-Fetch verbatim recent user lines from ingest-configured jsonl/transcript sources. Includes active baton header if present.
+Recent user lines from **agents-traces** (`~/.agents/traces`) plus baton header if present. Does not scrape product jsonl. Run `python -m agents_traces ingest` (harness `traces_ingest`) so vendor chats exist as traces first. Catalog pointers stay in `chats-index.md`.
 
 ### `session_grep(pattern, since="", project="")`
 
-Stream search across raw session logs matching pattern (case-insensitive regex/substring).
+Search session messages in agents-traces (case-insensitive regex). Conversation bodies are never markdown memory.
 
 ### `session_tail(session_id="", limit=10)`
 
-Tail recent lines from a live or recent session log.
+Tail recent session messages from agents-traces for one session id (or latest lines).
 
 ### `rebuild_index()`
 

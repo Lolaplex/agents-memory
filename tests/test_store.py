@@ -298,31 +298,54 @@ class AddMemoryTests(unittest.TestCase):
         self.assertIn(store.MARKER.encode(), claude)
         self.assertTrue(store._bound_to(d / "CLAUDE.md", d / "AGENTS.md") or agents == claude)
 
-    def test_instruction_pair_skips_foreign_sibling(self):
+    def test_splice_keeps_text_outside_comments(self):
+        existing = "# mine\n\n<!-- agents-memory-sync -->\nold\n<!-- /agents-memory-sync -->\n\n# still mine\n"
+        out = store.splice_memory_inject(existing, "new inject")
+        self.assertIn("# mine", out)
+        self.assertIn("# still mine", out)
+        self.assertIn("new inject", out)
+        self.assertNotIn("\nold\n", out)
+        again = store.splice_memory_inject(out, "newer")
+        self.assertEqual(again.count(store.MARKER), 1)
+        self.assertIn("newer", again)
+        self.assertIn("# mine", again)
+
+    def test_splice_migrates_square_bracket_pair(self):
+        existing = "# mine\n\n[agents-memory]\nold brackets\n[/agents-memory]\n"
+        out = store.splice_memory_inject(existing, "new inject")
+        self.assertIn("# mine", out)
+        self.assertIn("<!-- agents-memory-sync -->", out)
+        self.assertNotIn("[agents-memory]", out)
+        self.assertNotIn("old brackets", out)
+        self.assertIn("new inject", out)
+
+    def test_instruction_pair_splices_foreign_agents(self):
         d = self.root / "foreign"
         d.mkdir()
         (d / "AGENTS.md").write_text("# someone else's file\n", encoding="utf-8")
-        body = f"{store.MARKER}\n\n# test\n"
+        body = "# test inject\n"
         written = store.write_instruction_pair(d, body)
-        self.assertEqual(written, [])
-        self.assertFalse((d / "CLAUDE.md").exists())
-        self.assertEqual(
-            (d / "AGENTS.md").read_text(encoding="utf-8"),
-            "# someone else's file\n",
-        )
+        self.assertGreaterEqual(len(written), 1)
+        text = (d / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("# someone else's file", text)
+        self.assertIn(store.MARKER, text)
+        self.assertIn(store.MARKER_END, text)
+        self.assertIn("# test inject", text)
 
-    def test_foreign_claude_replaced_in_claude_home(self):
+    def test_foreign_claude_keeps_body_and_gets_block(self):
         claude_home = self.root / "claude"
-        with patch.object(store, "CLAUDE_HOME", claude_home):
+        with patch.object(store, "CLAUDE_HOME", claude_home), patch.object(
+            store, "always_on_body", return_value="Name: Tester\n"
+        ):
             claude_home.mkdir()
             (claude_home / "CLAUDE.md").write_text("# graphify\n", encoding="utf-8")
             canonical = claude_home / "canonical.md"
-            canonical.write_text(f"{store.MARKER}\n\n# test\n", encoding="utf-8")
+            canonical.write_text(f"{store.MARKER}\n\nName: Tester\n\n{store.MARKER_END}\n", encoding="utf-8")
             written, warnings = store.bind_claude_home(canonical)
             claude_text = (claude_home / "CLAUDE.md").read_text(encoding="utf-8")
-            self.assertTrue((claude_home / "AGENTS.md").exists())
-            self.assertNotIn("graphify", claude_text)
+            self.assertIn("graphify", claude_text)
             self.assertIn(store.MARKER, claude_text)
+            self.assertIn("Name: Tester", claude_text)
             self.assertTrue(written)
 
 

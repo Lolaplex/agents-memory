@@ -109,10 +109,10 @@ Re-run after editing `USER.md`, `PROJECTS.md`, or `scan.json`.
 
 ## Marker and foreign files
 
-Generated files include `<!-- agents-memory-sync -->`.
+Sync upserts a closed pair `<!-- agents-memory-sync -->` … `<!-- /agents-memory-sync -->`. Text outside the comments is never deleted.
 
-- Repo-root `AGENTS.md` **without** the marker is never overwritten.
-- Foreign `~/.claude/CLAUDE.md` is replaced on sync — back up first if another tool wrote it.
+- Repo-root `AGENTS.md` is not overwritten. Do not inject there except by appending that pair.
+- Foreign `~/.claude/CLAUDE.md` keeps its body; the memory block is appended.
 
 ## `scan.json`
 

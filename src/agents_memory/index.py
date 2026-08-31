@@ -1,7 +1,8 @@
 """Disposable full-text search index and hybrid retrieval cache.
 
 Source of truth is always markdown on disk.
-The index lives in ~/.agents/memory/.index/ (gitignored) and is rebuildable in one command.
+The index lives in USER_MEMORY/.index/ (gitignored) and is rebuildable in one command.
+USER_MEMORY follows AGENTS_MEMORY_PATH, else AGENTS_HOME/memory.
 """
 from __future__ import annotations
 

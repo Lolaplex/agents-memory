@@ -2,7 +2,7 @@
 
 You are installing **local agent memory** for the human. Do every step yourself. Do not dump a command list for them to run.
 
-`CLAUDE.md` at this repo root is a **git symlink** to this file — edit `AGENTS.md` only. Sync does not rewrite engine-root `CLAUDE.md` (installed always-on lives in `~/.agents/`). On Windows without symlink privilege the checkout may be a short stub; enable Developer Mode or recreate the symlink from git. Installed always-on: `~/.agents/AGENTS.md`; Gemini, Zed, and `~/.claude/` bind to it. Foreign `~/.claude/CLAUDE.md` is replaced on sync — back it up first. See `abi/PLATFORM.md`.
+`CLAUDE.md` at this repo root is a **git symlink** to this file — edit `AGENTS.md` only. Sync does not rewrite engine-root `CLAUDE.md` (installed always-on lives in `~/.agents/`). On Windows without symlink privilege the checkout may be a short stub; enable Developer Mode or recreate the symlink from git. Installed always-on: `~/.agents/AGENTS.md`; Gemini, Zed, and `~/.claude/AGENTS.md` get a spliced `<!-- agents-memory-sync -->` block (existing text outside the comments stays). See `abi/PLATFORM.md`.
 
 Live store is **`~/.agents/memory`** (user) plus **`<repo>/.agents/memory`** (project). Never commit those live files. This clone's `examples/*.example.*` are scaffolding only. Run `python -m agents_memory consolidate` if live markdown leaked into `memory/` or `examples/`.
 

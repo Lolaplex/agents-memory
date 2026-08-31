@@ -25,19 +25,25 @@ Canonical user always-on: `~/.agents/AGENTS.md`.
 
 Binding order: **symlink → hardlink → copy**. Copy is last resort and can drift if you edit only one file.
 
-Installed homes that bind to canonical unless repo-root files are foreign (no `<!-- agents-memory-sync -->` marker):
+Installed homes get the **same marked block spliced** into their `AGENTS.md`. They are not bound to `~/.agents/AGENTS.md` (a bind would delete local instructions). `CLAUDE.md` is bound to the local `AGENTS.md` only when it has no text outside the memory block.
 
-- `~/.agents/` (AGENTS + CLAUDE)
-- `~/.agents/rules/*.mdc` → host slots such as `~/.cursor/rules/` (all personal `.mdc` files, not only `user-rules.mdc`)
-- Gemini / Antigravity config
-- Zed (`%APPDATA%/Zed` on Windows, `~/.config/zed` elsewhere)
-- `~/.claude/` (AGENTS + CLAUDE)
-
-Foreign `~/.claude/CLAUDE.md` from another tool may be replaced on sync — back it up first if you still need it.
+- `~/.agents/` (`CLAUDE.md` bound to `AGENTS.md` when CLAUDE is not a separate hand-written file)
+- `~/.agents/rules/*.mdc` → host slots such as `~/.cursor/rules/`
+- Gemini / Antigravity `AGENTS.md` (spliced)
+- Zed `AGENTS.md` (spliced)
+- `~/.claude/AGENTS.md` (spliced); `CLAUDE.md` spliced if it already has other text
 
 ## Marker
 
-Generated files include `<!-- agents-memory-sync -->` so sync can distinguish owned injection from hand-written rules.
+Generated inject is a closed pair so sync can update memory without deleting the rest of the file:
+
+```
+<!-- agents-memory-sync -->
+… USER + PROJECTS (or the project slice) …
+<!-- /agents-memory-sync -->
+```
+
+If the file already exists, the block is appended (or replaced in place). Text outside the comments is never deleted. Host copies (`~/.gemini/config/AGENTS.md`, Zed, `~/.claude/AGENTS.md`) are real files with the same block — not a bind that would wipe local instructions.
 
 ## Platform notes
 

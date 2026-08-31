@@ -13,7 +13,7 @@ Read this before installing on a new OS or sharing a conforming implementation.
 
 Binding order: **symlink → hardlink → copy**. Copy is last resort and can drift if you edit only one file.
 
-`~/.claude/AGENTS.md` and `~/.claude/CLAUDE.md` are bound to `~/.agents/AGENTS.md` on sync. A foreign `~/.claude/CLAUDE.md` (another tool) is **replaced** — back it up first if you still need it.
+`~/.claude/AGENTS.md` gets the memory block spliced on sync. A foreign `~/.claude/CLAUDE.md` (another tool) **keeps its body**; the same block is appended. Host `AGENTS.md` files are real files, not binds to `~/.agents/AGENTS.md`.
 
 ## Paths (not Windows-only)
 

@@ -10,7 +10,10 @@ Two layers, one retrieval:
 Search unions both. Always-on injection stays short (USER.md + PROJECTS.md).
 Chat bodies stay in product folders; only titles/paths are ingested.
 `add_memory` requires kind+name (user taxonomy) or project= (in-tree notes).
-AGENTS.md is the instruction file. CLAUDE.md is bound to it (symlink, else hardlink, else copy).
+AGENTS.md is the instruction file. Sync splices a closed
+`<!-- agents-memory-sync -->` block; text outside the comments stays.
+CLAUDE.md is bound to AGENTS.md only when it has no text outside that block.
+
 """
 
 from __future__ import annotations
@@ -47,9 +50,16 @@ EXAMPLES = (
 )
 CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
-AGENTS_HOME = Path.home() / ".agents"
+
+
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.environ.get(name, "").strip()
+    return Path(raw).expanduser().resolve() if raw else default
+
+
+AGENTS_HOME = _env_path("AGENTS_HOME", Path.home() / ".agents")
 AGENTS_RULES = AGENTS_HOME / "rules"
-USER_MEMORY = AGENTS_HOME / "memory"
+USER_MEMORY = _env_path("AGENTS_MEMORY_PATH", AGENTS_HOME / "memory")
 MEMORY = USER_MEMORY
 ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
@@ -62,7 +72,11 @@ LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
 PROJECTS_DIR = USER_MEMORY / "projects"
 EVENTS_DIR = USER_MEMORY / "events"
 CHRONICLE_DIR = EVENTS_DIR / "chronicle"
-CLAUDE_HOME = Path.home() / ".claude"
+CLAUDE_HOME = (
+    AGENTS_HOME / "claude"
+    if os.environ.get("AGENTS_HOME", "").strip()
+    else Path.home() / ".claude"
+)
 HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
 HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
 
@@ -128,6 +142,9 @@ STAGING_HEADER = (
 )
 
 MARKER = "<!-- agents-memory-sync -->"
+MARKER_END = "<!-- /agents-memory-sync -->"
+LEGACY_MARKER = "[agents-memory]"
+LEGACY_MARKER_END = "[/agents-memory]"
 PATHS_BEGIN = "<!-- agents-memory-paths -->"
 PATHS_END = "<!-- /agents-memory-paths -->"
 DEFAULT_RULE_NAME = "user-rules.mdc"
@@ -229,6 +246,88 @@ def _write(path: Path, content: str) -> None:
                 tmp_path.unlink()
             except OSError:
                 pass
+
+
+def splice_region(existing: str, begin: str, end: str, inner: str) -> str:
+    """Replace or append a closed marked region. Text outside the markers stays."""
+    payload = inner.strip("\n")
+    block = f"{begin}\n{payload}\n{end}"
+    text = existing or ""
+    if begin in text and end in text:
+        pre, rest = text.split(begin, 1)
+        _, post = rest.split(end, 1)
+        return pre + block + post
+    if begin in text:
+        pre, _rest = text.split(begin, 1)
+        return (pre.rstrip() + "\n\n" if pre.strip() else "") + block + "\n"
+    if not text.strip():
+        return block + "\n"
+    return text.rstrip() + "\n\n" + block + "\n"
+
+
+def _inject_inner(inner: str) -> str:
+    text = (inner or "").strip()
+    for begin, end in ((MARKER, MARKER_END), (LEGACY_MARKER, LEGACY_MARKER_END)):
+        if text.startswith(begin):
+            text = text[len(begin) :].lstrip()
+        if end in text:
+            text = text.split(end, 1)[0].strip()
+    return text
+
+
+def _drop_region(text: str, begin: str, end: str) -> str:
+    if begin not in text:
+        return text
+    if end in text:
+        pre, rest = text.split(begin, 1)
+        _, post = rest.split(end, 1)
+        return pre + post
+    pre, _rest = text.split(begin, 1)
+    return pre
+
+
+def splice_memory_inject(existing: str, inner: str) -> str:
+    text = _drop_region(existing or "", LEGACY_MARKER, LEGACY_MARKER_END)
+    return splice_region(text, MARKER, MARKER_END, _inject_inner(inner))
+
+
+def has_text_outside_memory_block(text: str) -> bool:
+    t = _drop_region(text or "", MARKER, MARKER_END)
+    t = _drop_region(t, LEGACY_MARKER, LEGACY_MARKER_END)
+    return bool(t.strip())
+
+
+def write_agents_file(
+    path: Path, inner: str, *, canonical: Optional[Path] = None
+) -> str:
+    """Upsert the memory block in an AGENTS.md. Never replace the rest of the file.
+
+    If `path` is a bind to `canonical`, unlink it first so this host keeps a
+    real file (local instructions can live outside the brackets).
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = ""
+    try:
+        linked = path.is_symlink() or (
+            canonical is not None
+            and path.exists()
+            and canonical.exists()
+            and path.resolve() != canonical.resolve()
+            and _bound_to(path, canonical)
+        )
+    except OSError:
+        linked = False
+    if path.exists() or path.is_symlink():
+        if _is_git_symlink_stub(path):
+            path.unlink()
+        elif linked:
+            old = _read(path)
+            path.unlink()
+        else:
+            old = _read(path)
+    _write(path, splice_memory_inject(old, inner))
+    return str(path)
 
 
 def _default_roots() -> List[str]:
@@ -1418,17 +1517,17 @@ def agent_rule_text() -> str:
         "alwaysApply: true\n"
         "---\n\n"
         f"{MARKER}\n\n"
-        f"{always_on_body()}"
+        f"{always_on_body().strip()}\n\n"
+        f"{MARKER_END}\n"
     )
 
 
 def gemini_agents_text() -> str:
-    return f"{MARKER}\n\n{always_on_body()}"
+    return splice_memory_inject("", always_on_body())
 
 
 def project_agents_text(p: Project) -> str:
     return (
-        f"{MARKER}\n\n"
         f"# Project: {p.slug}\n\n"
         f"**Path:** `{p.path}`  \n"
         f"**Role:** {p.role}  \n"
@@ -1437,20 +1536,6 @@ def project_agents_text(p: Project) -> str:
         f"Global profile: `~/.agents/AGENTS.md`. "
         f'MCP `search_memory` / `get_project_memories("{p.slug}")` for detail.\n'
     )
-
-
-def _should_overwrite_agents(path: Path) -> bool:
-    if not path.exists():
-        return True
-    text = _read(path)
-    if MARKER in text:
-        return True
-    if "mem0" in text.lower() or "Mem0" in text:
-        return True
-    stripped = text.lstrip()
-    if stripped.startswith("# Globales User-Profil"):
-        return True
-    return False
 
 
 def purge_legacy_rules(rules_dir: Path) -> List[str]:
@@ -1468,7 +1553,10 @@ def purge_legacy_rules(rules_dir: Path) -> List[str]:
         stem = path.stem.lower()
         drop = stem in LEGACY_RULE_STEMS or name.startswith("felix-always.")
         if not drop and path.suffix.lower() in {".mdc", ".md", ".mdr"}:
-            if MARKER in _read(path):
+            body = _read(path)
+            if (MARKER in body or LEGACY_MARKER in body) and not has_text_outside_memory_block(
+                body
+            ):
                 drop = True
         if drop:
             path.unlink()
@@ -1513,14 +1601,12 @@ def _is_git_symlink_stub(path: Path) -> bool:
 
 
 def _is_foreign_instruction_file(path: Path) -> bool:
-    """True if the file exists and is not ours to overwrite."""
+    """True if the file has text we must not delete (outside the memory brackets)."""
     if not path.exists() and not path.is_symlink():
         return False
     if _is_git_symlink_stub(path):
         return False
-    if MARKER in _read(path) or _should_overwrite_agents(path):
-        return False
-    return True
+    return has_text_outside_memory_block(_read(path))
 
 
 def _ensure_claude_pointer(path: Path) -> None:
@@ -1596,21 +1682,19 @@ def bind_to(link: Path, target: Path, force: bool = False) -> Tuple[str, str]:
 
 
 def write_instruction_pair(directory: Path, body: str) -> List[str]:
-    """Write AGENTS.md, then bind CLAUDE.md to it.
+    """Splice memory into AGENTS.md, then bind CLAUDE.md to it.
 
-    If CLAUDE.md is foreign, leave it and append a pointer. If AGENTS.md is
-    foreign, skip the directory.
+    Existing text outside `<!-- agents-memory-sync -->` … `<!-- /agents-memory-sync -->`
+    is kept. If CLAUDE.md has its own text outside the block, splice there too
+    instead of binding (binding would delete it).
     """
     directory.mkdir(parents=True, exist_ok=True)
     agents = directory / "AGENTS.md"
     claude = directory / "CLAUDE.md"
-    if _is_foreign_instruction_file(agents):
-        return []
-    _write(agents, body)
-    written = [str(agents)]
-    if _is_foreign_instruction_file(claude):
-        _ensure_claude_pointer(claude)
-        written.append(str(claude))
+    written = [write_agents_file(agents, body)]
+    claude_text = _read(claude) if claude.exists() and not _is_git_symlink_stub(claude) else ""
+    if claude_text and has_text_outside_memory_block(claude_text):
+        written.append(write_agents_file(claude, body))
         return written
     bound, _method = bind_to(claude, agents)
     if bound:
@@ -1641,20 +1725,20 @@ def bind_dir_to_canonical(
 
 
 def bind_claude_home(canonical: Path) -> Tuple[List[str], List[str]]:
-    """~/.claude/AGENTS.md and CLAUDE.md → canonical (replaces foreign CLAUDE.md)."""
+    """Splice memory into ~/.claude/AGENTS.md. Do not replace a foreign CLAUDE.md."""
     CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
     warnings: List[str] = []
-    for name in ("AGENTS.md", "CLAUDE.md"):
-        dest = CLAUDE_HOME / name
-        path, method = bind_to(dest, canonical, force=True)
-        if path:
-            written.append(path)
-        if method == "copy":
-            warnings.append(
-                f"{dest}: bound by copy (symlink/hardlink failed — "
-                "edit AGENTS.md only; re-run python -m agents_memory sync after changes or use Developer Mode / native FS)"
-            )
+    inner = always_on_body()
+    agents = CLAUDE_HOME / "AGENTS.md"
+    written.append(write_agents_file(agents, inner, canonical=canonical))
+    claude = CLAUDE_HOME / "CLAUDE.md"
+    claude_text = _read(claude) if claude.exists() and not _is_git_symlink_stub(claude) else ""
+    if claude_text and has_text_outside_memory_block(claude_text):
+        written.append(write_agents_file(claude, inner))
+        return written, warnings
+    path, method = bind_to(claude, agents)
+    _bind_collect(path, method, written, warnings)
     return written, warnings
 
 
@@ -1742,17 +1826,7 @@ def machine_skill_text() -> str:
     if not template:
         return ""
     if PATHS_BEGIN in template and PATHS_END in template:
-        pre, rest = template.split(PATHS_BEGIN, 1)
-        _, post = rest.split(PATHS_END, 1)
-        return (
-            pre
-            + PATHS_BEGIN
-            + "\n"
-            + _machine_paths_block().rstrip()
-            + "\n"
-            + PATHS_END
-            + post
-        )
+        return splice_region(template, PATHS_BEGIN, PATHS_END, _machine_paths_block())
     return template
 
 
@@ -1796,18 +1870,12 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     ensure_memory_layout()
     written: List[str] = []
     warnings: List[str] = []
-    body = gemini_agents_text()
+    inner = always_on_body()
     AGENTS_HOME.mkdir(parents=True, exist_ok=True)
-    _write(HOME_AGENTS, body)
-    written.append(str(HOME_AGENTS))
+    written.append(write_agents_file(HOME_AGENTS, inner))
     written.extend(repair_instruction_stub(AGENTS_HOME))
-    for fn in (
-        lambda: bind_dir_to_canonical(INJECTION_GEMINI.parent, HOME_AGENTS),
-        lambda: bind_dir_to_canonical(zed_config_dir(), HOME_AGENTS),
-    ):
-        w, warn = fn()
-        written.extend(w)
-        warnings.extend(warn)
+    for host_agents in (INJECTION_GEMINI, zed_config_dir() / "AGENTS.md"):
+        written.append(write_agents_file(host_agents, inner, canonical=HOME_AGENTS))
     claude_written, claude_warn = bind_claude_home(HOME_AGENTS)
     written.extend(claude_written)
     warnings.extend(claude_warn)
@@ -3044,79 +3112,31 @@ def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
         parts.append(
             f"=== BATON RITUAL ({proj_name}) ===\n{baton}\n==================================="
         )
-
-    lines = _collect_raw_session_user_lines()
-    recent = lines[-limit:] if len(lines) > limit else lines
-
-    if recent:
-        parts.append(f"--- Recent Session User Lines ({len(recent)}) ---")
-        for item in reversed(recent):
-            snippet = item["text"]
-            if len(snippet) > 300:
-                snippet = snippet[:300] + "..."
-            parts.append(f"[{item['source']} | {item['title']}] {snippet}")
-    else:
-        parts.append("No session user lines found in configured ingest sources.")
-
+    try:
+        from agents_traces.session_view import session_snap as traces_snap
+        parts.append(traces_snap(limit=limit))
+    except ImportError:
+        parts.append(
+            "No session user lines in traces (agents-traces not installed). "
+            "Conversation ingest is python -m agents_traces ingest."
+        )
     return "\n\n".join(parts)
 
 
 def session_grep(pattern: str, since: str = "", project: str = "") -> str:
-    if not pattern:
-        return "Error: pattern is required for session_grep"
     try:
-        rx = re.compile(pattern, re.IGNORECASE)
-    except re.error as e:
-        return f"Error invalid regex pattern: {e}"
-
-    lines = _collect_raw_session_user_lines()
-    hits = []
-    for item in lines:
-        if since and item.get("date", "") < since:
-            continue
-        if rx.search(item["text"]) or rx.search(item["title"]):
-            hits.append(item)
-
-    if not hits:
-        return f"No session lines matching '{pattern}'."
-
-    out = [f"Found {len(hits)} matching session lines:"]
-    for item in hits[-50:]:
-        snippet = item["text"].replace("\n", " ")
-        if len(snippet) > 200:
-            snippet = snippet[:200] + "..."
-        out.append(f"- [{item['source']} | {item['title']}] {snippet}")
-    return "\n".join(out)
+        from agents_traces.session_view import session_grep as traces_grep
+        return traces_grep(pattern=pattern, since=since)
+    except ImportError:
+        return "Error: agents-traces is required for session_grep. Conversation logs live there."
 
 
 def session_tail(session_id: str = "", limit: int = 10) -> str:
-    limit = max(1, limit)
-    lines = _collect_raw_session_user_lines()
-    if session_id:
-        filtered = [
-            l
-            for l in lines
-            if session_id.lower() in l["file"].lower()
-            or session_id.lower() in l["title"].lower()
-        ]
-    else:
-        filtered = lines
-
-    if not filtered:
-        return (
-            f"No session lines found matching '{session_id}'."
-            if session_id
-            else "No session lines found."
-        )
-
-    recent = filtered[-limit:]
-    out = [f"Session tail ({len(recent)} lines):"]
-    for item in recent:
-        snippet = item["text"].replace("\n", " ")
-        if len(snippet) > 250:
-            snippet = snippet[:250] + "..."
-        out.append(f"- [{item['source']} | {item['title']}] {snippet}")
-    return "\n".join(out)
+    try:
+        from agents_traces.session_view import session_tail as traces_tail
+        return traces_tail(session_id=session_id, limit=limit)
+    except ImportError:
+        return "Error: agents-traces is required for session_tail. Conversation logs live there."
 
 
 def check_memory_freshness() -> Dict[str, Any]:

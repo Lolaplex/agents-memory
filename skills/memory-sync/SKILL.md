@@ -39,16 +39,23 @@ MCP server `agents-memory`: see [`abi/MCP.md`](../../abi/MCP.md). CLI/injection:
 - A path in `PROJECTS.md` is wrong or missing
 - After editing `USER.md` or `PROJECTS.md` by hand → always `python -m agents_memory sync`
 
-## Cloud Sync & Multi-Device Coordination
+## Cloud mirror sync
 
-`agents-memory` can sync seamlessly across workstations, laptops, and VPS assistants:
+Cloud = source of truth; local files = working copy. All MCP tools run **locally**; push/pull syncs a mirror bundle — see [`abi/REMOTE.md`](../../abi/REMOTE.md).
 
-* **Check status:** `python -m agents_memory remote status` (shows local vs remote mode and server health).
-* **Connect to cloud:** `python -m agents_memory connect <URL> --token <TOKEN>`
-  * Performs deterministic multi-device merge (bullets deduplicated, tables merged by slug, staging appended).
-  * Automatically configures IDE host MCP configs to use the client bridge.
-* **Disconnect from cloud:** `python -m agents_memory disconnect` (pulls final snapshot, restores local mode).
-* **Push / Pull manually:** `python -m agents_memory remote push` / `python -m agents_memory remote pull`.
+| Step | Where | Command / MCP |
+|------|-------|---------------|
+| Connect | Workstation | `python -m agents_memory connect <URL> --token <TOKEN>` |
+| Ingest catalog+extract | **Workstation** (chat graves local) | MCP `ingest_catalog` + `ingest_extract` or `ingest run` — auto-pushes |
+| Distill staging | **Local** | MCP `get_staging_inbox` → `distill_batch` / `auto_distill` — auto-pushes |
+| Inventory / register | **Local** | MCP `inventory_projects` / `register_project` — auto-pushes |
+| Search / CRUD | **Local** (merged after pull) | MCP `search_memory`, `add_memory`, … |
+| Repo facts | **Local repo** | MCP `add_memory(project=…)` → `<repo>/.agents/memory/` — mirrored to cloud |
+| Status | Either | `python -m agents_memory remote status` |
+| Disconnect | Workstation | `python -m agents_memory disconnect` (final pull) |
+| Manual sync | Workstation | `remote push` / `remote pull` |
+
+After `connect`, IDE MCP entry is `agents_memory.remote.sync_mcp` (pull on start, push after writes).
 
 ## Bestandaufnahme workflow
 
@@ -88,7 +95,7 @@ If you scaffold a repo under a scan root:
 - Personal note → `add_memory(kind="note", name="stem", collection="interests"|…)` or `project="slug"` for `notes/projects/<slug>/`
 - Throw-away → `kind="scratch"`
 - No `facts.md`. Path encodes the home.
-- Chat titles → `python -m agents_memory ingest catalog`. Extract → `python -m agents_memory ingest extract` then distill staging bullets with `add_memory`. See `abi/INGEST.md`.
+- Chat titles → `python -m agents_memory ingest catalog`. Extract → `python -m agents_memory ingest extract` then distill. **Ingest always local**; mirror sync auto-pushes after ingest/distill/CRUD. See `abi/INGEST.md` + `abi/REMOTE.md`.
 - `AGENTS.md` is the real file. `CLAUDE.md` is bound to it (symlink → hardlink → copy) **only when CLAUDE.md has no text outside the memory block**. Edit `AGENTS.md`. See `abi/PLATFORM.md` for Windows vs macOS/Linux.
 - `python -m agents_memory sync` splices `<!-- agents-memory-sync -->` … `<!-- /agents-memory-sync -->` into existing `AGENTS.md`. It does not replace the file.
 - Do not copy secrets, tokens, SSH keys, emails, phones, or `.env` values into memory

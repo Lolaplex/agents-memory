@@ -7,6 +7,14 @@ description: Destilliert rohe Staging-Inbox-Bullets (staging/captured.md) in ble
 
 Staging inbox is temporary — from **any** ingest source (`staging/ingest/<id>/captured.md`) or project/user staging. Distill durable facts into typed paths; discard ephemeral noise.
 
+When remote-connected, all distill tools run **locally**; writes auto-push the mirror bundle to cloud. Other devices pull to stay current.
+
+## Pipeline order (connected mode)
+
+1. **Ingest** (local): `ingest_catalog` → `ingest_extract` — auto-pushes staging.
+2. **Distill** (local): `get_staging_inbox` → classify → `distill_batch` — auto-pushes typed memory + repo mirrors.
+3. Pull on MCP start / periodic pull on other devices updates local files.
+
 When staging inbox depth reaches `staging_nag_threshold` (default 50), agents automatically receive a nag alert in `AGENTS.md` and MCP tool responses to trigger distillation.
 
 ## Quick Option: Auto-Distill

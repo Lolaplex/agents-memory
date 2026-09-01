@@ -34,9 +34,16 @@ def run_full_suite() -> bool:
 
     start_time = time.time()
 
-    # Discover and run all unit, CLI, MCP, Ingest, and Distill tests
+    # Discover and run all unit, CLI, MCP, Ingest, and Distill tests.
+    # CI skips integration-only modules (uvicorn e2e, pip-in-venv) — run locally before release.
+    ci_exclude = {"test_remote_e2e.py", "test_pip_install.py"} if os.environ.get("CI") == "true" else set()
     loader = unittest.TestLoader()
-    suite = loader.discover(start_dir=str(ROOT / "tests"), pattern="test_*.py")
+    suite = unittest.TestSuite()
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        if path.name in ci_exclude:
+            continue
+        mod = ".".join(path.relative_to(ROOT).with_suffix("").parts)
+        suite.addTests(loader.loadTestsFromName(mod))
 
     stream = StringIO()
     runner = unittest.TextTestRunner(stream=stream, verbosity=2)

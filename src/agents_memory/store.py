@@ -1425,6 +1425,29 @@ def stub_project_md(p: Project) -> str:
     )
 
 
+def repo_gitignore_covers_agents(text: str) -> bool:
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s in (".agents/", ".agents", "/.agents/", "/.agents"):
+            return True
+    return False
+
+
+def ensure_repo_agents_gitignored(repo: Path) -> None:
+    """Project memory lives in ``<repo>/.agents/`` and must never be committed."""
+    if not repo.is_dir() or is_engine_repo(repo):
+        return
+    gi = repo / ".gitignore"
+    existing = _read(gi) if gi.exists() else ""
+    if repo_gitignore_covers_agents(existing):
+        return
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    gi.write_text(existing + ".agents/\n", encoding="utf-8")
+
+
 def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
     if is_engine_repo(p.path_obj):
         p.user_link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1436,6 +1459,7 @@ def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
     if not is_engine_repo(p.path_obj):
         ensure_staging_inbox(p.memory_dir)
         if p.path_obj.is_dir():
+            ensure_repo_agents_gitignored(p.path_obj)
             gi = dest.parent / ".gitignore"
             if not gi.exists():
                 _write(gi, "*\n!.gitignore\n")

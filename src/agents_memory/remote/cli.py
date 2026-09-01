@@ -9,6 +9,7 @@ from typing import Optional
 from .. import __version__
 from ..store import USER_MEMORY, merge_agent_mcp, merge_zed_mcp, sync_injection
 from .client import (
+    board_attach,
     clear_remote_config,
     get_remote_config,
     main_bridge,
@@ -16,6 +17,7 @@ from .client import (
     remote_pull,
     remote_push_merge,
     save_remote_config,
+    verify_remote_tool_api,
 )
 from .server import run_server
 
@@ -59,6 +61,22 @@ def build_remote_parser() -> argparse.ArgumentParser:
     client_p = subparsers.add_parser("client", help="Run stdio-to-remote MCP bridge")
     client_p.add_argument("--url", help="Override remote server URL")
     client_p.add_argument("--token", help="Override authentication token")
+
+    attach_p = subparsers.add_parser(
+        "attach",
+        help="Attach a board project memory tree as an extra root (does not replace local USER.md)",
+    )
+    attach_p.add_argument(
+        "url",
+        help="Board memory URL, e.g. https://board.lolaplex.org/projects/cyplex/memory",
+    )
+    attach_p.add_argument("--token", "-t", default="", help="Board bearer token (lpb_…)")
+    attach_p.add_argument(
+        "--dir",
+        default="",
+        help="Local directory (default: ~/.agents/board-memory/<slug>)",
+    )
+    attach_p.add_argument("--insecure", "-k", action="store_true", help="Skip TLS verify")
 
     return parser
 
@@ -236,6 +254,29 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     elif cmd == "client":
         return main_bridge()
+
+    elif cmd == "attach":
+        url = args.url.strip().rstrip("/")
+        token = args.token.strip()
+        dest = Path(args.dir).expanduser() if args.dir else None
+        print(f"Attaching board memory at {url} (local store stays the personal root)...")
+        try:
+            res = board_attach(url, token=token, dest_dir=dest, verify_ssl=not args.insecure)
+        except PermissionError:
+            print("ERROR: Authentication failed. Pass a valid --token (lpb_…).", file=sys.stderr)
+            return 1
+        except Exception as e:
+            print(f"ERROR: Could not attach board memory: {e}", file=sys.stderr)
+            return 1
+        report = res.get("report", {})
+        print(f"Wrote extra root {res.get('dir')}")
+        print(
+            f"Files: {len(report.get('added', []))} added, "
+            f"{len(report.get('merged', []))} merged, "
+            f"{len(report.get('skipped', []))} skipped (personal paths)."
+        )
+        print("This does not switch MCP to remote connect.")
+        return 0
 
     parser.print_help()
     return 0

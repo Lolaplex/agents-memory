@@ -95,6 +95,11 @@ class TestSyncBundle(unittest.TestCase):
         self.assertIn("alpha", bundle[f"{MIRROR_PREFIX}demo/facts.md"])
         self.assertNotIn("stale", bundle[f"{MIRROR_PREFIX}demo/facts.md"])
 
+    def test_collect_skips_board_attach_sidecar(self):
+        (self.user / "board_attach.json").write_text('{"attaches":[]}', encoding="utf-8")
+        bundle = collect_sync_bundle(include_projects=False, memory_root=self.user)
+        self.assertNotIn("board_attach.json", bundle)
+
 
 if __name__ == "__main__":
     unittest.main()

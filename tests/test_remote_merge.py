@@ -1,7 +1,10 @@
 """Tests for deterministic markdown merge engine."""
-import unittest
+import json
+import os
 import tempfile
+import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from agents_memory.remote.merge import (
     merge_bullet_markdown,
@@ -118,6 +121,51 @@ class TestBoardAttachPaths(unittest.TestCase):
         self.assertTrue(board_memory_path_ok("staging/captured.md"))
         self.assertFalse(board_memory_path_ok("../decisions/001-x.md"))
 
+    def test_unregistered_dest_is_opaque_url_id(self):
+        from unittest.mock import patch
+        from agents_memory.remote.client import attach_dest_from_url, unregistered_attach_dest
+
+        url = "https://board.example/projects/alpha/memory"
+        with patch("agents_memory.remote.client.find_project", return_value=None):
+            dest = attach_dest_from_url(url)
+            again = attach_dest_from_url(url + "/snapshot")
+            other = attach_dest_from_url("https://board.example/projects/beta/memory")
+        self.assertEqual(dest, again)
+        self.assertEqual(dest, unregistered_attach_dest(url))
+        self.assertNotEqual(dest, other)
+        self.assertNotIn("alpha", dest.parts)
+        self.assertIn("by-url", dest.parts)
+
+    def test_registered_dest_is_clone_memory(self):
+        from unittest.mock import patch
+        from agents_memory.remote.client import attach_dest_from_url
+        from agents_memory.store import Project
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name) / "clone"
+        repo.mkdir()
+        proj = Project("alpha", str(repo), "role", "py")
+        with patch("agents_memory.remote.client.find_project", return_value=proj):
+            dest = attach_dest_from_url("https://board.example/projects/alpha/memory")
+            other_name = attach_dest_from_url(
+                "https://board.example/projects/board-name/memory",
+                project="alpha",
+            )
+        self.assertEqual(dest, (repo / ".agents" / "memory").resolve())
+        self.assertEqual(other_name, dest)
+
+    def test_unknown_explicit_project_raises(self):
+        from unittest.mock import patch
+        from agents_memory.remote.client import attach_dest_from_url
+
+        with patch("agents_memory.remote.client.find_project", return_value=None):
+            with self.assertRaises(ValueError):
+                attach_dest_from_url(
+                    "https://board.example/projects/alpha/memory",
+                    project="missing",
+                )
+
     def test_dest_must_not_be_personal_store(self):
         from agents_memory.remote.client import board_attach
         from agents_memory.store import USER_MEMORY
@@ -132,6 +180,93 @@ class TestBoardAttachPaths(unittest.TestCase):
                 "https://board.example/projects/x/memory",
                 dest_dir=USER_MEMORY / "nested",
             )
+
+    def test_attach_requires_slug_or_token(self):
+        from agents_memory.remote.client import board_attach
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        dest = Path(tmp.name) / "out"
+        with self.assertRaises(ValueError) as ctx:
+            board_attach(
+                "https://board.example/projects/x/memory",
+                dest_dir=dest,
+            )
+        self.assertIn("--slug", str(ctx.exception))
+
+    def test_did_attach_uses_session_cookie_not_bearer(self):
+        import httpx
+        from agents_memory.remote.client import board_attach
+
+        did = "did:key:z6MktULudTtAsAhRegYPiZ6631RV3viv12qd4GQF8z1xB22S"
+        signature = "ab" * 32
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        dest = root / "dest"
+        user = root / "user"
+        user.mkdir()
+        nonce = "board-login:test-nonce"
+        seen = {"cookie": False, "bearer": False}
+
+        def fake_keys(*args: str) -> str:
+            if args[:1] == ("did",):
+                return did
+            if args[:1] == ("sign",):
+                self.assertEqual(args[2], nonce)
+                return signature
+            raise AssertionError(args)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/login":
+                payload = json.loads(request.content)
+                if payload.get("verb") == "challenge":
+                    self.assertEqual(payload.get("did"), did)
+                    return httpx.Response(200, json={"nonce": nonce, "did": did})
+                if payload.get("verb") == "verify":
+                    self.assertEqual(payload.get("signature"), signature)
+                    return httpx.Response(
+                        200,
+                        json={"ok": True},
+                        headers={"set-cookie": "board_sid=sess1; Path=/"},
+                    )
+                return httpx.Response(422, json={"error": "bad verb"})
+            if request.url.path.endswith("/snapshot"):
+                if request.headers.get("authorization"):
+                    seen["bearer"] = True
+                if "board_sid=sess1" in (request.headers.get("cookie") or ""):
+                    seen["cookie"] = True
+                return httpx.Response(
+                    200,
+                    json={"files": {"decisions/001-hello.md": "# Hello\n"}},
+                )
+            return httpx.Response(404)
+
+        transport = httpx.MockTransport(handler)
+
+        with patch("agents_memory.remote.client.keys_cli", side_effect=fake_keys):
+            with patch("agents_memory.remote.client.USER_MEMORY", user):
+                with patch(
+                    "agents_memory.remote.client.ATTACH_FILE",
+                    user / "board_attach.json",
+                ):
+                    with patch("agents_memory.remote.client.ensure_memory_layout"):
+                        with patch(
+                            "agents_memory.remote.client._get_http_client",
+                            lambda **_k: httpx.Client(transport=transport),
+                        ):
+                            res = board_attach(
+                                "https://board.example/projects/alpha/memory",
+                                slug="shcpy",
+                                dest_dir=dest,
+                            )
+        self.assertTrue(seen["cookie"], "snapshot must send board_sid")
+        self.assertFalse(seen["bearer"])
+        self.assertEqual(res["did"], did)
+        self.assertTrue((dest / "decisions" / "001-hello.md").is_file())
+        sidecar = json.loads((user / "board_attach.json").read_text(encoding="utf-8"))
+        self.assertEqual(sidecar["attaches"][0]["slug"], "shcpy")
+        self.assertNotIn("token", sidecar["attaches"][0])
 
 
 if __name__ == "__main__":

@@ -401,6 +401,8 @@ class RegisterBootstrapTests(unittest.TestCase):
         mem = repo / ".agents" / "memory"
         self.assertTrue((mem / "README.md").exists())
         self.assertTrue((mem / "staging" / "captured.md").exists())
+        gi = (repo / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn(".agents/", gi)
         for child in mem.rglob("*"):
             if child.is_dir():
                 self.assertTrue(any(child.iterdir()), f"empty dir: {child}")

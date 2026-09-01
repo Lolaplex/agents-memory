@@ -23,13 +23,11 @@ Commands:
   distill          Inspect staging inbox for distillation
   check            Mechanical store health checks (read-only, zero AI)
   serve            Start local memory browser (localhost:8765)
-  remote           Multi-device cloud sync & remote server (serve/connect/push/pull/attach)
-  connect          Connect to a remote memory server
-  disconnect       Disconnect from remote and restore local mode
   web              Export static HTML website
-  rebuild-index    Rebuild disposable FTS index cache
-  search           Lexical search over the markdown vault (extra argv = query)
-  mcp              stdio MCP server
+  remote           Optional replicate (connect/push/pull/attach). Never the default MCP.
+  rebuild-index    Rebuild disposable FTS cache (markdown stays source of truth)
+  search           Lexical search over the markdown vault (Cordis / harness)
+  mcp              stdio MCP server (always local markdown clerk)
   help-json        Machine-readable CLI + injection spec
 """
 
@@ -153,14 +151,19 @@ def main(argv: list[str] | None = None) -> int:
 
         query = " ".join(rest).strip()
         if not query:
-            print("usage: python -m agents_memory search QUERY", file=sys.stderr)
+            print("search requires a query argument", file=sys.stderr)
             return 2
-        hits = search_memory(query)
+        project = ""
+        if "--project" in rest:
+            i = rest.index("--project")
+            if i + 1 < len(rest):
+                project = rest[i + 1]
+            query = " ".join(rest[:i]).strip()
+        hits = search_memory(query, project=project)
         for hit in hits:
-            file_id = hit.get("file", "?")
-            line = hit.get("line", 0)
-            text = hit.get("text", "")
-            print(f"{file_id}:{line} {text}")
+            text = str(hit.get("text") or "").strip()
+            if text:
+                print(text)
         return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:

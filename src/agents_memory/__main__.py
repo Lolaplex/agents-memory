@@ -28,6 +28,7 @@ Commands:
   disconnect       Disconnect from remote and restore local mode
   web              Export static HTML website
   rebuild-index    Rebuild disposable FTS index cache
+  search           Lexical search over the markdown vault (extra argv = query)
   mcp              stdio MCP server
   help-json        Machine-readable CLI + injection spec
 """
@@ -146,6 +147,20 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"Indexed {res['indexed']} markdown documents in {res['duration_ms']}ms -> {res['db_path']}"
         )
+        return 0
+    if cmd == "search":
+        from .store import search_memory
+
+        query = " ".join(rest).strip()
+        if not query:
+            print("usage: python -m agents_memory search QUERY", file=sys.stderr)
+            return 2
+        hits = search_memory(query)
+        for hit in hits:
+            file_id = hit.get("file", "?")
+            line = hit.get("line", 0)
+            text = hit.get("text", "")
+            print(f"{file_id}:{line} {text}")
         return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:

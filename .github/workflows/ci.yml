@@ -71,7 +71,7 @@ jobs:
   notify:
     name: Discord
     needs: [test]
-    if: failure() && !cancelled()
+    if: ${{ failure() && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

@@ -140,6 +140,7 @@ def full_spec() -> dict[str, Any]:
             "consolidate": "Move live markdown leaked into the engine clone into ~/.agents/memory.",
             "extract-openai": "Thin wrapper: ingest extract for Open AI GDPR export (openai-export; --out = legacy JSON).",
             "mcp": "MCP stdio server. Tools: see abi/MCP.md.",
+            "search": "Lexical search over the markdown vault.",
         },
         "injection": injection_spec(),
         "discover": "python -m agents_memory --help-json | python -m agents_memory sync --help-json | python -m agents_memory inventory --help-json",

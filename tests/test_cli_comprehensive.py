@@ -50,6 +50,7 @@ class CLIComprehensiveTests(unittest.TestCase):
         self.assertIn("sync", res.stdout)
         self.assertIn("inventory", res.stdout)
         self.assertIn("distill", res.stdout)
+        self.assertIn("search", res.stdout)
 
     def test_unknown_command(self):
         res = self._run_cli("unknown_command_xyz", check=False)
@@ -63,6 +64,7 @@ class CLIComprehensiveTests(unittest.TestCase):
         self.assertEqual(data["name"], "agents-memory")
         self.assertIn("scripts", data)
         self.assertIn("injection", data)
+        self.assertIn("search", data["scripts_no_flags"])
 
     def test_inventory_cli_json(self):
         res = self._run_cli("inventory", "--json")
@@ -86,6 +88,11 @@ class CLIComprehensiveTests(unittest.TestCase):
         data = json.loads(res.stdout)
         self.assertEqual(data["name"], "sync")
         self.assertIn("abi_version", data)
+
+    def test_search_cli_requires_query(self):
+        res = self._run_cli("search", check=False)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("usage: python -m agents_memory search QUERY", res.stderr)
 
     def test_ingest_cli_status(self):
         res = self._run_cli("ingest", "status")

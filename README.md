@@ -134,10 +134,11 @@ See [`abi/REMOTE.md`](abi/REMOTE.md) for bundle layout and merge rules.
 A board like `board.lolaplex.org` is a **second root**, not your VPS mirror:
 
 ```bash
-agents-memory remote attach https://board.lolaplex.org/projects/<slug>/memory --token lpb_…
+agents-memory remote attach https://board.lolaplex.org/projects/<slug>/memory --slug shcpy
+# needs agents-keys on the same interpreter (`python -m agents_keys did <slug>`)
 ```
 
-Files land in `~/.agents/board-memory/<slug>/`. Personal MCP stays local. Do not `connect` to the board.
+Files land in that clone's `<repo>/.agents/memory/` when the project is registered (LAYOUT: in-tree, gitignored). If it is not registered, they land in `~/.agents/shared/by-url/<id>/` keyed by the remote URL, not by a project name. Pass `--project <slug>` when the board path name is not the local slug. The agent must already be a project member. Personal MCP stays local. Do not `connect` to the board.
 
 ---
 

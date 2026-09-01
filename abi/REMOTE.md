@@ -46,7 +46,7 @@ Chat graves, FTS index (`.index/`), `remote_config.json`, and `board_attach.json
 
 `connect` is single-tenant: one personal `USER_MEMORY` mirrored across your devices.
 
-`agents-memory remote attach <board-url> --token lpb_…` pulls a **shared project** snapshot (e.g. `https://board.lolaplex.org/projects/<slug>/memory`) into `~/.agents/board-memory/<slug>/`. It does **not** write `remote_config.json`, does **not** switch MCP to `sync_mcp`, and never copies `USER.md` / `PROJECTS.md`. Dest must not sit inside `~/.agents/memory/`.
+`agents-memory remote attach <board-url> --slug <agent>` pulls a **shared project** snapshot. It shells out to `python -m agents_keys did|sign` (secret stays in that process). `--token lpb_…` is a spare door. If that project is **registered**, dest is the clone's `<repo>/.agents/memory/` (LAYOUT). Otherwise dest is `~/.agents/shared/by-url/<id>/` — an opaque id of the remote URL, never a guessed project name. `--project <slug>` selects the local clone when the board path name differs. It does **not** write `remote_config.json`, does **not** switch MCP to `sync_mcp`, and never copies `USER.md` / `PROJECTS.md`. Dest must not sit inside `~/.agents/memory/`. `<repo>/.agents/` is gitignored so another clone does not receive those files.
 
 Only markdown under `decisions/`, `plans/`, `tasks/`, `waves/`, `roadmap/`, `staging/`, `notes/`, `research/` is written.
 

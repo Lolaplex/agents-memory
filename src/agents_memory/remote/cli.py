@@ -68,13 +68,28 @@ def build_remote_parser() -> argparse.ArgumentParser:
     )
     attach_p.add_argument(
         "url",
-        help="Board memory URL, e.g. https://board.lolaplex.org/projects/cyplex/memory",
+        help="Board memory URL, e.g. https://board.example/projects/<slug>/memory",
     )
-    attach_p.add_argument("--token", "-t", default="", help="Board bearer token (lpb_…)")
+    attach_p.add_argument(
+        "--slug",
+        default="",
+        help="Agent key stem: ~/.agents/keys/<slug>.ed25519 (DID challenge, not a bearer)",
+    )
+    attach_p.add_argument(
+        "--token",
+        "-t",
+        default="",
+        help="Spare door: hashed bearer lpb_… (omit; use --slug)",
+    )
+    attach_p.add_argument(
+        "--project",
+        default="",
+        help="Registered local slug (dest: <repo>/.agents/memory). Required when the board slug differs.",
+    )
     attach_p.add_argument(
         "--dir",
         default="",
-        help="Local directory (default: ~/.agents/board-memory/<slug>)",
+        help="Override dest. Default: registered project memory, else ~/.agents/shared/by-url/<id>/",
     )
     attach_p.add_argument("--insecure", "-k", action="store_true", help="Skip TLS verify")
 
@@ -261,9 +276,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         dest = Path(args.dir).expanduser() if args.dir else None
         print(f"Attaching board memory at {url} (local store stays the personal root)...")
         try:
-            res = board_attach(url, token=token, dest_dir=dest, verify_ssl=not args.insecure)
+            res = board_attach(
+                url,
+                token=token,
+                dest_dir=dest,
+                verify_ssl=not args.insecure,
+                project=getattr(args, "project", "") or "",
+                slug=getattr(args, "slug", "") or "",
+            )
         except PermissionError:
-            print("ERROR: Authentication failed. Pass a valid --token (lpb_…).", file=sys.stderr)
+            print(
+                "ERROR: Authentication failed. Use --slug <agent> "
+                "(file ~/.agents/keys/<slug>.ed25519).",
+                file=sys.stderr,
+            )
             return 1
         except Exception as e:
             print(f"ERROR: Could not attach board memory: {e}", file=sys.stderr)

@@ -1,8 +1,10 @@
 """Client utilities, sync client, and Stdio-to-Remote SSE bridge."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import subprocess
 import sys
 import urllib.parse
 from datetime import datetime, timezone
@@ -16,8 +18,12 @@ from mcp.server.stdio import stdio_server
 
 from .. import __version__
 from ..store import (
+    AGENTS_HOME,
     USER_MEMORY,
     ensure_memory_layout,
+    ensure_repo_agents_gitignored,
+    find_project,
+    is_engine_repo,
     sync_injection,
 )
 from .merge import merge_file_trees
@@ -335,6 +341,34 @@ def save_attach(entry: dict[str, Any]) -> None:
     ATTACH_FILE.write_text(json.dumps({"attaches": items}, indent=2), encoding="utf-8")
 
 
+def canonical_attach_url(url: str) -> str:
+    u = url.strip().rstrip("/")
+    if u.lower().endswith("/snapshot"):
+        u = u[: -len("/snapshot")].rstrip("/")
+    return u
+
+
+def unregistered_attach_dest(url: str) -> Path:
+    digest = hashlib.sha256(canonical_attach_url(url).encode("utf-8")).hexdigest()[:16]
+    return (AGENTS_HOME / "shared" / "by-url" / digest).resolve()
+
+
+def attach_dest_from_url(url: str, project: str = "") -> Path:
+    """Registered clone ``.agents/memory`` when known; else opaque URL id (not a project name)."""
+    wanted = project.strip()
+    if not wanted:
+        parsed = _slug_from_memory_url(canonical_attach_url(url))
+        if parsed != "board":
+            wanted = parsed
+    if wanted:
+        found = find_project(wanted)
+        if found and found.path_obj.is_dir() and not is_engine_repo(found.path_obj):
+            return found.memory_dir.resolve()
+        if project.strip():
+            raise ValueError(f"no registered project for {wanted!r}")
+    return unregistered_attach_dest(url)
+
+
 def _slug_from_memory_url(url: str) -> str:
     parts = urllib.parse.urlparse(url).path.strip("/").split("/")
     if "projects" in parts:
@@ -344,30 +378,104 @@ def _slug_from_memory_url(url: str) -> str:
     return "board"
 
 
+def board_origin(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("board URL needs a host")
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def keys_cli(*args: str) -> str:
+    """Shell out to agents-keys. Sign/mint live in that process, not this MCP."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "agents_keys", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "agents-keys failed").strip()
+        raise RuntimeError(err)
+    return proc.stdout.strip()
+
+
+def board_did_session(client: httpx.Client, origin: str, slug: str) -> str:
+    """Challenge/sign/verify. Leaves board_sid on the client cookie jar. Returns did:key."""
+    did = keys_cli("did", slug)
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": f"agents-memory-client/{__version__}",
+    }
+    ch = client.post(
+        f"{origin}/login",
+        json={"verb": "challenge", "did": did},
+        headers=headers,
+    )
+    if ch.status_code >= 400:
+        raise PermissionError(f"challenge failed: {ch.text}")
+    body = ch.json()
+    nonce = str(body.get("nonce") or "")
+    if nonce == "":
+        raise PermissionError(f"challenge failed: {ch.text}")
+    signature = keys_cli("sign", slug, nonce)
+    ver = client.post(
+        f"{origin}/login",
+        json={
+            "verb": "verify",
+            "did": did,
+            "nonce": nonce,
+            "signature": signature,
+        },
+        headers=headers,
+    )
+    if ver.status_code == 403:
+        raise PermissionError("This DID is not a user on this board.")
+    if ver.status_code >= 400:
+        raise PermissionError(f"verify failed: {ver.text}")
+    return did
+
+
 def board_attach(
     url: str,
     token: str = "",
     dest_dir: Optional[Path] = None,
     timeout: float = 30.0,
     verify_ssl: Optional[bool] = None,
+    project: str = "",
+    slug: str = "",
 ) -> dict[str, Any]:
     """Pull a board project memory snapshot into a directory that is not USER_MEMORY."""
-    clean_url = url.strip().rstrip("/")
-    snap = clean_url if clean_url.endswith("/snapshot") else f"{clean_url}/snapshot"
-    slug = _slug_from_memory_url(clean_url)
-    dest = dest_dir or (Path.home() / ".agents" / "board-memory" / slug)
+    clean_url = canonical_attach_url(url)
+    snap = f"{clean_url}/snapshot"
+    dest = dest_dir or attach_dest_from_url(clean_url, project=project)
     dest = dest.expanduser().resolve()
     personal = USER_MEMORY.resolve()
     if dest == personal or personal in dest.parents:
         raise ValueError("attach dir must not be inside the personal memory store")
+    if dest.name == "memory" and dest.parent.name == ".agents":
+        ensure_repo_agents_gitignored(dest.parent.parent)
+    slug = slug.strip()
+    token = token.strip()
+    if slug == "" and token == "":
+        raise ValueError(
+            "pass --slug <agent> (file ~/.agents/keys/<slug>.ed25519). "
+            "--token is a spare door, not the model."
+        )
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
     headers = _get_auth_headers(token)
     headers["Accept"] = "application/json"
+    did = ""
 
     with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+        if slug:
+            did = board_did_session(client, board_origin(clean_url), slug)
+            headers.pop("Authorization", None)
         resp = client.get(snap, headers=headers)
         if resp.status_code == 401:
-            raise PermissionError("Unauthorized: Token rejected by board.")
+            raise PermissionError("Unauthorized: board rejected this principal.")
+        if resp.status_code == 403:
+            raise PermissionError("Forbidden: this principal has no memory.read on that project.")
         resp.raise_for_status()
         data = resp.json()
 
@@ -383,14 +491,19 @@ def board_attach(
     dest.mkdir(parents=True, exist_ok=True)
     report = merge_file_trees(dest, allowed)
     report["skipped"] = skipped
-    save_attach({
+    local_slug = project.strip() or _slug_from_memory_url(clean_url)
+    found = find_project(local_slug) if local_slug else None
+    entry: dict[str, Any] = {
         "url": clean_url,
-        "token": token,
         "dir": str(dest),
-        "slug": slug,
+        "project": found.slug if found else "",
         "updated_at": datetime.now(timezone.utc).isoformat(),
-    })
-    return {"status": "ok", "dir": str(dest), "slug": slug, "report": report}
+    }
+    if slug:
+        entry["slug"] = slug
+        entry["did"] = did
+    save_attach(entry)
+    return {"status": "ok", "dir": str(dest), "project": found.slug if found else "", "did": did, "report": report}
 
 
 def main_bridge() -> int:

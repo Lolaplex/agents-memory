@@ -1,0 +1,4 @@
+version: 1
+install: python -m pip install -e .
+update: python -m pip install -e .
+verify: python tests/run_all_tests.py

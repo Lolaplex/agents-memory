@@ -26,7 +26,7 @@ Commands:
   web              Export static HTML website
   remote           Optional replicate (connect/push/pull/attach). Never the default MCP.
   rebuild-index    Rebuild disposable FTS cache (markdown stays source of truth)
-  search           Lexical search over the markdown vault (Cordis / harness)
+  search           Lexical search over the markdown vault (extra argv = query)
   mcp              stdio MCP server (always local markdown clerk)
   help-json        Machine-readable CLI + injection spec
 """
@@ -151,19 +151,14 @@ def main(argv: list[str] | None = None) -> int:
 
         query = " ".join(rest).strip()
         if not query:
-            print("search requires a query argument", file=sys.stderr)
+            print("usage: python -m agents_memory search QUERY", file=sys.stderr)
             return 2
-        project = ""
-        if "--project" in rest:
-            i = rest.index("--project")
-            if i + 1 < len(rest):
-                project = rest[i + 1]
-            query = " ".join(rest[:i]).strip()
-        hits = search_memory(query, project=project)
+        hits = search_memory(query)
         for hit in hits:
-            text = str(hit.get("text") or "").strip()
-            if text:
-                print(text)
+            file_id = hit.get("file", "?")
+            line = hit.get("line", 0)
+            text = hit.get("text", "")
+            print(f"{file_id}:{line} {text}")
         return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:

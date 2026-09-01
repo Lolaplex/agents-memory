@@ -56,7 +56,10 @@ Per source, set `"catalog": false` or `"extract": false` to skip a phase. Extrac
   "version": 1,
   "extract_max_bullets": 100,
   "staging_nag_threshold": 50,
-  "auto_distill_on_start": true,
+  "auto_distill_noise_threshold": 50,
+  "staging_force_threshold": 75,
+  "auto_distill_on_start": false,
+  "auto_distill_after_extract": true,
   "auto_distill_max_rounds": 3,
   "sources": [
     {
@@ -139,8 +142,11 @@ Global options:
 | Key | Default | Effect |
 |-----|---------|--------|
 | `extract_max_bullets` | `100` | Max bullets written per source per extract run (0 = unlimited) |
-| `staging_nag_threshold` | `50` | `ingest_status` / MCP `ingest_status` emits `staging.nag` when inbox exceeds this |
-| `auto_distill_on_start` | `true` | Run a noise-only distill pass on MCP start and after extract when inbox >= threshold |
+| `staging_nag_threshold` | `50` | Soft notice in AGENTS.md + staging MCP tools when inbox exceeds this |
+| `auto_distill_noise_threshold` | `50` | Deterministic noise pass threshold (defaults to nag threshold) |
+| `staging_force_threshold` | `75` | Strong "prioritize distill" notice when inbox exceeds this |
+| `auto_distill_on_start` | `false` | Noise pass on MCP start when inbox >= noise threshold |
+| `auto_distill_after_extract` | `true` | Noise pass after ingest extract when inbox >= noise threshold |
 | `auto_distill_max_rounds` | `3` | Max `auto_distill` rounds per noise pass (stop early if no progress) |
 
 Per-source `"extract_max_bullets"` overrides the global cap.

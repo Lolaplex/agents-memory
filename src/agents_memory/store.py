@@ -1501,14 +1501,19 @@ def always_on_body() -> str:
     nag = summary.get("nag")
     alert_section = ""
     if nag:
-        alert_section = (
-            "\n\n---\n\n"
-            "# Active Alerts\n\n"
-            f"> **ALWAYS**: {nag}\n"
-            "> Session start / this alert → first MCP call = `auto_distill`, "
-            "then `get_staging_inbox` + `distill_batch` until inbox is 0 "
-            "(or user says skip).\n"
-        )
+        level = summary.get("nag_level") or "soft"
+        if level == "strong":
+            alert_section = (
+                "\n\n---\n\n"
+                "# Active Alerts\n\n"
+                f"> **Staging backlog**: {nag}\n"
+            )
+        else:
+            alert_section = (
+                "\n\n---\n\n"
+                "# Active Alerts\n\n"
+                f"> **Staging note**: {nag}\n"
+            )
     return f"{user}\n\n---\n\n{projects}{alert_section}\n"
 
 
@@ -2677,19 +2682,32 @@ def staging_status_summary() -> dict[str, Any]:
 
     inbox = get_staging_inbox(limit=0)
     cfg = load_ingest()
-    threshold = max(0, int(cfg.get("staging_nag_threshold") or 50))
+    nag_threshold = max(0, int(cfg.get("staging_nag_threshold") or 50))
+    force_threshold = max(0, int(cfg.get("staging_force_threshold") or max(nag_threshold + 25, 75)))
     total = int(inbox["total"])
     nag = ""
-    if threshold > 0 and total >= threshold:
-        nag = (
-            f"{total} staging bullets. FIRST MCP CALL: auto_distill. "
-            "Then get_staging_inbox + distill_batch until total=0 "
-            "(or user says skip). Inbox MUST reach 0."
-        )
+    nag_level = "none"
+    if nag_threshold > 0 and total >= nag_threshold:
+        if force_threshold > 0 and total >= force_threshold:
+            nag_level = "strong"
+            nag = (
+                f"{total} staging bullets (>= {force_threshold}). "
+                "Before other memory MCP work this session: auto_distill, "
+                "then get_staging_inbox + distill_batch until total=0 "
+                "(or user says skip)."
+            )
+        else:
+            nag_level = "soft"
+            nag = (
+                f"{total} staging bullets (>= {nag_threshold}). "
+                "Distill during memory maintenance — not required for unrelated tasks."
+            )
     return {
         "bullet_count": total,
         "group_count": len(inbox["groups"]),
-        "threshold": threshold,
+        "threshold": nag_threshold,
+        "force_threshold": force_threshold,
+        "nag_level": nag_level,
         "nag": nag,
     }
 
@@ -2886,15 +2904,27 @@ _startup_noise_pass_ran = False
 
 
 def maybe_run_threshold_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
-    """If inbox >= nag threshold, run a deterministic noise pass. No silent promote of leftover bullets."""
+    """If inbox >= noise threshold, run a deterministic noise pass. No silent promote of leftover bullets."""
     from .ingest_config import load_ingest
 
     cfg = load_ingest()
-    if not cfg.get("auto_distill_on_start", True):
+    if not cfg.get("auto_distill_on_start", False):
         return None
-    summary = staging_status_summary()
-    threshold = int(summary.get("threshold") or 0)
-    if threshold <= 0 or int(summary.get("bullet_count") or 0) < threshold:
+    noise_threshold = max(0, int(cfg.get("auto_distill_noise_threshold") or cfg.get("staging_nag_threshold") or 50))
+    if noise_threshold <= 0 or count_staging_bullets() < noise_threshold:
+        return None
+    return auto_distill_noise_pass(auto_sync=auto_sync)
+
+
+def maybe_run_after_extract_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
+    """After ingest extract: noise pass when inbox >= noise threshold."""
+    from .ingest_config import load_ingest
+
+    cfg = load_ingest()
+    if not cfg.get("auto_distill_after_extract", True):
+        return None
+    noise_threshold = max(0, int(cfg.get("auto_distill_noise_threshold") or cfg.get("staging_nag_threshold") or 50))
+    if noise_threshold <= 0 or count_staging_bullets() < noise_threshold:
         return None
     return auto_distill_noise_pass(auto_sync=auto_sync)
 

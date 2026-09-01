@@ -2,7 +2,10 @@
   "version": 1,
   "extract_max_bullets": 100,
   "staging_nag_threshold": 50,
-  "auto_distill_on_start": true,
+  "auto_distill_noise_threshold": 50,
+  "staging_force_threshold": 75,
+  "auto_distill_on_start": false,
+  "auto_distill_after_extract": true,
   "auto_distill_max_rounds": 3,
   "sources": [
     {

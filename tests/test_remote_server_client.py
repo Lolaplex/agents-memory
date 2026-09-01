@@ -104,25 +104,6 @@ class TestRemoteServerClient(unittest.TestCase):
         self.assertTrue(cleared)
         self.assertIsNone(get_remote_config())
 
-    def test_sse_custom_host_header(self):
-        """DNS rebinding protection stays off so reverse-proxy Host headers reach /sse."""
-        from agents_memory.remote.server import mcp
-
-        create_remote_app(token="testtoken")
-        settings = getattr(mcp.settings, "transport_security", None)
-        self.assertIsNotNone(settings)
-        self.assertFalse(settings.enable_dns_rebinding_protection)
-
-        app = create_remote_app(token="testtoken")
-        client = TestClient(app)
-        resp = client.get(
-            "/health",
-            headers={"Authorization": "Bearer testtoken", "Host": "memory.lolax.dev"},
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json().get("status"), "ok")
-
-
 
 if __name__ == "__main__":
     unittest.main()

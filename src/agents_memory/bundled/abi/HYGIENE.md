@@ -55,7 +55,7 @@ Who may write what. Violations are bugs, not edge cases.
 
 Auto-distill (`auto_distill`) may **discard** obvious noise and **categorize** standard facts, but it does not rewrite bullet text or invent facts not present in staging.
 
-A deterministic **noise pass** (`auto_distill_noise_pass`) may run on MCP start and after ingest extract when the inbox is at or above `staging_nag_threshold`. That pass only discards obvious noise and files heuristic matches (`always`/`never`/`prefer`). It is not auto-promotion of leftover bullets.
+A deterministic **noise pass** (`auto_distill_noise_pass`) may run **after ingest extract** when the inbox is at or above `auto_distill_noise_threshold` (defaults to `staging_nag_threshold`). Optional on MCP start via `auto_distill_on_start` (default `false`). That pass only discards obvious noise and files heuristic matches (`always`/`never`/`prefer`). It is not auto-promotion of leftover bullets.
 
 ### No auto-promotion
 

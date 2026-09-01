@@ -113,7 +113,8 @@ class MCPServerTests(unittest.TestCase):
                 "source_path": "user/staging/captured.md",
             },
         ]
-        res_str = mcp_server.distill_batch(json.dumps(batch_payload))
+        with patch("agents_memory.remote.sync_hooks.push_if_connected", return_value=None):
+            res_str = mcp_server.distill_batch(json.dumps(batch_payload))
         res = json.loads(res_str)
         self.assertEqual(res["promoted"], 1)
         self.assertEqual(res["discarded"], 1)

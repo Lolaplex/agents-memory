@@ -39,9 +39,9 @@ def cmd_catalog(_args: argparse.Namespace) -> int:
 
 def _after_extract() -> None:
     try:
-        from .store import maybe_run_threshold_noise_pass
+        from .store import maybe_run_after_extract_noise_pass
 
-        maybe_run_threshold_noise_pass(auto_sync=True)
+        maybe_run_after_extract_noise_pass(auto_sync=True)
     except Exception as e:
         print(f"distill warning: noise pass failed: {e}", file=sys.stderr)
     _push_if_remote()

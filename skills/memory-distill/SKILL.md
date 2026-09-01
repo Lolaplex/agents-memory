@@ -16,10 +16,12 @@ When remote-connected, all distill tools run **locally**; writes auto-push the m
 3. Pull on MCP start / periodic pull on other devices updates local files.
 
 When staging inbox depth reaches `staging_nag_threshold` (default 50):
-- MCP start + after ingest extract run a **deterministic noise pass** (`auto_distill`). Noise goes away; leftover bullets still need judgment.
-- `AGENTS.md` Active Alerts + MCP `[NOTICE]` require: first tool = `auto_distill`, then `get_staging_inbox` + `distill_batch` until inbox is 0.
+- **50–74:** soft notice — distill during memory maintenance, not on every unrelated tool call.
+- **≥75** (`staging_force_threshold`): strong notice — prioritize `auto_distill` + `distill_batch` before other memory MCP work this session.
+- After **ingest extract** only: deterministic noise pass when inbox >= `auto_distill_noise_threshold` (discards obvious noise; no silent promote).
+- MCP start noise pass: off by default (`auto_distill_on_start: false`).
 
-This is not silent auto-promotion. Inbox→0 is agent work.
+Inbox→0 for non-noise bullets remains agent judgment via `distill_batch`.
 
 ## Quick Option: Auto-Distill
 

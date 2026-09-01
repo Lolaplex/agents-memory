@@ -104,6 +104,15 @@ class TestRemoteServerClient(unittest.TestCase):
         self.assertTrue(cleared)
         self.assertIsNone(get_remote_config())
 
+    def test_sse_dns_rebinding_protection_off(self):
+        """Reverse-proxy Host headers must reach SSE; do not pin a personal domain."""
+        from agents_memory.remote.server import mcp
+
+        create_remote_app(token="testtoken")
+        settings = getattr(mcp.settings, "transport_security", None)
+        self.assertIsNotNone(settings)
+        self.assertFalse(settings.enable_dns_rebinding_protection)
+
 
 if __name__ == "__main__":
     unittest.main()

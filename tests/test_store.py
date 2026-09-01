@@ -222,17 +222,45 @@ class AddMemoryTests(unittest.TestCase):
         with patch("agents_memory.ingest_config.load_ingest", lambda: ingest):
             summary = store.staging_status_summary()
         self.assertEqual(summary["bullet_count"], 5)
-        self.assertIn("auto_distill", summary["nag"])
+        self.assertIn("memory maintenance", summary["nag"])
+
+    def test_staging_status_soft_vs_strong(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        ingest_soft = {
+            "version": 1,
+            "sources": [],
+            "staging_nag_threshold": 50,
+            "staging_force_threshold": 75,
+        }
+        (staging / "captured.md").write_text(
+            "# Staging\n\n" + "\n".join(f"- bullet {i}" for i in range(55)) + "\n",
+            encoding="utf-8",
+        )
+        with patch("agents_memory.ingest_config.load_ingest", lambda: ingest_soft):
+            soft = store.staging_status_summary()
+        self.assertEqual(soft["nag_level"], "soft")
+        self.assertIn("memory maintenance", soft["nag"])
+
+        (staging / "captured.md").write_text(
+            "# Staging\n\n" + "\n".join(f"- bullet {i}" for i in range(80)) + "\n",
+            encoding="utf-8",
+        )
+        with patch("agents_memory.ingest_config.load_ingest", lambda: ingest_soft):
+            strong = store.staging_status_summary()
+        self.assertEqual(strong["nag_level"], "strong")
+        self.assertIn("Before other memory MCP", strong["nag"])
 
     def test_distill_batch(self):
         staging = self.user / "staging"
         staging.mkdir(parents=True, exist_ok=True)
         (staging / "captured.md").write_text("# Staging\n\n- keep me\n- throw me away\n", encoding="utf-8")
 
-        res = store.distill_batch([
-            {"bullet": "keep me", "kind": "concept", "name": "kept"},
-            {"bullet": "throw me away", "discard": True},
-        ])
+        with patch("agents_memory.remote.sync_hooks.push_if_connected", return_value=None):
+            res = store.distill_batch([
+                {"bullet": "keep me", "kind": "concept", "name": "kept"},
+                {"bullet": "throw me away", "discard": True},
+            ])
         self.assertEqual(res["promoted"], 1)
         self.assertEqual(res["discarded"], 1)
         self.assertEqual(res["remaining_staging_count"], 0)
@@ -523,6 +551,7 @@ class RegisterBootstrapTests(unittest.TestCase):
             "version": 1,
             "sources": [],
             "staging_nag_threshold": 1,
+            "auto_distill_noise_threshold": 1,
             "auto_distill_on_start": True,
             "auto_distill_max_rounds": 3,
         }

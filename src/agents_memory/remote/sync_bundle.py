@@ -21,7 +21,7 @@ RULES_PREFIX = "rules/"
 SYNC_CONFLICTS = USER_MEMORY / "staging" / "sync-conflicts.md"
 
 _SKIP_SUFFIXES = {".sqlite", ".db", ".lock", ".tmp", ".pyc"}
-_SKIP_NAMES = {"remote_config.json"}
+_SKIP_NAMES = {"remote_config.json", "board_attach.json"}
 _SKIP_PARTS = {".index", "export"}
 
 

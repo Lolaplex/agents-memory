@@ -20,6 +20,7 @@ from ..store import (
     ensure_memory_layout,
     sync_injection,
 )
+from .merge import merge_file_trees
 from .sync_bundle import apply_sync_bundle, collect_sync_bundle
 
 CONFIG_FILE = USER_MEMORY / "remote_config.json"
@@ -277,6 +278,119 @@ async def run_client_bridge(
                 tg.start_soon(pipe_sse_to_stdio)
                 if cfg.get("auto_pull", True):
                     tg.start_soon(periodic_background_sync)
+
+
+ATTACH_FILE = USER_MEMORY / "board_attach.json"
+FORBIDDEN_ATTACH_NAMES = {
+    "user.md",
+    "projects.md",
+    "scan.json",
+    "chats-index.md",
+    "remote_config.json",
+    "ingest.json",
+    "board_attach.json",
+}
+ALLOWED_ATTACH_PREFIXES = (
+    "decisions/",
+    "plans/",
+    "tasks/",
+    "waves/",
+    "roadmap/",
+    "staging/",
+    "notes/",
+    "research/",
+)
+
+
+def board_memory_path_ok(rel: str) -> bool:
+    rel = rel.replace("\\", "/").lower().lstrip("/")
+    if rel == "" or ".." in rel or rel.startswith("."):
+        return False
+    if any(part.startswith(".") for part in rel.split("/")):
+        return False
+    if Path(rel).name.lower() in FORBIDDEN_ATTACH_NAMES:
+        return False
+    if not rel.endswith(".md"):
+        return False
+    return any(rel.startswith(p) for p in ALLOWED_ATTACH_PREFIXES)
+
+
+def load_attaches() -> list[dict[str, Any]]:
+    if not ATTACH_FILE.exists():
+        return []
+    try:
+        data = json.loads(ATTACH_FILE.read_text(encoding="utf-8"))
+        items = data.get("attaches") if isinstance(data, dict) else data
+        return [x for x in items if isinstance(x, dict)] if isinstance(items, list) else []
+    except Exception:
+        return []
+
+
+def save_attach(entry: dict[str, Any]) -> None:
+    ensure_memory_layout()
+    items = load_attaches()
+    key = (entry.get("url") or "").rstrip("/")
+    items = [x for x in items if (x.get("url") or "").rstrip("/") != key]
+    items.append(entry)
+    ATTACH_FILE.write_text(json.dumps({"attaches": items}, indent=2), encoding="utf-8")
+
+
+def _slug_from_memory_url(url: str) -> str:
+    parts = urllib.parse.urlparse(url).path.strip("/").split("/")
+    if "projects" in parts:
+        i = parts.index("projects")
+        if i + 1 < len(parts):
+            return parts[i + 1]
+    return "board"
+
+
+def board_attach(
+    url: str,
+    token: str = "",
+    dest_dir: Optional[Path] = None,
+    timeout: float = 30.0,
+    verify_ssl: Optional[bool] = None,
+) -> dict[str, Any]:
+    """Pull a board project memory snapshot into a directory that is not USER_MEMORY."""
+    clean_url = url.strip().rstrip("/")
+    snap = clean_url if clean_url.endswith("/snapshot") else f"{clean_url}/snapshot"
+    slug = _slug_from_memory_url(clean_url)
+    dest = dest_dir or (Path.home() / ".agents" / "board-memory" / slug)
+    dest = dest.expanduser().resolve()
+    personal = USER_MEMORY.resolve()
+    if dest == personal or personal in dest.parents:
+        raise ValueError("attach dir must not be inside the personal memory store")
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+    headers = _get_auth_headers(token)
+    headers["Accept"] = "application/json"
+
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+        resp = client.get(snap, headers=headers)
+        if resp.status_code == 401:
+            raise PermissionError("Unauthorized: Token rejected by board.")
+        resp.raise_for_status()
+        data = resp.json()
+
+    files = data.get("files") or {}
+    allowed: dict[str, str] = {}
+    skipped: list[str] = []
+    for rel, content in files.items():
+        if isinstance(content, str) and board_memory_path_ok(str(rel)):
+            allowed[str(rel).replace("\\", "/")] = content
+        else:
+            skipped.append(str(rel))
+
+    dest.mkdir(parents=True, exist_ok=True)
+    report = merge_file_trees(dest, allowed)
+    report["skipped"] = skipped
+    save_attach({
+        "url": clean_url,
+        "token": token,
+        "dir": str(dest),
+        "slug": slug,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"status": "ok", "dir": str(dest), "slug": slug, "report": report}
 
 
 def main_bridge() -> int:

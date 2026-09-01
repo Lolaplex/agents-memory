@@ -23,7 +23,7 @@ Commands:
   distill          Inspect staging inbox for distillation
   check            Mechanical store health checks (read-only, zero AI)
   serve            Start local memory browser (localhost:8765)
-  remote           Multi-device cloud sync & remote server (serve/connect/push/pull)
+  remote           Multi-device cloud sync & remote server (serve/connect/push/pull/attach)
   connect          Connect to a remote memory server
   disconnect       Disconnect from remote and restore local mode
   web              Export static HTML website

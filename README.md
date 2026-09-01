@@ -99,6 +99,7 @@ While AI vendors fragment their configuration across proprietary stores, `.agent
 | `agents-memory remote serve` | Starts remote MCP & cloud sync server (FastMCP SSE + REST) |
 | `agents-memory connect` | Connects local machine to remote cloud memory server |
 | `agents-memory disconnect` | Disconnects from cloud and restores local stdio mode |
+| `agents-memory remote attach` | Extra root: pull a board project snapshot (does not replace `USER.md`) |
 | `agents-memory web` | Exports static HTML documentation site for your memory store |
 | `agents-memory consolidate` | Ensures no private state leaked into working repository |
 
@@ -128,6 +129,15 @@ agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
 - **Disconnect anytime:** `agents-memory disconnect` pulls final snapshot and restores local stdio mode.
 
 See [`abi/REMOTE.md`](abi/REMOTE.md) for bundle layout and merge rules.
+
+### 3. Attach a shared board (not `connect`)
+A board like `board.lolaplex.org` is a **second root**, not your VPS mirror:
+
+```bash
+agents-memory remote attach https://board.lolaplex.org/projects/<slug>/memory --token lpb_…
+```
+
+Files land in `~/.agents/board-memory/<slug>/`. Personal MCP stays local. Do not `connect` to the board.
 
 ---
 
@@ -176,6 +186,7 @@ The formal, implementation-agnostic layout specification lives in [`abi/`](abi/)
 - [`abi/MCP.md`](abi/MCP.md) — Tool surface definitions and request/response specifications.
 - [`abi/INGEST.md`](abi/INGEST.md) — Catalog, extract, and distillation pipeline.
 - [`abi/INJECTION.md`](abi/INJECTION.md) — Host rule injection mechanisms.
+- [`abi/REMOTE.md`](abi/REMOTE.md) — Mirror-sync bundle vs board attach extra root.
 
 ---
 

@@ -108,5 +108,31 @@ class TestRemoteMerge(unittest.TestCase):
             self.assertIn("Role: Dev", new_proj_content)
 
 
+class TestBoardAttachPaths(unittest.TestCase):
+    def test_personal_files_rejected(self):
+        from agents_memory.remote.client import board_memory_path_ok
+
+        self.assertFalse(board_memory_path_ok("USER.md"))
+        self.assertFalse(board_memory_path_ok("projects.md"))
+        self.assertTrue(board_memory_path_ok("decisions/001-ftp-host.md"))
+        self.assertTrue(board_memory_path_ok("staging/captured.md"))
+        self.assertFalse(board_memory_path_ok("../decisions/001-x.md"))
+
+    def test_dest_must_not_be_personal_store(self):
+        from agents_memory.remote.client import board_attach
+        from agents_memory.store import USER_MEMORY
+
+        with self.assertRaises(ValueError):
+            board_attach(
+                "https://board.example/projects/x/memory",
+                dest_dir=USER_MEMORY,
+            )
+        with self.assertRaises(ValueError):
+            board_attach(
+                "https://board.example/projects/x/memory",
+                dest_dir=USER_MEMORY / "nested",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
-LABEL maintainer="Lolax <felix@lolax.dev>"
+LABEL org.opencontainers.image.source="https://github.com/Lolaplex/agents-memory"
 LABEL description="agents-memory cloud sync & remote MCP server"
 
 ENV PYTHONUNBUFFERED=1 \

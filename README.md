@@ -1,7 +1,7 @@
 # agents-memory
 
 <p align="center">
-  <img src="hero.png" alt=".agents / memory" width="1280">
+  <img src="https://raw.githubusercontent.com/Lolaplex/.github/main/assets/agents-memory/hero-4x1.png" alt=".agents / memory" width="1280">
 </p>
 
 <p align="left">

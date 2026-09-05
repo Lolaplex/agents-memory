@@ -1,5 +1,9 @@
 # agents-memory
 
+<p align="center">
+  <img src="hero.png" alt=".agents / memory" width="1280">
+</p>
+
 <p align="left">
   <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=flat-square" alt="Version 1.1.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>

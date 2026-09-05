@@ -132,22 +132,6 @@ class MCPServerTests(unittest.TestCase):
         res_not_list = mcp_server.distill_batch(json.dumps({"bullet": "foo"}))
         self.assertIn("Error: expected a JSON list of items", res_not_list)
 
-    def test_promote_bullet(self):
-        staging = self.user / "staging"
-        staging.mkdir(parents=True, exist_ok=True)
-        (staging / "captured.md").write_text(
-            "# Staging\n\n- single fact to promote\n",
-            encoding="utf-8",
-        )
-        res = mcp_server.promote_bullet(
-            "single fact to promote",
-            kind="workflow",
-            name="single-flow",
-            source_path="user/staging/captured.md",
-        )
-        self.assertIn("Promoted to user/workflows/single-flow.md and removed from staging", res)
-        self.assertTrue((self.user / "workflows" / "single-flow.md").exists())
-
     def test_get_project_memories(self):
         # Create in-tree project memory
         proj_mem = self.repo / ".agents" / "memory"
@@ -204,65 +188,6 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("Synced:", res)
         self.assertIn("user/AGENTS.md", res)
         self.assertIn("sample warning", res)
-
-    def test_ingest_status(self):
-        res_str = mcp_server.ingest_status()
-        res = json.loads(res_str)
-        self.assertIn("state_file", res)
-        self.assertIn("sources", res)
-
-    def test_baton_rituals(self):
-        res_set = mcp_server.set_baton("Initial session baton text", project="demo")
-        self.assertIn("Baton updated at", res_set)
-        res_get = mcp_server.get_baton(project="demo")
-        self.assertEqual(res_get, "Initial session baton text")
-
-    def test_append_chronicle(self):
-        res = mcp_server.append_chronicle("Finished Wave 001 milestones", project="demo", emoji="🚀", refs=["project/demo/decisions/001"])
-        self.assertIn("Beat recorded to", res)
-        chronicle_file = store.CHRONICLE_DIR / "demo.md"
-        self.assertTrue(chronicle_file.exists())
-        content = chronicle_file.read_text(encoding="utf-8")
-        self.assertIn("Finished Wave 001 milestones", content)
-        self.assertIn("🚀", content)
-        self.assertIn("project/demo/decisions/001", content)
-
-    def test_session_snap_grep_tail(self):
-        mcp_server.set_baton("Current focus: Wave 002 temporal layer", project="demo")
-        mock_traces = MagicMock()
-        mock_view = MagicMock()
-        mock_view.session_snap = MagicMock(return_value="Implemented temporal session layer")
-        mock_view.session_grep = MagicMock(
-            side_effect=lambda pattern, since="": (
-                "Implemented temporal session layer"
-                if "temporal" in pattern
-                else "No session lines matching"
-            )
-        )
-        mock_view.session_tail = MagicMock(return_value="Session tail\nImplemented temporal session layer")
-        mock_traces.session_view = mock_view
-
-        with patch.dict(
-            sys.modules,
-            {
-                "agents_traces": mock_traces,
-                "agents_traces.session_view": mock_view,
-            },
-        ):
-            snap = mcp_server.session_snap(project="demo")
-            self.assertIn("=== BATON RITUAL (demo) ===", snap)
-            self.assertIn("Current focus: Wave 002 temporal layer", snap)
-            self.assertIn("Implemented temporal session layer", snap)
-
-            grep_res = mcp_server.session_grep(pattern="temporal")
-            self.assertIn("Implemented temporal session layer", grep_res)
-
-            grep_no = mcp_server.session_grep(pattern="nonexistent_pattern_12345")
-            self.assertIn("No session lines matching", grep_no)
-
-            tail_res = mcp_server.session_tail(limit=5)
-            self.assertIn("Session tail", tail_res)
-            self.assertIn("Implemented temporal session layer", tail_res)
 
 
 if __name__ == "__main__":

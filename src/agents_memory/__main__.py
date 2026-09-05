@@ -50,6 +50,14 @@ def main(argv: list[str] | None = None) -> int:
 
         return help_main(["--help-json"])
     cmd, rest = args[0], args[1:]
+    if cmd != "mcp":
+        try:
+            from . import __version__
+            from .updates import check_for_updates
+
+            check_for_updates("agents-memory", __version__)
+        except Exception:
+            pass
     if cmd == "init":
         from .sync import main as run
 

@@ -1,0 +1,46 @@
+name: Notify Feature Merged
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+
+jobs:
+  notify-feature:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Post feature merge to product webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::RELEASE_WEBHOOK_URL unset; skip notification"
+            exit 0
+          fi
+          python3 -c "
+          import os, json, urllib.request
+          pr_title = os.environ['PR_TITLE']
+          pr_number = os.environ['PR_NUMBER']
+          pr_url = os.environ['PR_URL']
+          author = os.environ['PR_USER']
+          repo = os.environ['GITHUB_REPOSITORY']
+          
+          payload = {
+              'embeds': [{
+                  'title': f\"🌱 Feature Merged into \`dev\`: #{pr_number}\",
+                  'description': f\"**{pr_title}**\nMerged by @{author} into \`dev\`\",
+                  'url': pr_url,
+                  'color': 3066993
+              }]
+          }
+          req = urllib.request.Request(os.environ['WEBHOOK_URL'], 
+                                       data=json.dumps(payload).encode(), 
+                                       headers={'Content-Type': 'application/json', 'User-Agent': 'GitHub-Actions'})
+          urllib.request.urlopen(req)
+          "

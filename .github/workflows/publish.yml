@@ -1,0 +1,103 @@
+name: Release & Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  release:
+    types: [published]
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, Release & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # For GitHub Release creation
+      id-token: write       # For PyPI Trusted Publishing
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build & packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build source and binary distribution
+        run: python -m build
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Notify Release Published
+        if: success()
+        env:
+          WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::RELEASE_WEBHOOK_URL unset; skip notification"
+            exit 0
+          fi
+          python3 -c "
+          import os, json, urllib.request
+          tag = os.environ.get('GITHUB_REF_NAME', '')
+          repo = os.environ['GITHUB_REPOSITORY']
+          release_url = f\"https://github.com/{repo}/releases/tag/{tag}\"
+          
+          payload = {
+              'embeds': [{
+                  'title': f\"🚀 Release {tag} Published!\",
+                  'description': f\"**{repo}** is live on PyPI and GitHub Releases.\",
+                  'url': release_url,
+                  'color': 3447003
+              }]
+          }
+          req = urllib.request.Request(os.environ['WEBHOOK_URL'], 
+                                       data=json.dumps(payload).encode(), 
+                                       headers={'Content-Type': 'application/json', 'User-Agent': 'GitHub-Actions'})
+          urllib.request.urlopen(req)
+          "
+
+      - name: Notify Publish Failure
+        if: failure()
+        env:
+          WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
+        run: |
+          if [ -n "$WEBHOOK_URL" ]; then
+            python3 -c "
+            import os, json, urllib.request
+            tag = os.environ.get('GITHUB_REF_NAME', '')
+            payload = {
+                'embeds': [{
+                    'title': f\"🚨 Release Publish Failed: {os.environ['GITHUB_REPOSITORY']}\",
+                    'description': f\"Failed to publish release \`{tag}\` to PyPI/GitHub Releases.\",
+                    'url': f\"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\",
+                    'color': 15158332
+                }]
+            }
+            req = urllib.request.Request(os.environ['WEBHOOK_URL'], 
+                                         data=json.dumps(payload).encode(), 
+                                         headers={'Content-Type': 'application/json', 'User-Agent': 'GitHub-Actions'})
+            urllib.request.urlopen(req)
+            "
+          fi

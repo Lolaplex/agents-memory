@@ -1,4 +1,4 @@
-name: Release & Publish
+name: Release
 
 on:
   push:
@@ -8,16 +8,15 @@ on:
     types: [published]
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build, Release & Publish
+  release:
+    name: Build & GitHub Release
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # For GitHub Release creation
-      id-token: write       # For PyPI Trusted Publishing
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -42,12 +41,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
+          files: dist/*
           generate_release_notes: true
           draft: false
           prerelease: false
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Notify Release Published
         if: success()
@@ -67,7 +64,7 @@ jobs:
           payload = {
               'embeds': [{
                   'title': f\"🚀 Release {tag} Published!\",
-                  'description': f\"**{repo}** is live on PyPI and GitHub Releases.\",
+                  'description': f\"**{repo}** release is live on GitHub Releases.\",
                   'url': release_url,
                   'color': 3447003
               }]
@@ -78,7 +75,7 @@ jobs:
           urllib.request.urlopen(req)
           "
 
-      - name: Notify Publish Failure
+      - name: Notify Release Failure
         if: failure()
         env:
           WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
@@ -89,8 +86,8 @@ jobs:
             tag = os.environ.get('GITHUB_REF_NAME', '')
             payload = {
                 'embeds': [{
-                    'title': f\"🚨 Release Publish Failed: {os.environ['GITHUB_REPOSITORY']}\",
-                    'description': f\"Failed to publish release \`{tag}\` to PyPI/GitHub Releases.\",
+                    'title': f\"🚨 Release Failed: {os.environ['GITHUB_REPOSITORY']}\",
+                    'description': f\"Failed to create release \`{tag}\` on GitHub.\",
                     'url': f\"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\",
                     'color': 15158332
                 }]

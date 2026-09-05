@@ -15,21 +15,13 @@ from .store import (
     inject_into_repo,
     inventory_report,
     parse_projects,
-    promote_bullet as store_promote,
     read_memory_file as store_read_file,
     register_project as store_register,
     search_memory as store_search,
-    append_chronicle as store_append_chronicle,
-    get_baton as store_get_baton,
-    set_baton as store_set_baton,
-    session_grep as store_session_grep,
-    session_snap as store_session_snap,
-    session_tail as store_session_tail,
     staging_status_summary,
     sync_injection,
     write_memory_file as store_write_file,
     maybe_run_startup_noise_pass,
-    maybe_run_after_extract_noise_pass,
 )
 
 ensure_memory_layout()
@@ -39,7 +31,7 @@ mcp = FastMCP("agents-memory")
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search typed markdown under ~/.agents/memory and registered repos.
+    """Search typed markdown under ~/.agents/memory and registered repos using FTS5 & keyword matching.
     
     CALL PROACTIVELY before guessing project architecture, past decisions, user preferences, or repository conventions.
     Does not search product chat/jsonl graves — use chats-index.md for body paths.
@@ -117,34 +109,6 @@ def auto_distill(limit: int = 50, discard_noise: bool = True) -> str:
         return json.dumps(res, indent=2, ensure_ascii=False)
     except Exception as e:
         return f"Error in auto_distill: {e}"
-
-
-@mcp.tool()
-def promote_bullet(
-    bullet: str,
-    kind: str,
-    name: str,
-    project: str = "",
-    collection: str = "",
-    source_path: str = "",
-) -> str:
-    """Promote a staging bullet into a typed memory file (kind+name) and delete it from staging. Auto-syncs to all IDEs/CLIs.
-
-    Example: promote_bullet("prefer dark mode", kind="note", name="ui", collection="preferences")
-    """
-    try:
-        loc, removed = store_promote(
-            bullet=bullet,
-            kind=kind,
-            name=name,
-            project=project,
-            collection=collection,
-            source_path=source_path,
-        )
-        status = "and removed from staging" if removed else "(staging bullet not found to delete)"
-        return f"Promoted to {loc} {status}"
-    except Exception as e:
-        return f"Error promoting bullet: {e}"
 
 
 @mcp.tool()
@@ -295,205 +259,6 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
         return f"Error syncing: {e}"
 
 
-@mcp.tool()
-def ingest_catalog() -> str:
-    """Catalog phase: rebuild chats-index.md + entity cards (titles/paths only). Bodies stay in product folders. Same contract for every ingest source."""
-    try:
-        from .remote.locality import assert_ingest_runs_locally
-
-        assert_ingest_runs_locally()
-        from .ingest_catalog import run_catalog
-
-        result = run_catalog()
-        return json.dumps(result, indent=2)
-    except Exception as e:
-        return f"Error running ingest catalog: {e}"
-
-
-@mcp.tool()
-def ingest_extract(source_id: str = "") -> str:
-    """Extract phase: filter durable user lines into staging/ingest/<id>/captured.md (inbox, not memory). Distill explicitly afterward."""
-    try:
-        from .remote.locality import assert_ingest_runs_locally
-
-        assert_ingest_runs_locally()
-        from .ingest_extractors import run_extract
-
-        result = run_extract(source_id=source_id)
-        maybe_run_after_extract_noise_pass(auto_sync=True)
-        try:
-            from .remote.sync_hooks import push_if_connected
-
-            push_if_connected(refresh_index=True)
-        except Exception:
-            pass
-        return json.dumps(result, indent=2)
-    except Exception as e:
-        return f"Error running ingest extract: {e}"
-
-
-@mcp.tool()
-def ingest_status() -> str:
-    """Show ingest/state.json summary plus staging inbox depth and nag."""
-    try:
-        from .ingest_common import ingest_state_path, load_state
-        from .ingest_config import list_sources, load_ingest
-        from .store import staging_status_summary
-
-        cfg = load_ingest()
-        state = load_state()
-        rows = []
-        for src in list_sources(cfg):
-            sid = str(src["id"])
-            entry = state.get("sources", {}).get(sid, {})
-            rows.append(
-                {
-                    "id": sid,
-                    "kind": src.get("kind"),
-                    "last_catalog": entry.get("last_catalog"),
-                    "last_extract": entry.get("last_extract"),
-                    "catalog_count": entry.get("catalog_count"),
-                    "extract_count": entry.get("extract_count"),
-                    "extract_capped": entry.get("extract_capped"),
-                    "extract_total_before_cap": entry.get("extract_total_before_cap"),
-                    "staging": entry.get("staging"),
-                }
-            )
-        body = {
-            "state_file": str(ingest_state_path()),
-            "staging": staging_status_summary(),
-            "sources": rows,
-        }
-        if body["staging"].get("nag"):
-            body["notice"] = body["staging"]["nag"]
-        return json.dumps(body, indent=2)
-    except Exception as e:
-        return f"Error reading ingest status: {e}"
-
-
-@mcp.tool()
-def get_baton(project: str = "", cwd: str = "") -> str:
-    """Read the session handoff baton marker for a project or global user store."""
-    try:
-        return store_get_baton(project=project, cwd=cwd)
-    except Exception as e:
-        return f"Error reading baton: {e}"
-
-
-@mcp.tool()
-def set_baton(text: str, project: str = "", cwd: str = "") -> str:
-    """Write or update the session handoff baton marker (mutable ritual)."""
-    try:
-        loc = store_set_baton(text, project=project, cwd=cwd)
-        return f"Baton updated at {loc}"
-    except Exception as e:
-        return f"Error setting baton: {e}"
-
-
-@mcp.tool()
-def append_chronicle(
-    beat: str, project: str = "", emoji: str = "📝", refs: list[str] | None = None
-) -> str:
-    """Append a beat to the event chronicle (~/.agents/memory/events/chronicle/<slug>.md)."""
-    try:
-        loc = store_append_chronicle(beat, project=project, emoji=emoji, refs=refs)
-        return f"Beat recorded to {loc}"
-    except Exception as e:
-        return f"Error appending chronicle: {e}"
-
-
-@mcp.tool()
-def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
-    """Recent user lines from agents-traces plus baton header.
-    Memory does not scrape product jsonl; ingest those with `python -m agents_traces ingest`.
-    """
-    try:
-        return store_session_snap(limit=limit, project=project, cwd=cwd)
-    except Exception as e:
-        return f"Error taking session snap: {e}"
-
-
-@mcp.tool()
-def session_grep(pattern: str, since: str = "", project: str = "") -> str:
-    """Search session messages in agents-traces (not markdown memory)."""
-    try:
-        return store_session_grep(pattern=pattern, since=since, project=project)
-    except Exception as e:
-        return f"Error running session grep: {e}"
-
-
-@mcp.tool()
-def session_tail(session_id: str = "", limit: int = 10) -> str:
-    """Tail recent session messages from agents-traces."""
-    try:
-        return store_session_tail(session_id=session_id, limit=limit)
-    except Exception as e:
-        return f"Error running session tail: {e}"
-
-
-@mcp.tool()
-def rebuild_index() -> str:
-    """Rebuild the disposable SQLite FTS search index from markdown files on disk."""
-    try:
-        from .index import rebuild_index as run_rebuild
-        res = run_rebuild()
-        return f"Index rebuilt: {res['indexed']} documents in {res['duration_ms']}ms -> {res['db_path']}"
-    except Exception as e:
-        return f"Error rebuilding index: {e}"
-
-
-@mcp.tool()
-def search_hybrid(query: str, project: str = "", limit: int = 20) -> str:
-    """Search memory using FTS5 rank-ordered hybrid search over indexed markdown files."""
-    try:
-        from .index import search_hybrid as run_search
-        hits = run_search(query, project=project, limit=limit)
-        if not hits:
-            return f"No matches found for '{query}'"
-        lines = [f"Found {len(hits)} matches:"]
-        for h in hits:
-            lines.append(f"- [{h['id']}] {h['title']} — {h['snippet']}")
-        return "\n".join(lines)
-    except Exception as e:
-        return f"Error running search: {e}"
-
-
-@mcp.tool()
-def get_related(memory_id: str, limit: int = 5) -> str:
-    """Retrieve explicit relations (refs/supersedes/same_as) and content-related documents for a memory item."""
-    try:
-        from .index import get_related as run_related
-        res = run_related(memory_id, limit=limit)
-        return json.dumps(res, indent=2)
-    except Exception as e:
-        return f"Error fetching related memories: {e}"
-
-
-@mcp.tool()
-def suggest_links(from_id: str, limit: int = 5) -> str:
-    """Suggest candidate typed relation links based on content overlap for human review."""
-    try:
-        from .index import suggest_links as run_suggest
-        suggestions = run_suggest(from_id, limit=limit)
-        return json.dumps(suggestions, indent=2)
-    except Exception as e:
-        return f"Error suggesting links: {e}"
-
-
-@mcp.tool()
-def check_memory_freshness() -> str:
-    """Check freshness across staging inbox, project batons, and index cache."""
-    try:
-        from .store import check_memory_freshness as run_check
-        res = run_check()
-        summary = staging_status_summary()
-        if summary.get("nag"):
-            res["staging_notice"] = summary["nag"]
-        return json.dumps(res, indent=2)
-    except Exception as e:
-        return f"Error checking memory freshness: {e}"
-
-
 # Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed
 try:
     from agents_traces import auto_trace_mcp
@@ -506,6 +271,11 @@ def main() -> int:
     print("Starting local agents-memory MCP on stdio...", file=sys.stderr)
     try:
         maybe_run_startup_noise_pass()
+    except Exception:
+        pass
+    try:
+        from .index import rebuild_index
+        rebuild_index()
     except Exception:
         pass
     mcp.run()

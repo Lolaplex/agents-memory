@@ -1,10 +1,8 @@
-# agents-memory
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/Lolaplex/.github/main/assets/agents-memory/hero-4x1.png" alt=".agents / memory" width="1280">
 </p>
 
-<p align="left">
+<p align="center">
   <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg?style=flat-square" alt="Version 1.1.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
@@ -12,10 +10,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License"></a>
 </p>
 
-**Local markdown memory & cross-agent context engine for AI coding assistants.**  
-One persistent identity, shared across **Claude Code**, **Cursor**, **Antigravity**, and **Zed**.
-
----
+<p align="center">
+  <strong>Local markdown memory &amp; cross-agent context engine for clankers.</strong><br>
+  One persistent identity, shared across all your agents.
+</p>
 
 ## Quickstart
 

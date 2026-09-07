@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Moved Docker deployment templates from repository root to `deploy/` (`deploy/Dockerfile`, `deploy/docker-compose.yml`).
+- Dynamic remote configuration resolution in `agents_memory.remote.client` for strict test environment isolation.
+
+### Removed
+- Redundant `source.yaml` at repository root in favor of standard `source.yml`.
+- Legacy hardcoded rule prefix filter in store rule purger.
+- Synthetic personal name references in remote test suites.
+
 ## [1.1.0] - 2026-09-07
 
 ### Added

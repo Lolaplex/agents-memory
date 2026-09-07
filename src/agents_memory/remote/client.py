@@ -32,12 +32,21 @@ from .sync_bundle import apply_sync_bundle, collect_sync_bundle
 CONFIG_FILE = USER_MEMORY / "remote_config.json"
 
 
+def _config_file() -> Path:
+    from .. import store
+    cfg = getattr(sys.modules.get(__name__), "CONFIG_FILE", None)
+    if cfg is not None and cfg != (USER_MEMORY / "remote_config.json"):
+        return Path(cfg)
+    return store.USER_MEMORY / "remote_config.json"
+
+
 def get_remote_config() -> Optional[dict[str, Any]]:
     """Load remote sync configuration if present."""
-    if not CONFIG_FILE.exists():
+    cfg_path = _config_file()
+    if not cfg_path.exists():
         return None
     try:
-        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
         if isinstance(data, dict) and data.get("url"):
             return data
     except Exception:
@@ -62,15 +71,16 @@ def save_remote_config(
     }
     if extra:
         cfg.update(extra)
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    _config_file().write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg
 
 
 def clear_remote_config() -> bool:
     """Remove remote configuration (disconnect from cloud)."""
-    if CONFIG_FILE.exists():
+    cfg_path = _config_file()
+    if cfg_path.exists():
         try:
-            CONFIG_FILE.unlink()
+            cfg_path.unlink()
             return True
         except Exception:
             return False

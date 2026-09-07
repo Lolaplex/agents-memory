@@ -71,11 +71,11 @@ BENCHMARK_DATASET = [
         "project": "",
     },
     {
-        "bullet": "[Deployment @ 2026-08-11] VPS Coolify deploys must use SSH tunnel if Cloudflare Access blocks port 8000",
+        "bullet": "[Deployment @ 2026-08-11] Cloud infra deploys must use SSH tunnel if Access Gateway blocks port 8000",
         "expected_discard": False,
         "expected_kind": "workflow",
-        "expected_slug": "coolify-vps-tunnel",
-        "project": "vps",
+        "expected_slug": "cloud-infra-tunnel",
+        "project": "infra",
     },
     # --- Category 5: Concepts & Entities (Keep -> kind=concept / entity) ---
     {
@@ -215,13 +215,13 @@ def classify_bullet_heuristic(bullet: str) -> dict:
             "kind": "workflow",
             "name": "git-branching-flow",
         }
-    if "coolify" in b_lower or "vps" in b_lower:
+    if "access gateway" in b_lower or "cloud infra" in b_lower:
         return {
             "bullet": bullet,
             "discard": False,
             "kind": "workflow",
-            "name": "coolify-vps-tunnel",
-            "project": "vps",
+            "name": "cloud-infra-tunnel",
+            "project": "infra",
         }
 
     # Concepts / Entities
@@ -257,9 +257,9 @@ class DistillBenchmarkTests(unittest.TestCase):
         self.user = self.root / "user"
         self.repo_customs = self.root / "customs"
         self.repo_goblin = self.root / "goblin"
-        self.repo_vps = self.root / "vps"
+        self.repo_infra = self.root / "infra"
         self.repo_one = self.root / "one"
-        for d in (self.user, self.repo_customs, self.repo_goblin, self.repo_vps, self.repo_one):
+        for d in (self.user, self.repo_customs, self.repo_goblin, self.repo_infra, self.repo_one):
             d.mkdir(parents=True, exist_ok=True)
 
         self.projects_md = self.user / "PROJECTS.md"
@@ -269,7 +269,7 @@ class DistillBenchmarkTests(unittest.TestCase):
             "|------|------|------|-------|--------|\n"
             f"| customs | `{self.repo_customs}` | suite | ts | active |\n"
             f"| goblin | `{self.repo_goblin}` | browser | rust | active |\n"
-            f"| vps | `{self.repo_vps}` | infra | py | active |\n"
+            f"| infra | `{self.repo_infra}` | infra | py | active |\n"
             f"| one | `{self.repo_one}` | index | ts | active |\n",
             encoding="utf-8",
         )

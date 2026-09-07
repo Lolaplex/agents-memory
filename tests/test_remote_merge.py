@@ -17,19 +17,19 @@ from agents_memory.remote.merge import (
 class TestRemoteMerge(unittest.TestCase):
     def test_merge_bullet_markdown_basic(self):
         base = """# Global Facts
-- User is Felix
+- User is Alice
 - Uses Windows 11
 """
         incoming = """# Global Facts
-- User is Felix
+- User is Alice
 - Prefers Python FastAPI
 - Uses Windows 11
 """
         merged = merge_bullet_markdown(base, incoming)
-        self.assertIn("- User is Felix", merged)
+        self.assertIn("- User is Alice", merged)
         self.assertIn("- Uses Windows 11", merged)
         self.assertIn("- Prefers Python FastAPI", merged)
-        self.assertEqual(merged.count("User is Felix"), 1)
+        self.assertEqual(merged.count("User is Alice"), 1)
         self.assertEqual(merged.count("Windows 11"), 1)
 
     def test_merge_bullet_markdown_new_section(self):

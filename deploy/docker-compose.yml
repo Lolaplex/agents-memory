@@ -1,8 +1,8 @@
 services:
   agents-memory:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: deploy/Dockerfile
     image: agents-memory:latest
     container_name: agents-memory-server
     restart: unless-stopped

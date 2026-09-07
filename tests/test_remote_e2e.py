@@ -99,7 +99,7 @@ class TestRemoteE2E(unittest.TestCase):
 
         # Client has local facts
         (self.client_dir / "facts.md").write_text("# Master Facts\n- Local Laptop Fact\n", encoding="utf-8")
-        (self.client_dir / "USER.md").write_text("# User Profile\n- Name: Felix\n", encoding="utf-8")
+        (self.client_dir / "USER.md").write_text("# User Profile\n- Name: Alice\n", encoding="utf-8")
         stored = self.client_dir / "mirror" / "projects" / "e2eproj"
         stored.mkdir(parents=True)
         (stored / "facts.md").write_text("# E2E\n- mirrored\n", encoding="utf-8")

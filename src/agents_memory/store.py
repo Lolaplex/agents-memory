@@ -1582,7 +1582,7 @@ def purge_legacy_rules(rules_dir: Path) -> List[str]:
         if name == current:
             continue
         stem = path.stem.lower()
-        drop = stem in LEGACY_RULE_STEMS or name.startswith("felix-always.")
+        drop = stem in LEGACY_RULE_STEMS
         if not drop and path.suffix.lower() in {".mdc", ".md", ".mdr"}:
             body = _read(path)
             if (MARKER in body or LEGACY_MARKER in body) and not has_text_outside_memory_block(

@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
@@ -222,45 +222,17 @@ class AddMemoryTests(unittest.TestCase):
         with patch("agents_memory.ingest_config.load_ingest", lambda: ingest):
             summary = store.staging_status_summary()
         self.assertEqual(summary["bullet_count"], 5)
-        self.assertIn("memory maintenance", summary["nag"])
-
-    def test_staging_status_soft_vs_strong(self):
-        staging = self.user / "staging"
-        staging.mkdir(parents=True, exist_ok=True)
-        ingest_soft = {
-            "version": 1,
-            "sources": [],
-            "staging_nag_threshold": 50,
-            "staging_force_threshold": 75,
-        }
-        (staging / "captured.md").write_text(
-            "# Staging\n\n" + "\n".join(f"- bullet {i}" for i in range(55)) + "\n",
-            encoding="utf-8",
-        )
-        with patch("agents_memory.ingest_config.load_ingest", lambda: ingest_soft):
-            soft = store.staging_status_summary()
-        self.assertEqual(soft["nag_level"], "soft")
-        self.assertIn("memory maintenance", soft["nag"])
-
-        (staging / "captured.md").write_text(
-            "# Staging\n\n" + "\n".join(f"- bullet {i}" for i in range(80)) + "\n",
-            encoding="utf-8",
-        )
-        with patch("agents_memory.ingest_config.load_ingest", lambda: ingest_soft):
-            strong = store.staging_status_summary()
-        self.assertEqual(strong["nag_level"], "strong")
-        self.assertIn("Before other memory MCP", strong["nag"])
+        self.assertIn("auto_distill", summary["nag"])
 
     def test_distill_batch(self):
         staging = self.user / "staging"
         staging.mkdir(parents=True, exist_ok=True)
         (staging / "captured.md").write_text("# Staging\n\n- keep me\n- throw me away\n", encoding="utf-8")
 
-        with patch("agents_memory.remote.sync_hooks.push_if_connected", return_value=None):
-            res = store.distill_batch([
-                {"bullet": "keep me", "kind": "concept", "name": "kept"},
-                {"bullet": "throw me away", "discard": True},
-            ])
+        res = store.distill_batch([
+            {"bullet": "keep me", "kind": "concept", "name": "kept"},
+            {"bullet": "throw me away", "discard": True},
+        ])
         self.assertEqual(res["promoted"], 1)
         self.assertEqual(res["discarded"], 1)
         self.assertEqual(res["remaining_staging_count"], 0)
@@ -401,8 +373,6 @@ class RegisterBootstrapTests(unittest.TestCase):
         mem = repo / ".agents" / "memory"
         self.assertTrue((mem / "README.md").exists())
         self.assertTrue((mem / "staging" / "captured.md").exists())
-        gi = (repo / ".gitignore").read_text(encoding="utf-8")
-        self.assertIn(".agents/", gi)
         for child in mem.rglob("*"):
             if child.is_dir():
                 self.assertTrue(any(child.iterdir()), f"empty dir: {child}")
@@ -508,7 +478,7 @@ class RegisterBootstrapTests(unittest.TestCase):
 
             body_with_alert = store.always_on_body()
             self.assertIn("Active Alerts", body_with_alert)
-            self.assertIn("55 staging bullets", body_with_alert)
+            self.assertIn("55 staging bullets waiting", body_with_alert)
 
     def test_auto_distill_heuristics(self):
         tmp = tempfile.TemporaryDirectory()
@@ -529,7 +499,7 @@ class RegisterBootstrapTests(unittest.TestCase):
         )
         with patch.object(store, "USER_MEMORY", user), patch.object(
             store, "sync_injection", lambda **k: ([], [])
-        ), patch.object(store, "parse_projects", return_value=[]):
+        ):
             res = store.auto_distill(limit=50, discard_noise=True, auto_sync=False)
             self.assertEqual(res["discarded"], 3)  # 'ok', 'Wie kann ich...', 'hi'
             self.assertEqual(res["promoted"], 1)   # 'Always use Tailwind v3...'
@@ -537,36 +507,6 @@ class RegisterBootstrapTests(unittest.TestCase):
             pref_file = user / "notes" / "preferences" / "preferences.md"
             self.assertTrue(pref_file.exists())
             self.assertIn("Always use Tailwind v3", pref_file.read_text(encoding="utf-8"))
-
-    def test_auto_distill_noise_pass_stops_when_stuck(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        user = Path(tmp.name) / "user"
-        user.mkdir()
-        staging = user / "staging"
-        staging.mkdir()
-        (staging / "captured.md").write_text(
-            "# Staging\n\n- Durable sentence without heuristic keywords here\n",
-            encoding="utf-8",
-        )
-        ingest = {
-            "version": 1,
-            "sources": [],
-            "staging_nag_threshold": 1,
-            "auto_distill_noise_threshold": 1,
-            "auto_distill_on_start": True,
-            "auto_distill_max_rounds": 3,
-        }
-        with patch.object(store, "USER_MEMORY", user), patch.object(
-            store, "sync_injection", lambda **k: ([], [])
-        ), patch.object(store, "parse_projects", return_value=[]), patch(
-            "agents_memory.ingest_config.load_ingest", lambda: ingest
-        ):
-            res = store.auto_distill_noise_pass(max_rounds=3, auto_sync=False)
-            self.assertEqual(res["discarded"], 0)
-            self.assertEqual(res["promoted"], 0)
-            self.assertEqual(res["rounds"], 1)
-            self.assertEqual(res["remaining_staging_count"], 1)
 
     def test_baton_and_chronicle(self):
         tmp = tempfile.TemporaryDirectory()
@@ -592,19 +532,19 @@ class RegisterBootstrapTests(unittest.TestCase):
         root = Path(tmp.name)
         user = root / "user"
         user.mkdir()
-        mock_traces = MagicMock()
-        mock_view = MagicMock()
-        mock_view.session_snap = MagicMock(return_value="Setup FastAPI backend")
-        mock_view.session_grep = MagicMock(return_value="Setup FastAPI backend")
-        mock_traces.session_view = mock_view
-
-        with patch.object(store, "USER_MEMORY", user), patch.dict(
-            sys.modules,
-            {
-                "agents_traces": mock_traces,
-                "agents_traces.session_view": mock_view,
-            },
-        ):
+        # Mock ingest config with a dummy cursor transcript
+        cursor_dir = root / "cursor_transcripts"
+        cursor_dir.mkdir()
+        tf = cursor_dir / "test.jsonl"
+        tf.write_text(
+            json.dumps({"role": "user", "message": {"content": [{"type": "text", "text": "<user_query>Setup FastAPI backend</user_query>"}]}}) + "\n",
+            encoding="utf-8",
+        )
+        mock_cfg = {
+            "version": 1,
+            "sources": [{"id": "cursor", "kind": "agent-jsonl", "paths": [str(cursor_dir)], "catalog": True, "extract": True}]
+        }
+        with patch.object(store, "USER_MEMORY", user), patch("agents_memory.ingest_config.load_ingest", return_value=mock_cfg):
             snap = store.session_snap(limit=10)
             self.assertIn("Setup FastAPI backend", snap)
             self.assertNotIn("<user_query>", snap)

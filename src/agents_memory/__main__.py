@@ -17,10 +17,6 @@ USAGE = """Usage: python -m agents_memory COMMAND [args]
 Commands:
   sync             Rewrite always-on injection
   inventory        Disk vs PROJECTS.md
-  projects         List all tracked projects (or get project memories: projects <slug>)
-  read             Read raw content of a memory file (e.g. read USER.md)
-  add              Save a durable fact/note (add "<text>" [--kind ...] [--project ...])
-  search           Lexical search over the markdown vault (extra argv = query)
   ingest           Catalog / extract pipeline
   consolidate      Move clone leaks into ~/.agents/memory
   extract-openai   Filter Open AI GDPR export into staging
@@ -28,9 +24,8 @@ Commands:
   check            Mechanical store health checks (read-only, zero AI)
   serve            Start local memory browser (localhost:8765)
   web              Export static HTML website
-  remote           Optional replicate (connect/push/pull/attach). Never the default MCP.
-  rebuild-index    Rebuild disposable FTS cache (markdown stays source of truth)
-  mcp              stdio MCP server (always local markdown clerk)
+  rebuild-index    Rebuild disposable FTS index cache
+  mcp              stdio MCP server
   help-json        Machine-readable CLI + injection spec
 """
 
@@ -50,14 +45,6 @@ def main(argv: list[str] | None = None) -> int:
 
         return help_main(["--help-json"])
     cmd, rest = args[0], args[1:]
-    if cmd != "mcp":
-        try:
-            from . import __version__
-            from .updates import check_for_updates
-
-            check_for_updates("agents-memory", __version__)
-        except Exception:
-            pass
     if cmd == "init":
         from .sync import main as run
 
@@ -137,18 +124,6 @@ def main(argv: list[str] | None = None) -> int:
             f"Exported static memory website: {res['files']} files to {res['export_dir']}"
         )
         return 0
-    if cmd in ("remote", "cloud"):
-        from .remote.cli import main as run_remote
-
-        return run_remote(rest)
-    if cmd == "connect":
-        from .remote.cli import main as run_remote
-
-        return run_remote(["connect", *rest])
-    if cmd == "disconnect":
-        from .remote.cli import main as run_remote
-
-        return run_remote(["disconnect", *rest])
     if cmd in ("rebuild-index", "rebuild_index", "index"):
         from .index import rebuild_index
 
@@ -156,100 +131,6 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"Indexed {res['indexed']} markdown documents in {res['duration_ms']}ms -> {res['db_path']}"
         )
-        return 0
-    if cmd in ("read", "cat", "get"):
-        from .store import read_memory_file
-
-        if not rest:
-            print("usage: python -m agents_memory read FILE_ID", file=sys.stderr)
-            return 2
-        file_id = rest[0].strip()
-        try:
-            content = read_memory_file(file_id)
-            print(content)
-            return 0
-        except Exception as e:
-            print(f"Error reading memory file '{file_id}': {e}", file=sys.stderr)
-            return 1
-    if cmd in ("projects", "list-projects", "list_projects"):
-        from .store import get_project_memories, parse_projects
-
-        if rest and not rest[0].startswith("-"):
-            slug = rest[0].strip()
-            try:
-                print(get_project_memories(slug))
-                return 0
-            except Exception as e:
-                print(f"Error reading project '{slug}': {e}", file=sys.stderr)
-                return 1
-        rows = parse_projects()
-        if "--json" in rest:
-            import json
-
-            print(
-                json.dumps(
-                    [
-                        {
-                            "slug": p.slug,
-                            "path": p.path,
-                            "role": p.role,
-                            "stack": p.stack,
-                            "status": p.status,
-                        }
-                        for p in rows
-                    ],
-                    indent=2,
-                    ensure_ascii=False,
-                )
-            )
-            return 0
-        if not rows:
-            print("No projects in PROJECTS.md")
-            return 0
-        for p in rows:
-            print(f"{p.slug}\t{p.path}\t{p.role}\t{p.stack}\t{p.status}")
-        return 0
-    if cmd in ("add", "save"):
-        import argparse
-
-        parser = argparse.ArgumentParser(prog="agents_memory add")
-        parser.add_argument("fact", help="Fact or memory text to save")
-        parser.add_argument("--kind", "-k", default="", help="Kind (note, fact, concept, workflow, etc.)")
-        parser.add_argument("--name", "-n", default="", help="File name/stem")
-        parser.add_argument("--project", "-p", default="", help="Project slug")
-        parser.add_argument("--collection", "-c", default="", help="Collection name")
-        try:
-            ns = parser.parse_args(rest)
-        except SystemExit:
-            return 2
-        from .store import add_memory
-
-        try:
-            loc = add_memory(
-                ns.fact,
-                kind=ns.kind,
-                name=ns.name,
-                project=ns.project,
-                collection=ns.collection,
-            )
-            print(f"Saved to {loc}")
-            return 0
-        except Exception as e:
-            print(f"Error saving memory: {e}", file=sys.stderr)
-            return 1
-    if cmd == "search":
-        from .store import search_memory
-
-        query = " ".join(rest).strip()
-        if not query:
-            print("usage: python -m agents_memory search QUERY", file=sys.stderr)
-            return 2
-        hits = search_memory(query)
-        for hit in hits:
-            file_id = hit.get("file", "?")
-            line = hit.get("line", 0)
-            text = hit.get("text", "")
-            print(f"{file_id}:{line} {text}")
         return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:

@@ -10,13 +10,11 @@ Chat and brain stores stay on disk in product folders. Ingest turns them into **
 |-------|---------|--------|--------|
 | **Catalog** | `python -m agents_memory ingest catalog` | `chats-index.md` + `entities/chat-source-<id>.md` | Delete cards; rebuild index |
 | **Extract** | `python -m agents_memory ingest extract [--source ID]` | `staging/ingest/<id>/captured.md` | Delete staging file |
-| **Distill** | MCP `distill_batch` / `auto_distill` / skill `memory-distill` | Typed markdown in `concepts/`, `notes/`, etc. | Edit or delete memory file |
+| **Distill** | MCP `promote_bullet` / `distill_batch` / skill `memory-distill` | Typed markdown in `concepts/`, `notes/`, etc. | Edit or delete memory file |
 
 Run both catalog and extract: `python -m agents_memory ingest run`. Status: `python -m agents_memory ingest status` → `ingest/state.json` plus staging nag.
 
 Distill is intentional human/agent work — no auto-promotion to memory. Use `get_staging_inbox` (grouped by source) then `distill_batch` with `source_path` on each item.
-
-**Remote mode:** catalog + extract run on the workstation (chat graves are local); writes auto-push the mirror bundle. Distill runs locally. A noise pass may discard obvious staging noise after extract; leftover bullets still need `distill_batch`. See [`REMOTE.md`](REMOTE.md).
 
 ## Division of labor
 
@@ -37,7 +35,7 @@ Same rules for **every** configured path in `ingest.json` — Cursor transcripts
 |-------|----------------------------------|--------------------|
 | **Catalog** | `chats-index.md` rows + `entities/chat-source-<id>.md` — **title hints and paths only** | Full jsonl, export shards, brain folders, message sidecars |
 | **Extract** | Filtered **bullets** in `staging/ingest/<id>/captured.md` (revertible inbox, capped per run) | Everything else in the product store |
-| **Distill** | Typed markdown (`concepts/`, `notes/`, `decisions/`, …) only when you call `distill_batch` / `add_memory` | Staging bullet removed after promote; archives untouched |
+| **Distill** | Typed markdown (`concepts/`, `notes/`, `decisions/`, …) only when you call `promote_bullet` / `distill_batch` / `add_memory` | Staging bullet removed after promote; archives untouched |
 
 **Never (any source):**
 
@@ -56,11 +54,6 @@ Per source, set `"catalog": false` or `"extract": false` to skip a phase. Extrac
   "version": 1,
   "extract_max_bullets": 100,
   "staging_nag_threshold": 50,
-  "auto_distill_noise_threshold": 50,
-  "staging_force_threshold": 75,
-  "auto_distill_on_start": false,
-  "auto_distill_after_extract": true,
-  "auto_distill_max_rounds": 3,
   "sources": [
     {
       "id": "openai-export",
@@ -142,12 +135,7 @@ Global options:
 | Key | Default | Effect |
 |-----|---------|--------|
 | `extract_max_bullets` | `100` | Max bullets written per source per extract run (0 = unlimited) |
-| `staging_nag_threshold` | `50` | Soft notice in AGENTS.md + staging MCP tools when inbox exceeds this |
-| `auto_distill_noise_threshold` | `50` | Deterministic noise pass threshold (defaults to nag threshold) |
-| `staging_force_threshold` | `75` | Strong "prioritize distill" notice when inbox exceeds this |
-| `auto_distill_on_start` | `false` | Noise pass on MCP start when inbox >= noise threshold |
-| `auto_distill_after_extract` | `true` | Noise pass after ingest extract when inbox >= noise threshold |
-| `auto_distill_max_rounds` | `3` | Max `auto_distill` rounds per noise pass (stop early if no progress) |
+| `staging_nag_threshold` | `50` | `ingest_status` / MCP `ingest_status` emits `staging.nag` when inbox exceeds this |
 
 Per-source `"extract_max_bullets"` overrides the global cap.
 
@@ -162,11 +150,13 @@ Per-source `"extract_max_bullets"` overrides the global cap.
   staging/ingest/<id>/captured.md   # extract inbox (not memory)
 ```
 
-## CLI and MCP
+## MCP tools
 
-Catalog and extract are **CLI** (`python -m agents_memory ingest catalog|extract|status`). They are not MCP tools.
-
-Distill stays on MCP: `get_staging_inbox`, `distill_batch`, `auto_distill` (see [`MCP.md`](MCP.md)).
+- `ingest_catalog()` — catalog phase
+- `ingest_extract(source_id="")` — extract one or all sources (respects bullet cap)
+- `ingest_status()` — JSON summary from `ingest/state.json` + staging bullet count / nag
+- `get_staging_inbox()` — grouped staging bullets for distill
+- `distill_batch()` / `promote_bullet()` — distill phase (see [`MCP.md`](MCP.md))
 
 ## Filters (extract)
 

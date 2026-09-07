@@ -21,10 +21,10 @@ class FlowManifestCoverageTests(unittest.TestCase):
 
         # Verify corresponding tool availability in MCP
         self.assertTrue(callable(getattr(mcp_server, "search_memory", None)))
+        self.assertTrue(callable(getattr(mcp_server, "search_hybrid", None)))
         self.assertTrue(callable(getattr(mcp_server, "get_related", None)))
-        self.assertTrue(callable(getattr(mcp_server, "distill_batch", None)))
+        self.assertTrue(callable(getattr(mcp_server, "promote_bullet", None)))
         self.assertTrue(callable(getattr(mcp_server, "add_memory", None)))
-        self.assertFalse(hasattr(mcp_server, "search_hybrid") and callable(getattr(mcp_server, "search_hybrid")))
 
     def test_scope_media_manifest_coverage(self):
         manifest_path = Path(__file__).resolve().parent.parent / "examples" / "flow" / "scope-media.v1.json"

@@ -12,39 +12,10 @@ from .ingest_extractors import run_extract
 from .store import ensure_memory_layout
 
 
-def _push_if_remote() -> None:
-    try:
-        from .remote.sync_hooks import push_if_connected
-
-        res = push_if_connected(refresh_index=True)
-        if not res:
-            return
-        report = res.get("server_report") or res.get("report") or {}
-        user = report.get("user") if isinstance(report, dict) else report
-        if isinstance(user, dict):
-            added = len(user.get("added") or [])
-            merged = len(user.get("merged") or [])
-            if added or merged:
-                print(f"sync: pushed to remote ({added} added, {merged} merged)")
-    except Exception as e:
-        print(f"sync warning: remote push failed: {e}", file=sys.stderr)
-
-
 def cmd_catalog(_args: argparse.Namespace) -> int:
     result = run_catalog()
     print(f"catalog: {result['chats_index']}")
-    _push_if_remote()
     return 0
-
-
-def _after_extract() -> None:
-    try:
-        from .store import maybe_run_after_extract_noise_pass
-
-        maybe_run_after_extract_noise_pass(auto_sync=True)
-    except Exception as e:
-        print(f"distill warning: noise pass failed: {e}", file=sys.stderr)
-    _push_if_remote()
 
 
 def cmd_extract(args: argparse.Namespace) -> int:
@@ -56,7 +27,6 @@ def cmd_extract(args: argparse.Namespace) -> int:
             active += 1
     if active == 0:
         print("extract: no new bullets extracted from active sources")
-    _after_extract()
     return 0
 
 
@@ -69,7 +39,6 @@ def cmd_run(_args: argparse.Namespace) -> int:
         print(f"run: catalog refreshed, {total} staging bullets across {len(active_sources)} sources")
     else:
         print("run: catalog refreshed, no new staging bullets found")
-    _after_extract()
     return 0
 
 

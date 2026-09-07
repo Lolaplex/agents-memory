@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 _SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _SRC not in sys.path:
@@ -113,8 +113,7 @@ class MCPServerTests(unittest.TestCase):
                 "source_path": "user/staging/captured.md",
             },
         ]
-        with patch("agents_memory.remote.sync_hooks.push_if_connected", return_value=None):
-            res_str = mcp_server.distill_batch(json.dumps(batch_payload))
+        res_str = mcp_server.distill_batch(json.dumps(batch_payload))
         res = json.loads(res_str)
         self.assertEqual(res["promoted"], 1)
         self.assertEqual(res["discarded"], 1)
@@ -131,6 +130,22 @@ class MCPServerTests(unittest.TestCase):
 
         res_not_list = mcp_server.distill_batch(json.dumps({"bullet": "foo"}))
         self.assertIn("Error: expected a JSON list of items", res_not_list)
+
+    def test_promote_bullet(self):
+        staging = self.user / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        (staging / "captured.md").write_text(
+            "# Staging\n\n- single fact to promote\n",
+            encoding="utf-8",
+        )
+        res = mcp_server.promote_bullet(
+            "single fact to promote",
+            kind="workflow",
+            name="single-flow",
+            source_path="user/staging/captured.md",
+        )
+        self.assertIn("Promoted to user/workflows/single-flow.md and removed from staging", res)
+        self.assertTrue((self.user / "workflows" / "single-flow.md").exists())
 
     def test_get_project_memories(self):
         # Create in-tree project memory
@@ -188,6 +203,50 @@ class MCPServerTests(unittest.TestCase):
         self.assertIn("Synced:", res)
         self.assertIn("user/AGENTS.md", res)
         self.assertIn("sample warning", res)
+
+    def test_ingest_status(self):
+        res_str = mcp_server.ingest_status()
+        res = json.loads(res_str)
+        self.assertIn("state_file", res)
+        self.assertIn("sources", res)
+
+    def test_baton_rituals(self):
+        res_set = mcp_server.set_baton("Initial session baton text", project="demo")
+        self.assertIn("Baton updated at", res_set)
+        res_get = mcp_server.get_baton(project="demo")
+        self.assertEqual(res_get, "Initial session baton text")
+
+    def test_append_chronicle(self):
+        res = mcp_server.append_chronicle("Finished Wave 001 milestones", project="demo", emoji="🚀", refs=["project/demo/decisions/001"])
+        self.assertIn("Beat recorded to", res)
+        chronicle_file = store.CHRONICLE_DIR / "demo.md"
+        self.assertTrue(chronicle_file.exists())
+        content = chronicle_file.read_text(encoding="utf-8")
+        self.assertIn("Finished Wave 001 milestones", content)
+        self.assertIn("🚀", content)
+        self.assertIn("project/demo/decisions/001", content)
+
+    def test_session_snap_grep_tail(self):
+        # set baton so snap includes header
+        mcp_server.set_baton("Current focus: Wave 002 temporal layer", project="demo")
+        mock_lines = [
+            {"source": "cursor", "title": "Test Session", "text": "Implemented temporal session layer", "file": "test.jsonl"}
+        ]
+        with patch.object(store, "_collect_raw_session_user_lines", return_value=mock_lines):
+            snap = mcp_server.session_snap(project="demo")
+            self.assertIn("=== BATON RITUAL (demo) ===", snap)
+            self.assertIn("Current focus: Wave 002 temporal layer", snap)
+            self.assertIn("Implemented temporal session layer", snap)
+
+            grep_res = mcp_server.session_grep(pattern="temporal")
+            self.assertIn("Implemented temporal session layer", grep_res)
+
+            grep_no = mcp_server.session_grep(pattern="nonexistent_pattern_12345")
+            self.assertIn("No session lines matching", grep_no)
+
+            tail_res = mcp_server.session_tail(limit=5)
+            self.assertIn("Session tail", tail_res)
+            self.assertIn("Implemented temporal session layer", tail_res)
 
 
 if __name__ == "__main__":

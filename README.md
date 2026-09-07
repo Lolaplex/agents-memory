@@ -75,16 +75,6 @@ agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
 
 Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 
-### Board attach (not `connect`)
-
-A shared board (`board.lolaplex.org`) is a **second root**, not your personal mirror:
-
-```bash
-agents-memory remote attach https://board.lolaplex.org/projects/<slug>/memory --slug shcpy
-```
-
-Needs [agents-keys](https://github.com/Lolaplex/agents-keys) on the same interpreter. Files land in the registered clone’s `<repo>/.agents/memory/` (gitignored). Do not `connect` to the board — that would replace `USER.md`.
-
 ---
 
 ## CLI
@@ -101,7 +91,7 @@ Needs [agents-keys](https://github.com/Lolaplex/agents-keys) on the same interpr
 | `agents-memory check` | Mechanical store health (no LLM) |
 | `agents-memory rebuild-index` | Rebuild disposable FTS5 cache |
 | `agents-memory connect` / `disconnect` | Join or leave cloud mirror |
-| `agents-memory remote serve` / `remote attach` | Host the bundle; pull a board project |
+| `agents-memory remote serve` | Host the mirror bundle |
 | `agents-memory serve` / `web` | Local viewer / static HTML export |
 | `agents-memory mcp` | stdio MCP clerk |
 
@@ -153,7 +143,7 @@ Implementation-agnostic layout in [`abi/`](abi/):
 - [`MCP.md`](abi/MCP.md) — tool surface
 - [`INGEST.md`](abi/INGEST.md) — catalog → extract → distill
 - [`INJECTION.md`](abi/INJECTION.md) — host inject
-- [`REMOTE.md`](abi/REMOTE.md) — mirror bundle vs board attach
+- [`REMOTE.md`](abi/REMOTE.md) — mirror bundle (and extra project roots)
 
 ---
 

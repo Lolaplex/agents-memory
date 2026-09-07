@@ -42,7 +42,7 @@ Vendors keep chat in product graves (Cursor jsonl, Claude sessions, Antigravity 
 | **Per repo** | `<repo>/.agents/memory/` | facts, ADRs, in-progress work (gitignored) |
 | **Always-on** | host `AGENTS.md` / rules | short inject; agents `search_memory` for the rest |
 
-**Search.** `search_memory` tries exact substring first, then ranked FTS5. `get_related` / `suggest_links` follow explicit frontmatter relations (`refs`, `supersedes`, `same_as`), not cosine similarity.
+**Search.** `search_memory` tries exact substring first, then FTS5 fill. `get_related` follows explicit frontmatter relations (`refs`, `supersedes`, `same_as`), not cosine similarity. Known project slug → `get_project_memories`.
 
 **Ingest → staging → distill.** Catalog writes titles and paths to `chats-index.md`. Extract filters user lines into `staging/` (PII, how-tos, dumps dropped). You (or `distill_batch` / `memory-distill`) promote durable facts into typed files. Chat bodies never become memory. Conversation logs belong to [agents-traces](https://github.com/Lolaplex/agents-traces).
 
@@ -103,20 +103,17 @@ Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 
 | Tool | What it does |
 | :--- | :--- |
-| `search_memory` | Exact substring, then ranked FTS5. Not chat graves. |
-| `search_hybrid` | FTS5 rank with phrase/term fallback |
+| `search_memory` | Exact substring, then FTS5 fill. Not chat graves. Known slug → `get_project_memories`. |
+| `get_related` | Follow frontmatter `refs` / `supersedes` / `same_as` from a hit id |
 | `add_memory` | File a typed fact; auto-syncs inject |
 | `read_memory_file` / `write_memory_file` | Raw file by id (`user/USER.md`, `project/<slug>/…`) |
-| `get_project_memories` | One slug’s in-tree memory |
+| `get_project_memories` | One slug’s in-tree memory (call when opening a repo) |
 | `list_projects` / `inventory_projects` / `register_project` / `ignore_project` | Project map |
-| `get_staging_inbox` / `promote_bullet` / `distill_batch` / `auto_distill` | Staging → typed memory |
+| `get_staging_inbox` / `distill_batch` / `auto_distill` | Staging → typed memory |
 | `delete_memory` | Drop a search hit by id |
 | `sync_local_agents_md` | Rewrite always-on inject |
-| `rebuild_index` | Rebuild FTS cache from markdown |
-| `get_related` / `suggest_links` | Explicit relations, then overlap suggestions |
-| `check_memory_freshness` | Staging backlog, stale batons, index |
 
-Ingest is CLI. Session snap/grep/tail live on **agents-traces**.
+Fifteen tools. Ingest is CLI. Session snap/grep/tail live on **agents-traces**. Index rebuilds on MCP start (`rebuild-index` CLI if needed).
 
 ---
 

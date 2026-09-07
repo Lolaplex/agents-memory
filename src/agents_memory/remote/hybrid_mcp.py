@@ -76,27 +76,6 @@ def auto_distill(limit: int = 50, discard_noise: bool = True) -> str:
 
 
 @mcp.tool()
-def promote_bullet(
-    bullet: str,
-    kind: str,
-    name: str,
-    project: str = "",
-    collection: str = "",
-    source_path: str = "",
-) -> str:
-    return dispatch_tool(
-        "promote_bullet",
-        local_mcp.promote_bullet,
-        bullet=bullet,
-        kind=kind,
-        name=name,
-        project=project,
-        collection=collection,
-        source_path=source_path,
-    )
-
-
-@mcp.tool()
 def get_staging_inbox(project: str = "", limit: int = 20) -> str:
     return dispatch_tool(
         "get_staging_inbox",
@@ -166,96 +145,8 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
 
 
 @mcp.tool()
-def ingest_catalog() -> str:
-    """Catalog: local chat stores → chats-index.md. Auto-pushes to remote when connected."""
-    return dispatch_tool("ingest_catalog", local_mcp.ingest_catalog)
-
-
-@mcp.tool()
-def ingest_extract(source_id: str = "") -> str:
-    """Extract: local chat stores → staging/ingest/<id>/captured.md. Auto-pushes when connected."""
-    return dispatch_tool("ingest_extract", local_mcp.ingest_extract, source_id=source_id)
-
-
-@mcp.tool()
-def ingest_status() -> str:
-    return dispatch_tool("ingest_status", local_mcp.ingest_status)
-
-
-@mcp.tool()
-def get_baton(project: str = "", cwd: str = "") -> str:
-    return dispatch_tool("get_baton", local_mcp.get_baton, project=project, cwd=cwd)
-
-
-@mcp.tool()
-def set_baton(text: str, project: str = "", cwd: str = "") -> str:
-    return dispatch_tool("set_baton", local_mcp.set_baton, text=text, project=project, cwd=cwd)
-
-
-@mcp.tool()
-def append_chronicle(
-    beat: str, project: str = "", emoji: str = "📝", refs: list[str] | None = None
-) -> str:
-    return dispatch_tool(
-        "append_chronicle",
-        local_mcp.append_chronicle,
-        beat=beat,
-        project=project,
-        emoji=emoji,
-        refs=refs,
-    )
-
-
-@mcp.tool()
-def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
-    return dispatch_tool(
-        "session_snap", local_mcp.session_snap, limit=limit, project=project, cwd=cwd
-    )
-
-
-@mcp.tool()
-def session_grep(pattern: str, since: str = "", project: str = "") -> str:
-    return dispatch_tool(
-        "session_grep", local_mcp.session_grep, pattern=pattern, since=since, project=project
-    )
-
-
-@mcp.tool()
-def session_tail(session_id: str = "", limit: int = 10) -> str:
-    return dispatch_tool(
-        "session_tail", local_mcp.session_tail, session_id=session_id, limit=limit
-    )
-
-
-@mcp.tool()
-def rebuild_index() -> str:
-    return dispatch_tool("rebuild_index", local_mcp.rebuild_index)
-
-
-@mcp.tool()
-def search_hybrid(query: str, project: str = "", limit: int = 20) -> str:
-    return dispatch_tool(
-        "search_hybrid",
-        local_mcp.search_hybrid,
-        query=query,
-        project=project,
-        limit=limit,
-    )
-
-
-@mcp.tool()
 def get_related(memory_id: str, limit: int = 5) -> str:
     return dispatch_tool("get_related", local_mcp.get_related, memory_id=memory_id, limit=limit)
-
-
-@mcp.tool()
-def suggest_links(from_id: str, limit: int = 5) -> str:
-    return dispatch_tool("suggest_links", local_mcp.suggest_links, from_id=from_id, limit=limit)
-
-
-@mcp.tool()
-def check_memory_freshness() -> str:
-    return dispatch_tool("check_memory_freshness", local_mcp.check_memory_freshness)
 
 
 try:

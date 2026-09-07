@@ -55,4 +55,4 @@ For fast automated triage of noise and standard facts:
    ]
    ```
 4. Repeat until `get_staging_inbox` reports `"total": 0`.
-5. `distill_batch` and `promote_bullet` automatically sync to all IDEs/CLIs upon completion.
+5. `distill_batch` automatically syncs to all IDEs/CLIs upon completion.

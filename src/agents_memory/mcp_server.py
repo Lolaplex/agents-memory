@@ -31,9 +31,11 @@ mcp = FastMCP("agents-memory")
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search typed markdown under ~/.agents/memory and registered repos using FTS5 & keyword matching.
-    
-    CALL PROACTIVELY before guessing project architecture, past decisions, user preferences, or repository conventions.
+    """Search typed markdown under ~/.agents/memory and registered repos.
+
+    Exact substring first (stable line ids), then ranked FTS5 fill so one weak
+    exact hit does not hide other files. Known project slug → get_project_memories.
+    CALL PROACTIVELY before guessing architecture, decisions, or preferences.
     Does not search product chat/jsonl graves — use chats-index.md for body paths.
     """
     try:
@@ -260,94 +262,14 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
 
 
 @mcp.tool()
-def promote_bullet(
-    bullet: str,
-    kind: str,
-    name: str,
-    project: str = "",
-    collection: str = "",
-    source_path: str = "",
-) -> str:
-    """Promote one staging bullet into typed memory (kind + name required) and remove it from staging. Auto-syncs to all IDEs/CLIs."""
-    try:
-        from .store import promote_bullet as store_promote
-        loc, removed = store_promote(
-            bullet,
-            kind=kind,
-            name=name,
-            project=project,
-            collection=collection,
-            source_path=source_path,
-            auto_sync=True,
-        )
-        if removed:
-            return f"Promoted to {loc} and removed from staging"
-        return f"Promoted to {loc} (bullet was not found in staging file to remove)"
-    except Exception as e:
-        return f"Error promoting bullet: {e}"
-
-
-@mcp.tool()
-def rebuild_index() -> str:
-    """Rebuild the disposable SQLite FTS search index from markdown files on disk."""
-    try:
-        from .index import rebuild_index as run_rebuild
-        res = run_rebuild()
-        return f"Index rebuilt: {res['indexed']} documents in {res['duration_ms']}ms -> {res['db_path']}"
-    except Exception as e:
-        return f"Error rebuilding index: {e}"
-
-
-@mcp.tool()
-def search_hybrid(query: str, project: str = "", limit: int = 20) -> str:
-    """Search memory using FTS5 rank-ordered hybrid search over indexed markdown files."""
-    try:
-        from .index import search_hybrid as run_search
-        hits = run_search(query, project=project, limit=limit)
-        if not hits:
-            return f"No matches found for '{query}'"
-        lines = [f"Found {len(hits)} matches:"]
-        for h in hits:
-            lines.append(f"- [{h['id']}] {h['title']} — {h['snippet']}")
-        return "\n".join(lines)
-    except Exception as e:
-        return f"Error running search: {e}"
-
-
-@mcp.tool()
 def get_related(memory_id: str, limit: int = 5) -> str:
-    """Retrieve explicit relations (refs/supersedes/same_as) and content-related documents for a memory item."""
+    """Follow explicit frontmatter relations (refs/supersedes/same_as) from a search hit id."""
     try:
         from .index import get_related as run_related
         res = run_related(memory_id, limit=limit)
         return json.dumps(res, indent=2)
     except Exception as e:
         return f"Error fetching related memories: {e}"
-
-
-@mcp.tool()
-def suggest_links(from_id: str, limit: int = 5) -> str:
-    """Suggest candidate typed relation links based on content overlap for human review."""
-    try:
-        from .index import suggest_links as run_suggest
-        suggestions = run_suggest(from_id, limit=limit)
-        return json.dumps(suggestions, indent=2)
-    except Exception as e:
-        return f"Error suggesting links: {e}"
-
-
-@mcp.tool()
-def check_memory_freshness() -> str:
-    """Check freshness across staging inbox, project batons, and index cache."""
-    try:
-        from .store import check_memory_freshness as run_check
-        res = run_check()
-        summary = staging_status_summary()
-        if summary.get("nag"):
-            res["staging_notice"] = summary["nag"]
-        return json.dumps(res, indent=2)
-    except Exception as e:
-        return f"Error checking memory freshness: {e}"
 
 
 # Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed

@@ -50,9 +50,16 @@ EXAMPLES = (
 )
 CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
-AGENTS_HOME = Path.home() / ".agents"
+
+
+def _env_path(name: str, default: Path) -> Path:
+    raw = os.environ.get(name, "").strip()
+    return Path(raw).expanduser().resolve() if raw else default
+
+
+AGENTS_HOME = _env_path("AGENTS_HOME", Path.home() / ".agents")
 AGENTS_RULES = AGENTS_HOME / "rules"
-USER_MEMORY = AGENTS_HOME / "memory"
+USER_MEMORY = _env_path("AGENTS_MEMORY_PATH", AGENTS_HOME / "memory")
 MEMORY = USER_MEMORY
 ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
@@ -65,7 +72,11 @@ LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
 PROJECTS_DIR = USER_MEMORY / "projects"
 EVENTS_DIR = USER_MEMORY / "events"
 CHRONICLE_DIR = EVENTS_DIR / "chronicle"
-CLAUDE_HOME = Path.home() / ".claude"
+CLAUDE_HOME = (
+    AGENTS_HOME / "claude"
+    if os.environ.get("AGENTS_HOME", "").strip()
+    else Path.home() / ".claude"
+)
 HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
 HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
 
@@ -668,10 +679,19 @@ def scan_roots() -> List[str]:
 
 
 def mcp_entry() -> dict[str, Any]:
-    entry: dict[str, Any] = {
-        "command": sys.executable,
-        "args": ["-m", "agents_memory.mcp_server"],
-    }
+    from .remote.client import get_remote_config
+
+    cfg = get_remote_config()
+    if cfg and cfg.get("url"):
+        entry: dict[str, Any] = {
+            "command": sys.executable,
+            "args": ["-m", "agents_memory.remote.sync_mcp"],
+        }
+    else:
+        entry = {
+            "command": sys.executable,
+            "args": ["-m", "agents_memory.mcp_server"],
+        }
     src_dir = ROOT / "src"
     if src_dir.is_dir():
         entry["env"] = {"PYTHONPATH": str(src_dir.resolve())}
@@ -1405,6 +1425,29 @@ def stub_project_md(p: Project) -> str:
     )
 
 
+def repo_gitignore_covers_agents(text: str) -> bool:
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s in (".agents/", ".agents", "/.agents/", "/.agents"):
+            return True
+    return False
+
+
+def ensure_repo_agents_gitignored(repo: Path) -> None:
+    """Project memory lives in ``<repo>/.agents/`` and must never be committed."""
+    if not repo.is_dir() or is_engine_repo(repo):
+        return
+    gi = repo / ".gitignore"
+    existing = _read(gi) if gi.exists() else ""
+    if repo_gitignore_covers_agents(existing):
+        return
+    if existing and not existing.endswith("\n"):
+        existing += "\n"
+    gi.write_text(existing + ".agents/\n", encoding="utf-8")
+
+
 def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
     if is_engine_repo(p.path_obj):
         p.user_link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1416,6 +1459,7 @@ def ensure_project_file(p: Project, overwrite_empty: bool = False) -> None:
     if not is_engine_repo(p.path_obj):
         ensure_staging_inbox(p.memory_dir)
         if p.path_obj.is_dir():
+            ensure_repo_agents_gitignored(p.path_obj)
             gi = dest.parent / ".gitignore"
             if not gi.exists():
                 _write(gi, "*\n!.gitignore\n")
@@ -1481,12 +1525,19 @@ def always_on_body() -> str:
     nag = summary.get("nag")
     alert_section = ""
     if nag:
-        alert_section = (
-            "\n\n---\n\n"
-            "# Active Alerts\n\n"
-            f"> ⚠️ **Memory Staging Action Required**: {nag}\n"
-            "> Proactively process the staging inbox using MCP `get_staging_inbox` + `distill_batch` (or `auto_distill` / skill `memory-distill`).\n"
-        )
+        level = summary.get("nag_level") or "soft"
+        if level == "strong":
+            alert_section = (
+                "\n\n---\n\n"
+                "# Active Alerts\n\n"
+                f"> **Staging backlog**: {nag}\n"
+            )
+        else:
+            alert_section = (
+                "\n\n---\n\n"
+                "# Active Alerts\n\n"
+                f"> **Staging note**: {nag}\n"
+            )
     return f"{user}\n\n---\n\n{projects}{alert_section}\n"
 
 
@@ -1954,10 +2005,7 @@ def write_memory_file(
     _write(path, content)
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     return file_id(path)
 
 
@@ -2008,6 +2056,20 @@ def clear_memory_cache() -> None:
     _MEMORY_FILE_CACHE.clear()
 
 
+def _finish_store_write() -> None:
+    """Rewrite IDE injection and push mirror bundle to remote when connected."""
+    try:
+        sync_injection(include_repos=True)
+    except Exception:
+        pass
+    try:
+        from .remote.sync_hooks import after_memory_mutation
+
+        after_memory_mutation()
+    except Exception:
+        pass
+
+
 def _read_cached_lines(path: Path) -> List[str]:
     key = str(path.resolve())
     try:
@@ -2024,10 +2086,12 @@ def _read_cached_lines(path: Path) -> List[str]:
 
 
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
-    # Precision path first: exact substring (high precision, order-stable).
+    """Exact substring first, then FTS5 fill. A weak exact hit does not hide other files."""
+    limit = max(1, limit)
     q = query.lower().strip()
     files = iter_memory_files(project=project)
     hits: List[dict[str, Any]] = []
+    seen_files: set[str] = set()
     for path in files:
         lines = _read_cached_lines(path)
         for i, line in enumerate(lines, 1):
@@ -2042,29 +2106,39 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
                     "text": line.strip(),
                 }
             )
+            seen_files.add(ident)
             if len(hits) >= limit:
                 return hits
-    if hits:
-        return hits
 
-    # Recall booster: ranked FTS5 over the rebuilt index when the exact
-    # substring found nothing (multi-word queries, word-order variants).
+    remaining = limit - len(hits)
+    if remaining <= 0:
+        return hits
+    idx = USER_MEMORY / ".index" / "fts.sqlite"
+    if not idx.is_file():
+        return hits
     try:
         from .index import search_hybrid
 
-        ranked = search_hybrid(query, project=project, limit=limit)
-        return [
-            {
-                "id": f"{h['project']}/{h['title']}:{h['id']}",
-                "file": h["title"],
-                "line": 0,
-                "text": re.sub(r"<[^>]+>", "", h["snippet"]),
-            }
-            for h in ranked
-        ]
+        ranked = search_hybrid(query, project=project, limit=limit, db_path=idx)
+        for h in ranked:
+            fid = str(h.get("id") or "").strip()
+            if not fid or fid in seen_files:
+                continue
+            snippet = re.sub(r"<[^>]+>", "", str(h.get("snippet") or "")).strip()
+            hits.append(
+                {
+                    "id": f"{fid}:0",
+                    "file": fid,
+                    "line": 0,
+                    "text": snippet or str(h.get("title") or fid),
+                }
+            )
+            seen_files.add(fid)
+            if len(hits) >= limit:
+                break
     except Exception:
-        pass  # index missing/corrupt — nothing more we can do
-    return []
+        pass
+    return hits
 
 
 KIND_FOLDERS = {
@@ -2335,10 +2409,7 @@ def add_memory(
     loc = _append_bullet(path, fact)
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     k = (kind or "").strip().lower()
     if k in REVISE_IN_PLACE_KINDS and existed:
         return (
@@ -2386,10 +2457,7 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     _write(path, "\n".join(lines))
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     return removed
 
 
@@ -2492,10 +2560,7 @@ def promote_bullet(
     )
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
     return loc, removed
 
 
@@ -2653,20 +2718,32 @@ def staging_status_summary() -> dict[str, Any]:
 
     inbox = get_staging_inbox(limit=0)
     cfg = load_ingest()
-    threshold = max(0, int(cfg.get("staging_nag_threshold") or 50))
+    nag_threshold = max(0, int(cfg.get("staging_nag_threshold") or 50))
+    force_threshold = max(0, int(cfg.get("staging_force_threshold") or max(nag_threshold + 25, 75)))
     total = int(inbox["total"])
     nag = ""
-    if threshold > 0 and total >= threshold:
-        nag = (
-            f"{total} staging bullets waiting — call MCP auto_distill FIRST "
-            "(repeat until remaining_staging_count stops dropping), then manually "
-            "process leftovers via get_staging_inbox + distill_batch. "
-            "The inbox MUST reach 0 before you stop."
-        )
+    nag_level = "none"
+    if nag_threshold > 0 and total >= nag_threshold:
+        if force_threshold > 0 and total >= force_threshold:
+            nag_level = "strong"
+            nag = (
+                f"{total} staging bullets (>= {force_threshold}). "
+                "Before other memory MCP work this session: auto_distill, "
+                "then get_staging_inbox + distill_batch until total=0 "
+                "(or user says skip)."
+            )
+        else:
+            nag_level = "soft"
+            nag = (
+                f"{total} staging bullets (>= {nag_threshold}). "
+                "Distill during memory maintenance — not required for unrelated tasks."
+            )
     return {
         "bullet_count": total,
         "group_count": len(inbox["groups"]),
-        "threshold": threshold,
+        "threshold": nag_threshold,
+        "force_threshold": force_threshold,
+        "nag_level": nag_level,
         "nag": nag,
     }
 
@@ -2711,10 +2788,7 @@ def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[s
 
     clear_memory_cache()
     if auto_sync:
-        try:
-            sync_injection(include_repos=True)
-        except Exception:
-            pass
+        _finish_store_write()
 
     remaining = count_staging_bullets()
     return {
@@ -2824,6 +2898,83 @@ def auto_distill(
 
     res = distill_batch(items_to_distill, auto_sync=auto_sync)
     return res
+
+
+def auto_distill_noise_pass(
+    max_rounds: Optional[int] = None,
+    batch_size: int = 50,
+    auto_sync: bool = True,
+) -> dict[str, Any]:
+    """Repeat auto_distill until no progress. Discard noise; promote only heuristics."""
+    from .ingest_config import load_ingest
+
+    cfg = load_ingest()
+    rounds = max_rounds if max_rounds is not None else int(cfg.get("auto_distill_max_rounds") or 3)
+    rounds = max(1, min(int(rounds), 10))
+    total_promoted = 0
+    total_discarded = 0
+    errors: List[str] = []
+    remaining = count_staging_bullets()
+    ran = 0
+    for _ in range(rounds):
+        res = auto_distill(limit=batch_size, discard_noise=True, auto_sync=False)
+        ran += 1
+        total_promoted += int(res.get("promoted") or 0)
+        total_discarded += int(res.get("discarded") or 0)
+        errors.extend(res.get("errors") or [])
+        remaining = int(res.get("remaining_staging_count") or count_staging_bullets())
+        if int(res.get("discarded") or 0) == 0 and int(res.get("promoted") or 0) == 0:
+            break
+    if auto_sync and (total_promoted or total_discarded):
+        _finish_store_write()
+    return {
+        "promoted": total_promoted,
+        "discarded": total_discarded,
+        "remaining_staging_count": remaining,
+        "rounds": ran,
+        "errors": errors,
+    }
+
+
+_startup_noise_pass_ran = False
+
+
+def maybe_run_threshold_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
+    """If inbox >= noise threshold, run a deterministic noise pass. No silent promote of leftover bullets."""
+    from .ingest_config import load_ingest
+
+    cfg = load_ingest()
+    if not cfg.get("auto_distill_on_start", False):
+        return None
+    noise_threshold = max(0, int(cfg.get("auto_distill_noise_threshold") or cfg.get("staging_nag_threshold") or 50))
+    if noise_threshold <= 0 or count_staging_bullets() < noise_threshold:
+        return None
+    return auto_distill_noise_pass(auto_sync=auto_sync)
+
+
+def maybe_run_after_extract_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
+    """After ingest extract: noise pass when inbox >= noise threshold."""
+    from .ingest_config import load_ingest
+
+    cfg = load_ingest()
+    if not cfg.get("auto_distill_after_extract", True):
+        return None
+    noise_threshold = max(0, int(cfg.get("auto_distill_noise_threshold") or cfg.get("staging_nag_threshold") or 50))
+    if noise_threshold <= 0 or count_staging_bullets() < noise_threshold:
+        return None
+    return auto_distill_noise_pass(auto_sync=auto_sync)
+
+
+def maybe_run_startup_noise_pass() -> Optional[dict[str, Any]]:
+    """Once per process: noise pass on MCP start when inbox exceeds threshold."""
+    global _startup_noise_pass_ran
+    if _startup_noise_pass_ran:
+        return None
+    _startup_noise_pass_ran = True
+    try:
+        return maybe_run_threshold_noise_pass(auto_sync=True)
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------------------

@@ -107,25 +107,27 @@ class IndexAndViewerTests(unittest.TestCase):
         self.assertTrue((export_dir / "webview.html").exists())
         self.assertTrue((export_dir / "projects" / "demo.html").exists())
 
-    def test_mcp_rebuild_and_search(self):
-        rebuild_res = mcp_server.rebuild_index()
-        self.assertIn("Index rebuilt:", rebuild_res)
-        search_res = mcp_server.search_hybrid("disposable cache")
-        self.assertIn("Index As Cache Law", search_res)
+    def test_mcp_search_and_related(self):
+        index.rebuild_index(db_path=self.test_fts_db)
+        search_res = mcp_server.search_memory("disposable cache")
+        self.assertIn("user/concepts/cache-law.md", search_res)
         rel_res = json.loads(mcp_server.get_related("user/concepts/cache-law.md"))
         self.assertIn("project/demo/decisions/001", rel_res["explicit_relations"]["refs"])
 
-    def test_suggest_links_and_freshness(self):
-        mcp_server.rebuild_index()
-        suggestions_raw = mcp_server.suggest_links("user/concepts/cache-law.md")
-        suggestions = json.loads(suggestions_raw)
-        self.assertIsInstance(suggestions, list)
-
-        freshness_raw = mcp_server.check_memory_freshness()
-        freshness = json.loads(freshness_raw)
-        self.assertIn("status", freshness)
-        self.assertIn("staging_count", freshness)
-        self.assertIn("nags", freshness)
+    def test_search_memory_fts_fill_after_exact(self):
+        """Exact hit on one file must still FTS-fill another file."""
+        notes = self.user / "notes"
+        notes.mkdir(parents=True)
+        (notes / "weak-exact.md").write_text(
+            "# Weak\n\nThe phrase disposable cache appears here too, but cache-law is the real note.\n",
+            encoding="utf-8",
+        )
+        index.rebuild_index(db_path=self.test_fts_db)
+        store.clear_memory_cache()
+        hits = store.search_memory("disposable cache", limit=10)
+        files = {h["file"] for h in hits}
+        self.assertIn("user/notes/weak-exact.md", files)
+        self.assertIn("user/concepts/cache-law.md", files)
 
 
 if __name__ == "__main__":

@@ -162,13 +162,11 @@ Per-source `"extract_max_bullets"` overrides the global cap.
   staging/ingest/<id>/captured.md   # extract inbox (not memory)
 ```
 
-## MCP tools
+## CLI and MCP
 
-- `ingest_catalog()` — catalog phase
-- `ingest_extract(source_id="")` — extract one or all sources (respects bullet cap)
-- `ingest_status()` — JSON summary from `ingest/state.json` + staging bullet count / nag
-- `get_staging_inbox()` — grouped staging bullets for distill
-- `distill_batch()` / `promote_bullet()` — distill phase (see [`MCP.md`](MCP.md))
+Catalog and extract are **CLI** (`python -m agents_memory ingest catalog|extract|status`). They are not MCP tools.
+
+Distill stays on MCP: `get_staging_inbox`, `distill_batch`, `promote_bullet` (see [`MCP.md`](MCP.md)).
 
 ## Filters (extract)
 

@@ -78,42 +78,6 @@ Add slug to `scan.json` `ignore_slugs` so inventory skips it.
 
 Rewrite always-on injection (your Agent hosts, `~/.agents/`, registered repo `.agents/`). Optional single-repo inject by path or slug.
 
-### `ingest_catalog()`
-
-Rebuild `chats-index.md` and `entities/chat-source-*.md` from `ingest.json`. **Catalog phase only** — pointers (titles + paths), bodies stay in product folders. Same contract for every source. See [`INGEST.md`](INGEST.md).
-
-### `ingest_extract(source_id="")`
-
-Filter durable user lines into `staging/ingest/<id>/captured.md` for one source or all enabled sources. **Extract phase only** — staging inbox, not typed memory; distill with `promote_bullet` / `distill_batch` / `auto_distill` afterward. Per-source caps and shared filters apply (see [`INGEST.md`](INGEST.md)).
-
-### `ingest_status()`
-
-JSON summary from `ingest/state.json` plus `staging` block: `bullet_count`, `group_count`, `threshold`, `nag` (when inbox exceeds threshold).
-
-### `get_baton(project="", cwd="")`
-
-Read the session handoff baton marker text for a project (`<repo>/.agents/memory/rituals/baton.md`) or global user store fallback (`~/.agents/memory/rituals/baton.md`).
-
-### `set_baton(text, project="", cwd="")`
-
-Write or update the session handoff baton marker text. Mutable ritual; triggers auto-sync.
-
-### `append_chronicle(beat, project="", emoji="📝", refs=[])`
-
-Append an observation beat to `~/.agents/memory/events/chronicle/<slug>.md`. Includes timestamp and optional relation `refs:`.
-
-### `session_snap(limit=20, project="", cwd="")`
-
-Recent user lines from **agents-traces** (`~/.agents/traces`) plus baton header if present. Does not scrape product jsonl. Run `python -m agents_traces ingest` (harness `traces_ingest`) so vendor chats exist as traces first. Catalog pointers stay in `chats-index.md`.
-
-### `session_grep(pattern, since="", project="")`
-
-Search session messages in agents-traces (case-insensitive regex). Conversation bodies are never markdown memory.
-
-### `session_tail(session_id="", limit=10)`
-
-Tail recent session messages from agents-traces for one session id (or latest lines).
-
 ### `rebuild_index()`
 
 Rebuild the disposable SQLite FTS search index cache from markdown files on disk.
@@ -134,7 +98,14 @@ Propose candidate typed relation links based on content overlap for human review
 
 Check freshness across staging inbox, project batons, and index cache. Returns nag warnings for stale state.
 
+## Related surfaces (not this MCP)
+
+- **Ingest** (`catalog` / `extract` / `status`): CLI `python -m agents_memory ingest`. Chat graves stay on the workstation.
+- **Session reads** (`session_snap` / `session_grep` / `session_tail`): [agents-traces](https://github.com/Lolaplex/agents-traces).
+- **Cloud mirror**: CLI `remote serve` / `connect` / `disconnect`. MCP tools still read and write **local** markdown; the bundle is push/pull only. See [`REMOTE.md`](REMOTE.md).
+
 ## Non-goals
 
-- No cloud sync, no embedding database as source of truth, no LLM on write.
+- No embedding database as source of truth, no LLM on write (no auto-promote without `kind` + `name`).
 - Optional search indexes must be rebuildable from markdown; markdown wins.
+- This MCP does not scrape product jsonl and does not own conversation bodies.

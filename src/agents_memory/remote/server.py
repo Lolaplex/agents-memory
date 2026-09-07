@@ -154,7 +154,6 @@ def _mcp_tool_handlers() -> dict[str, Any]:
         "read_memory_file",
         "write_memory_file",
         "auto_distill",
-        "promote_bullet",
         "get_staging_inbox",
         "distill_batch",
         "get_project_memories",
@@ -164,20 +163,7 @@ def _mcp_tool_handlers() -> dict[str, Any]:
         "register_project",
         "ignore_project",
         "sync_local_agents_md",
-        "ingest_catalog",
-        "ingest_extract",
-        "ingest_status",
-        "get_baton",
-        "set_baton",
-        "append_chronicle",
-        "session_snap",
-        "session_grep",
-        "session_tail",
-        "rebuild_index",
-        "search_hybrid",
         "get_related",
-        "suggest_links",
-        "check_memory_freshness",
     ]
     out: dict[str, Any] = {}
     for name in names:

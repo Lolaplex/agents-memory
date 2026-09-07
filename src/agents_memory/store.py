@@ -2086,10 +2086,12 @@ def _read_cached_lines(path: Path) -> List[str]:
 
 
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
-    # Precision path first: exact substring (high precision, order-stable).
+    """Exact substring first, then FTS5 fill. A weak exact hit does not hide other files."""
+    limit = max(1, limit)
     q = query.lower().strip()
     files = iter_memory_files(project=project)
     hits: List[dict[str, Any]] = []
+    seen_files: set[str] = set()
     for path in files:
         lines = _read_cached_lines(path)
         for i, line in enumerate(lines, 1):
@@ -2104,29 +2106,39 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
                     "text": line.strip(),
                 }
             )
+            seen_files.add(ident)
             if len(hits) >= limit:
                 return hits
-    if hits:
-        return hits
 
-    # Recall booster: ranked FTS5 over the rebuilt index when the exact
-    # substring found nothing (multi-word queries, word-order variants).
+    remaining = limit - len(hits)
+    if remaining <= 0:
+        return hits
+    idx = USER_MEMORY / ".index" / "fts.sqlite"
+    if not idx.is_file():
+        return hits
     try:
         from .index import search_hybrid
 
-        ranked = search_hybrid(query, project=project, limit=limit)
-        return [
-            {
-                "id": f"{h['project']}/{h['title']}:{h['id']}",
-                "file": h["title"],
-                "line": 0,
-                "text": re.sub(r"<[^>]+>", "", h["snippet"]),
-            }
-            for h in ranked
-        ]
+        ranked = search_hybrid(query, project=project, limit=limit, db_path=idx)
+        for h in ranked:
+            fid = str(h.get("id") or "").strip()
+            if not fid or fid in seen_files:
+                continue
+            snippet = re.sub(r"<[^>]+>", "", str(h.get("snippet") or "")).strip()
+            hits.append(
+                {
+                    "id": f"{fid}:0",
+                    "file": fid,
+                    "line": 0,
+                    "text": snippet or str(h.get("title") or fid),
+                }
+            )
+            seen_files.add(fid)
+            if len(hits) >= limit:
+                break
     except Exception:
-        pass  # index missing/corrupt — nothing more we can do
-    return []
+        pass
+    return hits
 
 
 KIND_FOLDERS = {

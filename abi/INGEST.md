@@ -10,7 +10,7 @@ Chat and brain stores stay on disk in product folders. Ingest turns them into **
 |-------|---------|--------|--------|
 | **Catalog** | `python -m agents_memory ingest catalog` | `chats-index.md` + `entities/chat-source-<id>.md` | Delete cards; rebuild index |
 | **Extract** | `python -m agents_memory ingest extract [--source ID]` | `staging/ingest/<id>/captured.md` | Delete staging file |
-| **Distill** | MCP `promote_bullet` / `distill_batch` / skill `memory-distill` | Typed markdown in `concepts/`, `notes/`, etc. | Edit or delete memory file |
+| **Distill** | MCP `distill_batch` / `auto_distill` / skill `memory-distill` | Typed markdown in `concepts/`, `notes/`, etc. | Edit or delete memory file |
 
 Run both catalog and extract: `python -m agents_memory ingest run`. Status: `python -m agents_memory ingest status` → `ingest/state.json` plus staging nag.
 
@@ -37,7 +37,7 @@ Same rules for **every** configured path in `ingest.json` — Cursor transcripts
 |-------|----------------------------------|--------------------|
 | **Catalog** | `chats-index.md` rows + `entities/chat-source-<id>.md` — **title hints and paths only** | Full jsonl, export shards, brain folders, message sidecars |
 | **Extract** | Filtered **bullets** in `staging/ingest/<id>/captured.md` (revertible inbox, capped per run) | Everything else in the product store |
-| **Distill** | Typed markdown (`concepts/`, `notes/`, `decisions/`, …) only when you call `promote_bullet` / `distill_batch` / `add_memory` | Staging bullet removed after promote; archives untouched |
+| **Distill** | Typed markdown (`concepts/`, `notes/`, `decisions/`, …) only when you call `distill_batch` / `add_memory` | Staging bullet removed after promote; archives untouched |
 
 **Never (any source):**
 
@@ -166,7 +166,7 @@ Per-source `"extract_max_bullets"` overrides the global cap.
 
 Catalog and extract are **CLI** (`python -m agents_memory ingest catalog|extract|status`). They are not MCP tools.
 
-Distill stays on MCP: `get_staging_inbox`, `distill_batch`, `promote_bullet` (see [`MCP.md`](MCP.md)).
+Distill stays on MCP: `get_staging_inbox`, `distill_batch`, `auto_distill` (see [`MCP.md`](MCP.md)).
 
 ## Filters (extract)
 

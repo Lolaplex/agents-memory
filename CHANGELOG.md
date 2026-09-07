@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Multi-device **cloud mirror sync**. `agents-memory remote serve` hosts an authenticated bundle; `connect` / `disconnect` / `sync --push` keep each workstation’s markdown as the working copy and merge across machines. Writes (ingest, distill, `add_memory`) auto-push. Chat graves, the FTS index, and `remote_config.json` stay local. See [`abi/REMOTE.md`](abi/REMOTE.md).
-- **Board attach** as a second root (`agents-memory remote attach`). Pulls a shared project snapshot via `agents-keys` DID proof. Does not replace `USER.md`, does not switch MCP to the mirror client, and gitignores `<repo>/.agents/`.
+- Optional extra project root (`remote attach`): pull a snapshot into a registered clone’s `.agents/memory` without replacing `USER.md` or switching MCP. Speaks a DID snapshot ABI; not the personal mirror.
 - Ranked **hybrid search**: exact-substring first, disposable SQLite FTS5 fallback (`search_memory`, `search_hybrid`, `rebuild-index`).
 - Typed **relations** (`get_related`, `suggest_links`) over frontmatter `refs` / `supersedes` / `same_as`.
 - Distill loop: `get_staging_inbox` grouped by source, `promote_bullet`, `distill_batch`, `auto_distill`, and tiered staging nags in always-on inject.
@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Secret blacklist and scrubbing on memory writes; `.env*`, SSH keys, and PEM files are ignored.
 - Remote serve uses token auth (TLS when configured).
-- Board attach signs through `agents-keys` (secret stays in that process), not in-process crypto.
+- Extra-root attach signs through `agents-keys` (secret stays in that process), not in-process crypto.
 - Closed frontmatter rejects unknown keys so foreign envelopes cannot land in the vault.
 
 ## [1.0.2] - 2026-08-31

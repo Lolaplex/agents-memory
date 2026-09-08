@@ -24,9 +24,8 @@ pip install agents-memory && agents-memory sync --init
 Scaffolds `~/.agents/memory/`, autowires MCP into installed IDEs, and registers assistant skills.
 
 > [!TIP]
-> **🤖 Agent-Driven Setup (Zero Friction):**
-> Tell your coding agent: **"Install and set up agents-memory for me."**
-> It installs the package, asks stack preferences once, fills `USER.md`, and registers your repos.
+> **🤖 Agent-Driven Setup:**
+> Give your coding agent **this repo** (clone or URL), then tell it to **"install and set up agents-memory."**
 
 Source checkouts can also be installed and managed with [vand](https://github.com/Lolaplex/vand).
 
@@ -46,9 +45,30 @@ Vendors keep chat in product graves (Cursor jsonl, Claude sessions, Antigravity 
 
 **Ingest → staging → distill.** Catalog writes titles and paths to `chats-index.md`. Extract filters user lines into `staging/` (PII, how-tos, dumps dropped). You (or `distill_batch` / `memory-distill`) promote durable facts into typed files. Chat bodies never become memory. Conversation logs belong to [agents-traces](https://github.com/Lolaplex/agents-traces).
 
-**IDE injection.** One `sync` splices Cursor, Claude Code, Antigravity, and Zed. Existing `AGENTS.md` text outside the `<!-- agents-memory-sync -->` block stays.
+**IDE injection.** One `sync` splices always-on context into hosts it knows (`AGENTS.md` / rules) and merges MCP where a config file already lives. Text outside `<!-- agents-memory-sync -->` stays. Details: [Where it runs](#where-it-runs).
 
 **Cloud sync (new in 1.1.0).** Several machines, one vault — see below.
+
+---
+
+## Where it runs
+
+**Floor:** anywhere with a terminal or an MCP client. Markdown vault + `python -m agents_memory mcp` is enough. No IDE lock-in.
+
+Deeper support is layered — `sync --init` autowires what it finds on disk; ingest only covers graves we actually parse.
+
+| Layer | What you get | Who |
+|-------|----------------|-----|
+| **Vault + MCP/CLI** | Full tools (`search_memory`, `add_memory`, …) or CLI mirrors | Any MCP host / any shell |
+| **Autowire on sync** | Merge `agents-memory` into host MCP config; splice always-on `AGENTS.md`; install skills where the host has a slot | Cursor, Claude Code, Claude Desktop, Zed (`context_servers`), Antigravity / Gemini, Windsurf, Codex MCP paths, Roo, Cline |
+| **Always-on / rules** | Marked inject block + bound rules | `~/.agents/AGENTS.md` (canonical); also Gemini, Zed, Claude home; rules → Cursor / Gemini / Windsurf |
+| **Chat ingest** | `ingest catalog` + `extract` → `chats-index.md` + staging (bodies stay in product folders) | Cursor, Claude Code, Antigravity, VS Code Copilot, Windsurf, Roo, Cline, Pi, Open AI GDPR export |
+
+**Ingest ≠ “supports the product.”** Titles/paths + filtered user bullets only — same contract for every source ([`abi/INGEST.md`](abi/INGEST.md)). Distill is still agent/human judgment.
+
+**MCP without autowire:** Aider, Continue, Goose, stock Copilot Chat, … — point the host at our stdio server yourself. Vault works; we just do not invent their config path.
+
+**Not ingested yet:** live Codex rollouts, ChatGPT desktop LevelDB, vendor `/memory` clouds. Add a source when a parser exists — do not wholesale-import foreign memory.
 
 ---
 
@@ -77,29 +97,9 @@ Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 
 ---
 
-## CLI
-
-| Command | Purpose |
-|---------|---------|
-| `agents-memory sync [--init] [--push]` | Always-on inject, first-run scaffold, optional mirror push |
-| `agents-memory inventory [--register …] [--repair-moved]` | Disk vs `PROJECTS.md`; register or fix moved clones |
-| `agents-memory search QUERY` | Lexical vault search |
-| `agents-memory add "…" [--kind …] [--project …]` | File a durable fact |
-| `agents-memory read FILE_ID` | Raw markdown / rule file |
-| `agents-memory ingest catalog\|extract\|status` | Chat catalog and staging extract |
-| `agents-memory distill [--auto]` | Staging inbox / noise pass |
-| `agents-memory check` | Mechanical store health (no LLM) |
-| `agents-memory rebuild-index` | Rebuild disposable FTS5 cache |
-| `agents-memory connect` / `disconnect` | Join or leave cloud mirror |
-| `agents-memory remote serve` | Host the mirror bundle |
-| `agents-memory serve` / `web` | Local viewer / static HTML export |
-| `agents-memory mcp` | stdio MCP clerk |
-
-`python -m agents_memory --help-json` is the machine-readable spec. Do not scrape `--help`.
-
----
-
 ## MCP tools
+
+Primary surface. Agents talk to the vault here — not via scraping CLI help.
 
 | Tool | What it does |
 | :--- | :--- |
@@ -113,19 +113,29 @@ Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 | `delete_memory` | Drop a search hit by id |
 | `sync_local_agents_md` | Rewrite always-on inject |
 
-Fifteen tools. Ingest is CLI. Session snap/grep/tail live on **agents-traces**. Index rebuilds on MCP start (`rebuild-index` CLI if needed).
+Fifteen tools. Full contract: [`abi/MCP.md`](abi/MCP.md). Session snap/grep/tail live on **agents-traces**.
 
 ---
 
-## Supported hosts
+## CLI
 
-- **Claude Code** — canonical `AGENTS.md` + MCP
-- **Cursor** — rules + `.cursor/mcp.json`
-- **Google Antigravity** — `.gemini` rules + MCP
-- **Zed** — `context_servers` + mirrored skills
-- **VS Code / Copilot** — ingest from local session stores
+Ops / install / batch. Humans and agents rarely need the vault CRUD verbs — those mirror MCP for scripts. Machine-readable catalog: `python -m agents_memory --help-json` (do not scrape `--help`).
 
-Also: Windsurf, Cline, Roo, Aider, Continue, ChatGPT exports, Pi, Goose, and any MCP host.
+| Command | Purpose |
+|---------|---------|
+| `agents-memory sync [--init] [--push]` | Always-on inject, first-run scaffold, optional mirror push |
+| `agents-memory inventory [--register …] [--repair-moved]` | Disk vs `PROJECTS.md`; register or fix moved clones |
+| `agents-memory search` / `add` / `read` / `write` / `delete` / `related` | MCP vault mirrors (scripts / no-MCP hosts) |
+| `agents-memory ingest catalog\|extract\|status` | Chat catalog and staging extract |
+| `agents-memory distill [--auto]` | Staging inbox / noise pass |
+| `agents-memory check` | Mechanical store health (no LLM) |
+| `agents-memory rebuild-index` | Rebuild disposable FTS5 cache (MCP start already rebuilds) |
+| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases) |
+| `agents-memory serve` / `web` | Local viewer / static HTML export |
+| `agents-memory reset --yes` | Clear local caches / temp state |
+| `agents-memory mcp` | stdio MCP clerk |
+
+`extract-openai` is deprecated → `ingest extract` (openai-export source).
 
 ---
 

@@ -7,11 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- CLI vault CRUD mirrors MCP: `write`, `delete`, `related` (plus aliases `put` / `rm` / `rels`).
+- `--help-json` ships a full `commands` catalog (every top-level verb + aliases), not only `sync`/`inventory`.
+
 ### Changed
+- Package / GitHub description: product one-liner (MCP + cross-agent vault), not ABI/reference-impl jargon.
+- README “Where it runs”: honest support tiers (universal MCP/CLI floor, sync autowire, chat ingest) — no fake parity for Aider/Continue/Goose.
+- README: MCP tools section before CLI; CLI framed as ops/install/batch, vault CRUD as MCP mirrors.
+- README agent-setup tip: require clone path or GitHub URL so the agent follows `AGENTS.md` (package name `agents-memory`, not `agent-memory`).
+- Root `--help` groups vault CRUD, projects/inject, staging/ingest, and ops; documents aliases and deprecations.
+- `ingest-chats` is an explicit alias of `ingest catalog`.
+- `connect` / `disconnect` documented as `remote` aliases (still work top-level).
 - Moved Docker deployment templates from repository root to `deploy/` (`deploy/Dockerfile`, `deploy/docker-compose.yml`).
 - Dynamic remote configuration resolution in `agents_memory.remote.client` for strict test environment isolation.
 
+### Deprecated
+- `extract-openai` → prefer `ingest extract` (openai-export source). Wrapper still runs with a stderr notice.
+
 ### Removed
+- Root `requirements.txt` (duplicate of `pyproject.toml`; install via `pip install -e .`).
 - Redundant `source.yaml` at repository root in favor of standard `source.yml`.
 - Legacy hardcoded rule prefix filter in store rule purger.
 - Synthetic personal name references in remote test suites.

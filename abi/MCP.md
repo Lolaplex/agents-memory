@@ -79,6 +79,7 @@ Follow explicit frontmatter relations (`refs`, `supersedes`, `same_as`, `at_proj
 
 ## Related surfaces (not this MCP)
 
+- **CLI vault CRUD**: `search` / `add` / `read` / `write` / `delete` / `related` mirror these tools for humans and scripts.
 - **Ingest** (`catalog` / `extract` / `status`): CLI `python -m agents_memory ingest`. Chat graves stay on the workstation.
 - **Index rebuild**: CLI `python -m agents_memory rebuild-index` (MCP start already rebuilds).
 - **Session reads** (`session_snap` / `session_grep` / `session_tail`): [agents-traces](https://github.com/Lolaplex/agents-traces).
@@ -89,3 +90,4 @@ Follow explicit frontmatter relations (`refs`, `supersedes`, `same_as`, `at_proj
 - No embedding database as source of truth, no LLM on write (no auto-promote without `kind` + `name`).
 - Optional search indexes must be rebuildable from markdown; markdown wins.
 - This MCP does not scrape product jsonl and does not own conversation bodies.
+- `distill_batch` stays MCP/skill-shaped (JSON batch); CLI only peeks (`distill`) or runs `distill --auto`.

@@ -1,3 +1,0 @@
-# Install this clone (src/ layout). Keep the pins in sync with pyproject.toml.
--e .
-mcp>=1.0.0,<2

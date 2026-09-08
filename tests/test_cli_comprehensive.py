@@ -51,6 +51,9 @@ class CLIComprehensiveTests(unittest.TestCase):
         self.assertIn("inventory", res.stdout)
         self.assertIn("distill", res.stdout)
         self.assertIn("search", res.stdout)
+        self.assertIn("write", res.stdout)
+        self.assertIn("delete", res.stdout)
+        self.assertIn("related", res.stdout)
 
     def test_unknown_command(self):
         res = self._run_cli("unknown_command_xyz", check=False)
@@ -63,9 +66,74 @@ class CLIComprehensiveTests(unittest.TestCase):
         data = json.loads(res.stdout)
         self.assertEqual(data["name"], "agents-memory")
         self.assertIn("scripts", data)
+        self.assertIn("commands", data)
         self.assertIn("injection", data)
         self.assertIn("search", data["scripts_no_flags"])
+        self.assertIn("write", data["commands"])
 
+    def test_write_read_delete_roundtrip(self):
+        agents = self.root / "agents"
+        mem = agents / "memory"
+        note = mem / "notes"
+        note.mkdir(parents=True)
+        target = note / "cli-roundtrip.md"
+        target.write_text("line-one\nline-two\nline-three\n", encoding="utf-8")
+        (mem / "USER.md").write_text("# User\n\nName: Test\n", encoding="utf-8")
+        (mem / "PROJECTS.md").write_text(
+            "# Projects\n\n"
+            "| slug | path | role | stack | status |\n"
+            "|------|------|------|-------|--------|\n",
+            encoding="utf-8",
+        )
+        (mem / "scan.json").write_text(
+            json.dumps({"roots": [], "ignore_slugs": []}),
+            encoding="utf-8",
+        )
+        self.env["AGENTS_HOME"] = str(agents)
+
+        write = self._run_cli(
+            "write",
+            "user/notes/cli-roundtrip.md",
+            "alpha\nbeta\ngamma\n",
+        )
+        self.assertEqual(write.returncode, 0)
+        self.assertIn("Wrote", write.stdout)
+        self.assertEqual(
+            target.read_text(encoding="utf-8"),
+            "alpha\nbeta\ngamma\n",
+        )
+
+        read = self._run_cli("read", "user/notes/cli-roundtrip.md")
+        self.assertEqual(read.returncode, 0)
+        self.assertIn("beta", read.stdout)
+
+        deleted = self._run_cli("delete", "user/notes/cli-roundtrip.md:2")
+        self.assertEqual(deleted.returncode, 0)
+        body = target.read_text(encoding="utf-8")
+        self.assertNotIn("beta", body)
+        self.assertIn("alpha", body)
+        self.assertIn("gamma", body)
+
+    def test_write_requires_content(self):
+        res = self._run_cli("write", "user/USER.md", check=False)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("usage: python -m agents_memory write", res.stderr)
+
+    def test_delete_requires_id(self):
+        res = self._run_cli("delete", check=False)
+        self.assertEqual(res.returncode, 2)
+        self.assertIn("usage: python -m agents_memory delete", res.stderr)
+
+    def test_related_requires_id(self):
+        res = self._run_cli("related", check=False)
+        self.assertEqual(res.returncode, 2)
+
+    def test_extract_openai_deprecation_notice(self):
+        res = self._run_cli("extract-openai", "--help", check=False)
+        # argparse help exits 0; deprecation prints on stderr before run path —
+        # --help may short-circuit inside extract_openai. Force missing export path.
+        res = self._run_cli("extract-openai", "--zip", str(self.root / "missing.zip"), check=False)
+        self.assertIn("DEPRECATED", res.stderr)
     def test_inventory_cli_json(self):
         res = self._run_cli("inventory", "--json")
         self.assertEqual(res.returncode, 0)

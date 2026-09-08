@@ -1,4 +1,4 @@
-"""Local markdown memory — reference implementation of the agents-memory ABI."""
+"""Local markdown memory & cross-agent context engine (MCP + on-disk vault)."""
 from __future__ import annotations
 
 import sys

@@ -1,4 +1,4 @@
-"""Local markdown memory — reference implementation of the agents-memory ABI."""
+"""Local markdown memory & cross-agent context engine (MCP + on-disk vault)."""
 from __future__ import annotations
 
 import sys
@@ -34,7 +34,7 @@ def _resolve_version() -> str:
         return version("agents-memory")
     except Exception:
         pass
-    return "1.0.2"
+    return "1.1.0"
 
 
 __version__ = _resolve_version()

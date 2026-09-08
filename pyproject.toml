@@ -4,15 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agents-memory"
-version = "1.0.2"
-description = "Local markdown memory for coding agents — ABI in abi/, Python MCP reference implementation"
+version = "1.1.0"
+description = "Local markdown memory & cross-agent context engine for coding agents (MCP)."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [
-    { name = "Felix Kempf" },
-    { name = "Fabian Schindler" },
-]
+authors = [{ name = "Lolaplex" }]
 requires-python = ">=3.10"
 dependencies = ["mcp>=1.0.0,<2"]
 keywords = ["mcp", "agents", "memory", "cursor", "claude", "coding-assistant"]

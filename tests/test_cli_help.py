@@ -46,6 +46,30 @@ class HelpJsonTests(unittest.TestCase):
         self.assertIn("sync", spec["scripts"])
         self.assertIn("injection", spec)
         self.assertIn("generated_on_sync", spec["injection"])
+        commands = spec["commands"]
+        for name in (
+            "search",
+            "add",
+            "read",
+            "write",
+            "delete",
+            "related",
+            "distill",
+            "ingest",
+            "check",
+            "rebuild-index",
+            "serve",
+            "web",
+            "remote",
+            "reset",
+            "mcp",
+            "extract-openai",
+        ):
+            self.assertIn(name, commands, msg=f"missing command {name}")
+        self.assertTrue(commands["extract-openai"].get("deprecated"))
+        self.assertIn("write", spec["scripts_no_flags"])
+        self.assertIn("delete", spec["scripts_no_flags"])
+        self.assertIn("related", spec["scripts_no_flags"])
 
 
 if __name__ == "__main__":

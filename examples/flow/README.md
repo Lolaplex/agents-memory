@@ -10,7 +10,7 @@ Generic, flow-based capability examples for the agents-memory scope. Same JSON s
 |------------|----------|
 | `memory.resolve` | `search_memory` |
 | `memory.relate` | `get_related` (Wave 003) |
-| `memory.promote` | `promote_bullet` / `distill_batch` |
+| `memory.promote` | `distill_batch` |
 | `quarantine.propose` | `add_memory(project=)` (staging gate) |
 
 ## Files

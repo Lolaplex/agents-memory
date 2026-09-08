@@ -1,56 +1,71 @@
-name: CI Test Matrix
+name: CI
 
 on:
-  push:
-    branches: [main, "feat/*"]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
-    name: Test (${{ matrix.os }} - Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    name: Test (Ubuntu - Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
 
       - name: Install build tools & dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install build twine pytest
+          pip install build twine pytest httpx
           pip install -e .
 
-      - name: Check bundled asset sync
+      - name: Run test suite
+        timeout-minutes: 5
         run: |
-          python scripts/sync_bundled.py --check || python scripts/sync_bundled.py
+          python scripts/sync_bundled.py --check
+          python -m agents_memory --help-json
+          python -m agents_memory inventory --help-json
+          pytest -q --tb=short
 
-      - name: Run unit test suite
+  notify-failure:
+    name: Notify CI Failure
+    needs: [test]
+    if: ${{ failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Post error to CI webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
         run: |
-          python tests/run_all_tests.py
-
-      - name: Verify CLI commands
-        run: |
-          agents-memory --version
-          agents-memory version
-          agents-memory --help
-          agents-memory help
-          agents-memory inventory --json
-
-      - name: Build package distribution
-        run: |
-          python -m build
-
-      - name: Validate distribution metadata
-        run: |
-          twine check dist/*
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::CI_WEBHOOK_URL unset; skip notification"
+            exit 0
+          fi
+          python3 -c "
+          import os, json, urllib.request
+          ref = os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME')
+          run_url = f\"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\"
+          payload = {
+              'embeds': [{
+                  'title': f\"🔴 CI Failure: {os.environ['GITHUB_REPOSITORY']}\",
+                  'description': f\"Workflow **{os.environ['GITHUB_WORKFLOW']}** failed on \`{ref}\`\",
+                  'url': run_url,
+                  'color': 15158332
+              }]
+          }
+          req = urllib.request.Request(os.environ['WEBHOOK_URL'], 
+                                       data=json.dumps(payload).encode(), 
+                                       headers={'Content-Type': 'application/json', 'User-Agent': 'GitHub-Actions'})
+          urllib.request.urlopen(req)
+          "

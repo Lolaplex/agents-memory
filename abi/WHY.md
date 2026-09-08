@@ -61,5 +61,3 @@ The layout is implementation-agnostic: any agent that reads folders and optional
 **Markdown with a path is the memory. Chats are evidence. MCP is a clerk.**
 
 If an improvement makes the clerk the store — embeddings as SoT, auto-promotion from staging, LLM rewrite on write, wholesale chat import — it is a regression even if it feels smarter.
-
-Planned improvements for the reference implementation: [`../ROADMAP.md`](../ROADMAP.md).

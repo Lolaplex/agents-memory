@@ -211,6 +211,9 @@ def main(argv: list[str] | None = None) -> int:
             ns = parser.parse_args(rest)
         except SystemExit:
             return 2
+        write_usage = (
+            "usage: python -m agents_memory write FILE_ID [--file PATH | TEXT...]"
+        )
         if ns.from_file:
             if ns.from_file == "-":
                 content = sys.stdin.read()
@@ -220,11 +223,11 @@ def main(argv: list[str] | None = None) -> int:
             content = " ".join(ns.text)
         elif not sys.stdin.isatty():
             content = sys.stdin.read()
+            if content == "":
+                print(write_usage, file=sys.stderr)
+                return 2
         else:
-            print(
-                "usage: python -m agents_memory write FILE_ID [--file PATH | TEXT...]",
-                file=sys.stderr,
-            )
+            print(write_usage, file=sys.stderr)
             return 2
         from .store import write_memory_file
 

@@ -32,8 +32,10 @@ jobs:
       - name: Run test suite
         timeout-minutes: 5
         run: |
+          python scripts/sync_bundled.py --check
+          python -m agents_memory --help-json
           python -m agents_memory inventory --help-json
-          pytest
+          pytest -q --tb=short
 
   notify-failure:
     name: Notify CI Failure

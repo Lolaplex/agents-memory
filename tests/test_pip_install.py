@@ -109,7 +109,20 @@ class PipInstallTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr.strip() or proc.stdout.strip())
-        self.assertIn("Commands:", proc.stdout)
+        self.assertIn("Vault CRUD", proc.stdout)
+        self.assertIn("search QUERY", proc.stdout)
+        spec = subprocess.run(
+            [str(self._venv_executable("agents-memory")), "help-json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(spec.returncode, 0, spec.stderr.strip() or spec.stdout.strip())
+        import json
+
+        data = json.loads(spec.stdout)
+        self.assertEqual(data["name"], "agents-memory")
+        self.assertIn("write", data["commands"])
+        self.assertIn("search", data["scripts_no_flags"])
 
 
 if __name__ == "__main__":

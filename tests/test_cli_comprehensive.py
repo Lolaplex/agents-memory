@@ -115,9 +115,24 @@ class CLIComprehensiveTests(unittest.TestCase):
         self.assertIn("gamma", body)
 
     def test_write_requires_content(self):
-        res = self._run_cli("write", "user/USER.md", check=False)
+        agents = self.root / "agents"
+        mem = agents / "memory"
+        mem.mkdir(parents=True)
+        target = mem / "USER.md"
+        target.write_text("# keep\n", encoding="utf-8")
+        env = dict(self.env)
+        env["AGENTS_HOME"] = str(agents)
+        res = subprocess.run(
+            [sys.executable, "-m", "agents_memory", "write", "user/USER.md"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            input="",
+            env=env,
+        )
         self.assertEqual(res.returncode, 2)
         self.assertIn("usage: python -m agents_memory write", res.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8"), "# keep\n")
 
     def test_delete_requires_id(self):
         res = self._run_cli("delete", check=False)

@@ -132,8 +132,10 @@ Sync upserts a closed pair `<!-- agents-memory-sync -->` … `<!-- /agents-memor
 | `python -m agents_memory ingest catalog` | Rebuild `chats-index.md` (titles + paths only — link for search) |
 | `python -m agents_memory ingest extract` | Filter durable user lines into staging (not typed memory) |
 | `python -m agents_memory distill` | Show grouped staging inbox (inspect before distill) |
-| `python -m agents_memory extract-openai` | Open AI GDPR export wrapper (`--out` = legacy JSON) |
+| `python -m agents_memory write` / `delete` / `related` | MCP CRUD mirrors for vault files / hit lines / relations |
 | `python -m agents_memory mcp` | stdio MCP — see [`MCP.md`](MCP.md) |
+
+Deprecated: `extract-openai` → use `ingest extract` (openai-export source; `--out` still legacy JSON on the wrapper).
 
 Ingest contract (all providers): catalog → pointers, extract → filtered staging, distill → explicit promote. See [`INGEST.md`](INGEST.md).
 

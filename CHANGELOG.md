@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redundant `source.yaml` at repository root in favor of standard `source.yml`.
 - Legacy hardcoded rule prefix filter in store rule purger.
 - Synthetic personal name references in remote test suites.
+- Root `ROADMAP.md` (stale package backlog). Non-goals stay in [`abi/WHY.md`](abi/WHY.md).
 
 ### Fixed
 - Staging and path resolution for child and moved repositories (`inventory --repair-moved`).

@@ -79,8 +79,6 @@ No roff man page. Agents: use `--help-json`, not README scraping. Details: [`INS
 
 This repository's **Python package** (`src/agents_memory/`: MCP server, `store`, `sync`, `inventory`, `ingest`) is the reference implementation of this ABI.
 
-Future work on that package (not ABI changes): [`../ROADMAP.md`](../ROADMAP.md).
-
 
 
 Implementations in other languages should treat `abi/` as normative. Bump [`VERSION`](VERSION) on breaking path or tool contract changes; additive folders/kinds are minor bumps.

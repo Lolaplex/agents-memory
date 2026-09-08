@@ -39,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Root `--help` groups vault CRUD, projects/inject, staging/ingest, and ops; documents aliases and deprecations.
 - `ingest-chats` is an explicit alias of `ingest catalog`.
 - `connect` / `disconnect` documented as `remote` aliases (still work top-level).
-- Moved Docker deployment templates from repository root to `deploy/` (`deploy/Dockerfile`, `deploy/docker-compose.yml`).
 - Dynamic remote configuration resolution in `agents_memory.remote.client` for strict test environment isolation.
 
 ### Deprecated
@@ -55,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy hardcoded rule prefix filter in store rule purger.
 - Synthetic personal name references in remote test suites.
 - Root `ROADMAP.md` (stale package backlog). Non-goals stay in [`abi/WHY.md`](abi/WHY.md).
+- `deploy/` Docker, compose, and systemd templates. Host the mirror with `agents-memory remote serve`.
 
 ### Fixed
 - Staging and path resolution for child and moved repositories (`inventory --repair-moved`).

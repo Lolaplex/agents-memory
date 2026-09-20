@@ -70,6 +70,8 @@ def add_memory(
     Sequential 001-topic.md: plans, tasks, waves, roadmap, decisions, lifecycle notes.
     kind=research is topical (input). project= alone writes <repo>/.agents/memory/facts.md (direct fact).
     Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
+    Revise-in-place kinds (research, decision, adr, implemented) can be initialized with add_memory,
+    but subsequent edits to an existing file MUST use write_memory_file.
     """
     try:
         loc = store_add(

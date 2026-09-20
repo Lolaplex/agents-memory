@@ -18,7 +18,7 @@ Appends staging overflow notice if staging depth >= threshold.
 
 ### `add_memory(fact_or_message, kind="", name="", project="", collection="")`
 
-File a durable fact. See [`KINDS.md`](KINDS.md). Returns the relative path written and auto-syncs across all IDEs/CLIs.
+File a durable fact. See [`KINDS.md`](KINDS.md). Returns the relative path written and auto-syncs across all IDEs/CLIs. For revise-in-place kinds (`research`, `decision`, `adr`, `implemented`), `add_memory` initializes a new file, but rejects appending to an already existing file (`write_memory_file` must be used).
 
 ### `read_memory_file(file_id)`
 

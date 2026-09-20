@@ -29,7 +29,7 @@ def _wrap(name: str, fn):
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search user store (remote canonical) plus local repo .agents/memory trees."""
+    """Search. Empty project= is user store only; pass project=slug or *."""
     return dispatch_tool("search_memory", local_mcp.search_memory, query=query, project=project)
 
 

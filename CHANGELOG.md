@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Stable hash-anchored memory IDs in `search_memory` and `delete_memory` (`<path>:<line>#<hash8>`, pure `<path>#<hash8>`, and uniform `memory:` prefix) with shift-tolerant resolution.
+- Search evals: unqualified search stays in the user store, `project=a` never leaks project b, and secrets scrubbed on `add_memory` do not come back from search.
 
 ### Fixed
 - Line-decay and off-by-one errors when deleting multiple items from the same file: `delete_memory` now verifies and resolves content-hash anchors across line shifts, preventing silent deletion of wrong lines.
 
 ### Changed
+- `search_memory` with no `project=` searches the user store only. Pass `project=<slug>` for that clone plus user facts, or `project=*` for every registered clone. CLI infers a clone from cwd; MCP does not.
+- Hybrid search keeps at most two exact hits per file, then FTS5-fills other files, so one noisy exact match no longer hides the rest. FTS fill uses real line+hash ids (no `:0`).
 - CI runs only on pull requests to `main`.
 
 ### Removed

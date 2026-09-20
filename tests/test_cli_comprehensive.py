@@ -175,7 +175,11 @@ class CLIComprehensiveTests(unittest.TestCase):
     def test_search_cli_requires_query(self):
         res = self._run_cli("search", check=False)
         self.assertEqual(res.returncode, 2)
-        self.assertIn("usage: python -m agents_memory search QUERY", res.stderr)
+        self.assertIn("search", res.stderr.lower())
+        self.assertTrue(
+            "required: query" in res.stderr or "QUERY" in res.stderr,
+            res.stderr,
+        )
 
     def test_ingest_cli_status(self):
         res = self._run_cli("ingest", "status")

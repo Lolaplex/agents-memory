@@ -7,7 +7,7 @@ Two layers, one retrieval:
 - Project: ``<repo>/.agents/memory`` — staging (inbox), research, sequential
   plans/tasks/waves/roadmap, decisions, lifecycle notes.
 
-Search unions both. Always-on injection stays short (USER.md + PROJECTS.md).
+Search default is the user store; pass `project=` (or `*`) to include clones.
 Chat bodies stay in product folders; only titles/paths are ingested.
 `add_memory` requires kind+name (user taxonomy) or project= (in-tree notes).
 AGENTS.md is the instruction file. Sync splices a closed
@@ -1506,7 +1506,8 @@ def compact_projects_text(projects: List[Project]) -> str:
     lines = [
         "# Projects (Compact)",
         "",
-        "Use MCP `get_project_memories(project=slug)` or `search_memory` for details.",
+        "Use MCP `get_project_memories(project=slug)`. "
+        "`search_memory` without `project=` is the user store only; pass `project=` for a repo.",
         "",
         "| slug | role | stack | status |",
         "| --- | --- | --- | --- |",
@@ -2025,6 +2026,38 @@ def _markdown_under(root: Path) -> List[Path]:
     return sorted(p for p in root.rglob("*.md") if p.is_file())
 
 
+SEARCH_ALL = "*"
+EXACT_HITS_PER_FILE = 2
+
+
+def resolve_search_project(project: str) -> str:
+    """Normalize search scope. Empty = user store only. `*` / `all` = every clone."""
+    token = (project or "").strip()
+    if token.lower() in ("*", "all"):
+        return SEARCH_ALL
+    return token
+
+
+def project_slug_for_cwd(cwd: Optional[Path] = None) -> str:
+    """Registered clone that contains cwd, longest path wins. Else empty."""
+    try:
+        here = (cwd or Path.cwd()).resolve()
+    except OSError:
+        return ""
+    best = ""
+    best_len = -1
+    for p in parse_projects():
+        if not p.path_obj.is_dir():
+            continue
+        root = p.path_obj.resolve()
+        if here == root or root in here.parents:
+            n = len(root.parts)
+            if n > best_len:
+                best = p.slug
+                best_len = n
+    return best
+
+
 def iter_user_memory_files() -> List[Path]:
     return _markdown_under(USER_MEMORY)
 
@@ -2044,11 +2077,21 @@ def iter_project_memory_files(slug: str = "") -> List[Path]:
 
 
 def iter_memory_files(project: str = "") -> List[Path]:
-    """Overarching retrieval: project store(s) first (higher priority), then user store."""
+    """Search file set: scoped project trees first, then user store.
+
+    Empty project → user store only. `*` → every registered clone + user.
+    A slug → that clone + user. `iter_project_memory_files()` with no slug
+    still lists every clone (check/inventory).
+    """
     seen: set[str] = set()
     out: List[Path] = []
-    # Project-specific facts have higher priority than global user facts
-    chunks = iter_project_memory_files(project.strip() if project else "")
+    token = resolve_search_project(project)
+    if token == SEARCH_ALL:
+        chunks = iter_project_memory_files("")
+    elif token:
+        chunks = iter_project_memory_files(token)
+    else:
+        chunks = []
     chunks.extend(iter_user_memory_files())
     for path in chunks:
         key = str(path.resolve()).lower()
@@ -2095,62 +2138,96 @@ def _read_cached_lines(path: Path) -> List[str]:
     return lines
 
 
+def _line_search_hit(ident: str, line_no: int, text: str) -> dict[str, Any]:
+    clean = text.strip()
+    return {
+        "id": f"{ident}:{line_no}#{line_content_hash(clean)}",
+        "file": ident,
+        "line": line_no,
+        "text": clean,
+    }
+
+
+def _fts_file_hit(fid: str, query: str) -> Optional[dict[str, Any]]:
+    """Map an FTS document id to a real line hit. Skip if no term lands on a line."""
+    try:
+        path = resolve_memory_path(fid)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    if not path.is_file():
+        return None
+    terms = [t.lower() for t in re.findall(r"\w+", query)]
+    if not terms:
+        return None
+    for i, line in enumerate(_read_cached_lines(path), 1):
+        low = line.lower()
+        if any(t in low for t in terms):
+            return _line_search_hit(fid, i, line)
+    return None
+
+
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
-    """Exact substring first, then FTS5 fill. A weak exact hit does not hide other files."""
+    """Exact substring first (capped per file), then FTS5 fill from other files."""
     limit = max(1, limit)
     q = query.lower().strip()
-    files = iter_memory_files(project=project)
-    hits: List[dict[str, Any]] = []
-    seen_files: set[str] = set()
+    token = resolve_search_project(project)
+    files = iter_memory_files(project=token)
+    exact: List[dict[str, Any]] = []
+    per_file: dict[str, int] = {}
     for path in files:
-        lines = _read_cached_lines(path)
-        for i, line in enumerate(lines, 1):
+        ident = file_id(path)
+        n = 0
+        for i, line in enumerate(_read_cached_lines(path), 1):
             if not q or q not in line.lower():
                 continue
-            ident = file_id(path)
-            clean_text = line.strip()
-            line_hash = line_content_hash(clean_text)
-            hits.append(
-                {
-                    "id": f"{ident}:{i}#{line_hash}",
-                    "file": ident,
-                    "line": i,
-                    "text": clean_text,
-                }
-            )
-            seen_files.add(ident)
-            if len(hits) >= limit:
-                return hits
+            exact.append(_line_search_hit(ident, i, line))
+            n += 1
+            if n >= EXACT_HITS_PER_FILE:
+                break
+        if n:
+            per_file[ident] = n
 
-    remaining = limit - len(hits)
-    if remaining <= 0:
-        return hits
+    first_by_file: List[dict[str, Any]] = []
+    extra_exact: List[dict[str, Any]] = []
+    seen_first: set[str] = set()
+    for hit in exact:
+        fid = str(hit["file"])
+        if fid in seen_first:
+            extra_exact.append(hit)
+            continue
+        seen_first.add(fid)
+        first_by_file.append(hit)
+
+    hits: List[dict[str, Any]] = list(first_by_file)
+    seen_files = set(seen_first)
+
     idx = USER_MEMORY / ".index" / "fts.sqlite"
-    if not idx.is_file():
-        return hits
-    try:
-        from .index import search_hybrid
+    if idx.is_file() and len(hits) < limit:
+        try:
+            from .index import search_hybrid
 
-        ranked = search_hybrid(query, project=project, limit=limit, db_path=idx)
-        for h in ranked:
-            fid = str(h.get("id") or "").strip()
-            if not fid or fid in seen_files:
-                continue
-            snippet = re.sub(r"<[^>]+>", "", str(h.get("snippet") or "")).strip()
-            hits.append(
-                {
-                    "id": f"{fid}:0",
-                    "file": fid,
-                    "line": 0,
-                    "text": snippet or str(h.get("title") or fid),
-                }
-            )
-            seen_files.add(fid)
+            ranked = search_hybrid(query, project=token, limit=limit, db_path=idx)
+            for h in ranked:
+                if len(hits) >= limit:
+                    break
+                fid = str(h.get("id") or "").strip()
+                if not fid or fid in seen_files:
+                    continue
+                mapped = _fts_file_hit(fid, query)
+                if mapped is None:
+                    continue
+                hits.append(mapped)
+                seen_files.add(fid)
+        except Exception:
+            pass
+
+    if len(hits) < limit:
+        for hit in extra_exact:
             if len(hits) >= limit:
                 break
-    except Exception:
-        pass
-    return hits
+            hits.append(hit)
+
+    return hits[:limit]
 
 
 KIND_FOLDERS = {

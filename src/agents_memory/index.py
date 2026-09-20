@@ -297,11 +297,16 @@ def get_related(
     if not target_path.exists():
         rebuild_index(target_path)
 
+    clean_id = memory_id.strip()
+    if clean_id.startswith("memory:"):
+        clean_id = clean_id[len("memory:") :].strip()
+    doc_lookup = clean_id.split("#")[0].split(":")[0].strip() or clean_id
+
     conn = get_db(target_path)
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, title, project, frontmatter_json, headings, content FROM documents WHERE id = ? OR id LIKE ?",
-        (memory_id, f"%{memory_id}%"),
+        "SELECT id, title, project, frontmatter_json, headings, content FROM documents WHERE id = ? OR id = ? OR id LIKE ?",
+        (doc_lookup, memory_id, f"%{doc_lookup}%"),
     )
     row = cur.fetchone()
     if not row:

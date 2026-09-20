@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Stable hash-anchored memory IDs in `search_memory` and `delete_memory` (`<path>:<line>#<hash8>`, pure `<path>#<hash8>`, and uniform `memory:` prefix) with shift-tolerant resolution.
+
+### Fixed
+- Line-decay and off-by-one errors when deleting multiple items from the same file: `delete_memory` now verifies and resolves content-hash anchors across line shifts, preventing silent deletion of wrong lines.
+
 ### Changed
 - CI runs only on pull requests to `main`.
 

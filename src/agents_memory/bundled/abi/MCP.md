@@ -9,7 +9,7 @@ Version: see [`VERSION`](VERSION).
 ### `search_memory(query, project="")`
 
 Search all local markdown: user store plus each registered project's `<repo>/.agents/memory/`.
-Exact substring first (stable line ids for `delete_memory`), then ranked FTS5 fill so one weak exact hit does not hide other files.
+Exact substring first with stable hash-anchored IDs (`<rel_path>:<line>#<hash8>`, e.g. `user/notes/programming/chat-stores.md:3#a1b2c3d4`), then ranked FTS5 fill so one weak exact hit does not hide other files.
 Known project slug → `get_project_memories`. Does **not** search product chat/jsonl graves — use `chats-index.md` for paths to bodies on disk.
 Appends staging overflow notice if staging depth >= threshold.
 
@@ -50,8 +50,9 @@ Return the project link README plus in-tree `.agents/memory` markdown for one sl
 
 ### `delete_memory(memory_id)`
 
-Delete one bullet line by id from a prior `search_memory` result
-(e.g. `user/notes/programming/chat-stores.md:3`). Auto-syncs.
+Delete one bullet line by id from a prior `search_memory` result.
+Supports stable hash-anchored IDs (`user/notes/foo.md:3#a1b2c3d4`), pure hash IDs (`user/notes/foo.md#a1b2c3d4`), uniform prefix (`memory:...`), and legacy line IDs (`...:3`).
+Uses shift-tolerant content-hash matching if prior deletions moved line positions, and raises clean errors without silent line corruption. Auto-syncs.
 
 ### `list_projects()`
 

@@ -18,6 +18,7 @@ CLAUDE.md is bound to AGENTS.md only when it has no text outside that block.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -1929,6 +1930,12 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     return written, warnings
 
 
+def line_content_hash(text: str) -> str:
+    """Stable 8-character hex hash of normalized line content."""
+    clean = text.strip()
+    return hashlib.sha256(clean.encode("utf-8")).hexdigest()[:8]
+
+
 def file_id(path: Path) -> str:
     path = path.resolve()
     try:
@@ -1954,6 +1961,9 @@ def file_id(path: Path) -> str:
 
 
 def resolve_memory_path(rel: str) -> Path:
+    rel = rel.strip()
+    if rel.startswith("memory:"):
+        rel = rel[len("memory:"):].strip()
     rel = rel.replace("\\", "/").lstrip("/")
     if rel in ("user/USER.md", "USER.md", "user.md"):
         return USER_MD
@@ -2098,12 +2108,14 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
             if not q or q not in line.lower():
                 continue
             ident = file_id(path)
+            clean_text = line.strip()
+            line_hash = line_content_hash(clean_text)
             hits.append(
                 {
-                    "id": f"{ident}:{i}",
+                    "id": f"{ident}:{i}#{line_hash}",
                     "file": ident,
                     "line": i,
-                    "text": line.strip(),
+                    "text": clean_text,
                 }
             )
             seen_files.add(ident)
@@ -2440,20 +2452,64 @@ def get_project_memories(project: str) -> str:
 
 
 def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
-    if ":" not in memory_id:
+    clean_id = memory_id.strip()
+    if clean_id.startswith("memory:"):
+        clean_id = clean_id[len("memory:") :].strip()
+
+    hash_anchor = ""
+    if "#" in clean_id:
+        clean_id, hash_anchor = clean_id.split("#", 1)
+        hash_anchor = hash_anchor.strip().lower()
+
+    if ":" not in clean_id and not hash_anchor:
         raise ValueError(
-            "id must look like 'user/notes/programming/chat-stores.md:12' "
-            "or 'project/slug/staging/captured.md:8'"
+            "id must look like 'user/notes/programming/chat-stores.md:12#a1b2c3d4' "
+            "or 'project/slug/staging/captured.md:8' or 'user/notes/foo.md#a1b2c3d4'"
         )
-    rel, _, line_s = memory_id.rpartition(":")
-    line_no = int(line_s)
+
+    if ":" in clean_id:
+        rel, _, line_s = clean_id.rpartition(":")
+        try:
+            line_no = int(line_s)
+        except ValueError:
+            line_no = 0
+    else:
+        rel = clean_id
+        line_no = 0
+
     path = resolve_memory_path(rel)
     if not path.exists():
         raise FileNotFoundError(rel)
+
     lines = _read(path).splitlines()
-    if line_no < 1 or line_no > len(lines):
-        raise IndexError(memory_id)
-    removed = lines.pop(line_no - 1)
+    if not lines:
+        raise IndexError(f"Memory file '{rel}' is empty")
+
+    target_idx = None
+    if hash_anchor:
+        # Fast path: check if hinted line_no matches the hash anchor
+        if 1 <= line_no <= len(lines) and line_content_hash(lines[line_no - 1]) == hash_anchor:
+            target_idx = line_no - 1
+        else:
+            # Line shifted due to previous deletes or edits: scan for matching content hash
+            matches = [
+                idx for idx, l in enumerate(lines) if line_content_hash(l) == hash_anchor
+            ]
+            if matches:
+                # If multiple identical lines, pick closest to line_no - 1
+                target_idx = min(
+                    matches, key=lambda idx: abs(idx - (line_no - 1 if line_no > 0 else 0))
+                )
+            else:
+                raise ValueError(
+                    f"Content hash '#{hash_anchor}' not found in '{rel}' (already deleted or modified)"
+                )
+    else:
+        if line_no < 1 or line_no > len(lines):
+            raise IndexError(memory_id)
+        target_idx = line_no - 1
+
+    removed = lines.pop(target_idx)
     _write(path, "\n".join(lines))
     clear_memory_cache()
     if auto_sync:

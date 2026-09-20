@@ -120,7 +120,7 @@ NOTE_CLASSES = (
 )
 # add_memory appends bullets. These kinds should be edited in place when facts change.
 REVISE_IN_PLACE_KINDS = frozenset(
-    {"research", "implemented", "decision", "decisions", "adr", "project", "projects"}
+    {"research", "implemented", "decision", "decisions", "adr"}
 )
 APPEND_INBOX_KINDS = frozenset({"staging", "captured", "scratch"})
 PROJECT_MEMORY_TOP = (
@@ -2495,16 +2495,17 @@ def add_memory(
         raise ValueError("empty fact")
     path = memory_file_for(kind=kind, name=name, project=project, collection=collection)
     existed = path.exists()
+    k = (kind or "").strip().lower()
+    if k in REVISE_IN_PLACE_KINDS and existed:
+        fid = file_id(path)
+        raise ValueError(
+            f"Cannot append to existing '{fid}' for revise-in-place kind '{k}'. "
+            f"Revise this file in place using write_memory_file(file_id='{fid}', content=...)."
+        )
     loc = _append_bullet(path, fact)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
-    k = (kind or "").strip().lower()
-    if k in REVISE_IN_PLACE_KINDS and existed:
-        return (
-            f"{loc} — revise this file in place when facts change; "
-            "do not only append bullets"
-        )
     return loc
 
 

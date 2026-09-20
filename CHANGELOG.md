@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Line-decay and off-by-one errors when deleting multiple items from the same file: `delete_memory` now verifies and resolves content-hash anchors across line shifts, preventing silent deletion of wrong lines.
 
 ### Changed
+- Strict mutability contract for revise-in-place kinds: `add_memory` raises `ValueError` if attempting to append bullets to an already existing revise-in-place file (`research`, `decision`, `adr`, `implemented`), directing caller to `write_memory_file`.
 - `search_memory` with no `project=` searches the user store only. Pass `project=<slug>` for that clone plus user facts, or `project=*` for every registered clone. CLI infers a clone from cwd; MCP does not.
 - Hybrid search keeps at most two exact hits per file, then FTS5-fills other files, so one noisy exact match no longer hides the rest. FTS fill uses real line+hash ids (no `:0`).
 - CI runs only on pull requests to `main`.

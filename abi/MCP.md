@@ -8,9 +8,12 @@ Version: see [`VERSION`](VERSION).
 
 ### `search_memory(query, project="")`
 
-Search all local markdown: user store plus each registered project's `<repo>/.agents/memory/`.
-Exact substring first with stable hash-anchored IDs (`<rel_path>:<line>#<hash8>`, e.g. `user/notes/programming/chat-stores.md:3#a1b2c3d4`), then ranked FTS5 fill so one weak exact hit does not hide other files.
-Known project slug → `get_project_memories`. Does **not** search product chat/jsonl graves — use `chats-index.md` for paths to bodies on disk.
+Search local markdown. **Default (`project` omitted) is the user store only** (`~/.agents/memory`). An unqualified search must not leak every registered clone.
+
+- `project=<slug>` — that clone's `<repo>/.agents/memory/` plus the user store.
+- `project=*` (or `all`) — every registered clone plus the user store.
+
+Exact substring first (at most two hits per file) with stable hash-anchored IDs (`<rel_path>:<line>#<hash8>`, e.g. `user/notes/programming/chat-stores.md:3#a1b2c3d4`), then ranked FTS5 fill from other files so one noisy exact file does not hide another. Repo architecture: `get_project_memories(slug)` or pass `project=`. Does **not** search product chat/jsonl graves — use `chats-index.md` for paths to bodies on disk.
 Appends staging overflow notice if staging depth >= threshold.
 
 ### `add_memory(fact_or_message, kind="", name="", project="", collection="")`

@@ -17,10 +17,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from .store import (
     CHRONICLE_DIR,
     PROJECTS_MD,
+    SEARCH_ALL,
     USER_MEMORY,
     Project,
     _read,
     parse_projects,
+    resolve_search_project,
 )
 
 INDEX_DIR = USER_MEMORY / ".index"
@@ -255,10 +257,14 @@ def search_hybrid(
         WHERE documents_fts MATCH ?
     """
     params: List[Any] = [fts_query]
-
-    if project:
-        sql += " AND d.project = ?"
-        params.append(project)
+    token = resolve_search_project(project)
+    if token == SEARCH_ALL:
+        pass
+    elif token:
+        sql += " AND (d.project = ? OR d.project = '')"
+        params.append(token)
+    else:
+        sql += " AND d.project = ''"
 
     sql += " ORDER BY rank LIMIT ?"
     params.append(max(1, limit))

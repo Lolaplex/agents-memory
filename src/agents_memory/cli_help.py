@@ -143,8 +143,8 @@ def full_spec() -> dict[str, Any]:
             "aliases": ["list-projects"],
         },
         "search": {
-            "description": "Lexical search over the markdown vault (exact then FTS5 fill).",
-            "usage": "python -m agents_memory search QUERY",
+            "description": "Lexical search (user store default; --project SLUG or --all).",
+            "usage": "python -m agents_memory search QUERY [--project SLUG | --all]",
         },
         "add": {
             "description": "File a durable fact/note (MCP add_memory mirror).",

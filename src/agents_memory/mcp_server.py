@@ -31,12 +31,12 @@ mcp = FastMCP("agents-memory")
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
-    """Search typed markdown under ~/.agents/memory and registered repos.
+    """Search typed markdown. Empty project= is the user store only (~/.agents/memory).
 
-    Exact substring first (stable line ids), then ranked FTS5 fill so one weak
-    exact hit does not hide other files. Known project slug → get_project_memories.
-    CALL PROACTIVELY before guessing architecture, decisions, or preferences.
-    Does not search product chat/jsonl graves — use chats-index.md for body paths.
+    Pass project=<slug> for that clone plus the user store. project=* searches every
+    registered clone. Exact substring first (max two hits per file, hash ids), then
+    ranked FTS5 fill so one noisy file does not hide another. Repo architecture:
+    get_project_memories(slug) or pass project=. Does not search product chat/jsonl.
     """
     try:
         hits = store_search(query, project=project)

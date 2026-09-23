@@ -66,6 +66,7 @@ ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
 PROJECTS_MD = USER_MEMORY / "PROJECTS.md"
 SCAN_JSON = USER_MEMORY / "scan.json"
+HOST_PATHS_JSON = USER_MEMORY / "host_paths.json"
 INGEST_JSON = USER_MEMORY / "ingest.json"
 FACTS_MD = USER_MEMORY / "facts.md"
 CHATS_INDEX = USER_MEMORY / "chats-index.md"
@@ -185,6 +186,22 @@ ROW_RE = re.compile(
 )
 
 
+def load_host_paths() -> dict[str, str]:
+    if not HOST_PATHS_JSON.exists():
+        return {}
+    try:
+        data = json.loads(_read(HOST_PATHS_JSON))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_host_path(slug: str, path: str) -> None:
+    data = load_host_paths()
+    data[slug] = str(Path(path).expanduser().resolve())
+    _write(HOST_PATHS_JSON, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+
 @dataclass
 class Project:
     slug: str
@@ -195,7 +212,39 @@ class Project:
 
     @property
     def path_obj(self) -> Path:
-        return Path(self.path)
+        # 1. Host-local path override (host_paths.json)
+        try:
+            hp = load_host_paths().get(self.slug)
+            if hp:
+                p = Path(hp).expanduser()
+                if p.is_dir():
+                    return p
+        except Exception:
+            pass
+
+        # 2. Check self.path directly
+        if self.path:
+            try:
+                p = Path(self.path).expanduser()
+                if p.is_dir():
+                    return p
+            except Exception:
+                pass
+
+        # 3. Convention lookup in scan roots (<root>/<slug>)
+        try:
+            for root_str in scan_roots():
+                candidate = Path(root_str) / self.slug
+                if candidate.is_dir():
+                    return candidate
+        except Exception:
+            pass
+
+        # 4. Fallback
+        try:
+            return Path(self.path).expanduser() if self.path else Path()
+        except Exception:
+            return Path(self.path) if self.path else Path()
 
     @property
     def memory_dir(self) -> Path:
@@ -1479,6 +1528,7 @@ def register_project(
 ) -> Project:
     slug = slug.strip()
     path = str(Path(path).expanduser().resolve())
+    save_host_path(slug, path)
     projects = parse_projects()
     existing = {p.slug: p for p in projects}
     p = Project(slug=slug, path=path, role=role, stack=stack, status=status)

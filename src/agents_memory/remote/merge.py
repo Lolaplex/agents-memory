@@ -169,6 +169,58 @@ def merge_table_markdown_with_conflicts(
         if pk not in merged_rows:
             merged_rows[pk] = row_line
         elif merged_rows[pk].strip() != row_line.strip():
+            # Check if this is a PROJECTS.md table with path column preservation
+            base_row = merged_rows[pk].strip()
+            inc_row = row_line.strip()
+            base_cells = (
+                [c.strip() for c in base_row[1:-1].split("|")]
+                if base_row.startswith("|") and base_row.endswith("|")
+                else []
+            )
+            inc_cells = (
+                [c.strip() for c in inc_row[1:-1].split("|")]
+                if inc_row.startswith("|") and inc_row.endswith("|")
+                else []
+            )
+
+            # If table has slug and path columns (standard PROJECTS.md format)
+            if len(base_cells) >= 5 and len(inc_cells) >= 5:
+                base_raw_path = base_cells[1].strip("` ")
+                inc_raw_path = inc_cells[1].strip("` ")
+
+                base_exists = False
+                try:
+                    if base_raw_path and Path(base_raw_path).expanduser().is_dir():
+                        base_exists = True
+                except Exception:
+                    base_exists = False
+
+                inc_exists = False
+                try:
+                    if inc_raw_path and Path(inc_raw_path).expanduser().is_dir():
+                        inc_exists = True
+                except Exception:
+                    inc_exists = False
+
+                # If local base path exists on this host, but incoming path does not:
+                # Retain the working local path while adopting incoming role, stack, status.
+                if base_exists and not inc_exists:
+                    merged_cells = list(inc_cells)
+                    merged_cells[1] = base_cells[1]
+                    reconstructed = "| " + " | ".join(merged_cells) + " |"
+                    merged_rows[pk] = reconstructed
+                    # Only log conflict if metadata (role/stack/status) actually conflicted
+                    if inc_cells[2:] != base_cells[2:]:
+                        conflicts.append(
+                            {
+                                "slug": pk,
+                                "file": "PROJECTS.md",
+                                "base": merged_rows[pk],
+                                "incoming": row_line,
+                            }
+                        )
+                    continue
+
             conflicts.append(
                 {
                     "slug": pk,

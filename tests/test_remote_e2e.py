@@ -123,19 +123,26 @@ class TestRemoteE2E(unittest.TestCase):
         self.assertIn("mirror/projects/e2eproj/facts.md", snap_files)
         self.assertIn("mirrored", snap_files["mirror/projects/e2eproj/facts.md"])
 
-        # Save remote config
-        save_remote_config(url=base_url, token=self.token)
-        cfg = get_remote_config()
-        self.assertIsNotNone(cfg)
+        # Test remote config & mcp_entry isolated from live user store
+        import agents_memory.remote.client as client_mod
+        orig_config_file = client_mod.CONFIG_FILE
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                client_mod.CONFIG_FILE = Path(td) / "remote_config.json"
+                save_remote_config(url=base_url, token=self.token)
+                cfg = get_remote_config()
+                self.assertIsNotNone(cfg)
 
-        # Test mcp_entry uses mirror sync MCP
-        entry = mcp_entry()
-        self.assertIn("sync_mcp", entry["args"][-1])
+                # Test mcp_entry uses mirror sync MCP
+                entry = mcp_entry()
+                self.assertIn("sync_mcp", entry["args"][-1])
 
-        # Disconnect restores local mode
-        clear_remote_config()
-        entry_local = mcp_entry()
-        self.assertEqual(entry_local["args"], ["-m", "agents_memory.mcp_server"])
+                # Disconnect restores local mode
+                clear_remote_config()
+                entry_local = mcp_entry()
+                self.assertEqual(entry_local["args"], ["-m", "agents_memory.mcp_server"])
+        finally:
+            client_mod.CONFIG_FILE = orig_config_file
 
 
 if __name__ == "__main__":

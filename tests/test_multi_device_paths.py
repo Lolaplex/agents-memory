@@ -22,8 +22,8 @@ def test_project_path_obj_dynamic_resolution(monkeypatch, tmp_path):
     monkeypatch.setattr("agents_memory.store.scan_roots", lambda: [str(roots_dir)])
     monkeypatch.setattr("agents_memory.store.load_host_paths", lambda: {})
 
-    # Foreign Windows path on Unix (or non-existent path)
-    p = Project(slug="veadio", path=r"C:\Users\felix\Coding\veadio", role="app", stack="TS")
+    # Foreign Windows/Unix path (non-existent on current host)
+    p = Project(slug="veadio", path=r"Z:\foreign_device\Coding\veadio", role="app", stack="TS")
     assert p.path_obj == repo_dir
     assert p.path_obj.is_dir()
 
@@ -35,7 +35,7 @@ def test_project_path_obj_host_override(monkeypatch, tmp_path):
 
     monkeypatch.setattr("agents_memory.store.load_host_paths", lambda: {"veadio": str(custom_dir)})
 
-    p = Project(slug="veadio", path=r"C:\Users\felix\Coding\veadio", role="app", stack="TS")
+    p = Project(slug="veadio", path=r"Z:\foreign_device\Coding\veadio", role="app", stack="TS")
     assert p.path_obj == custom_dir
 
 
@@ -53,12 +53,12 @@ def test_merge_projects_table_preserves_local_path(tmp_path):
     incoming_table = (
         "| slug | path | role | stack | status |\n"
         "|------|------|------|-------|--------|\n"
-        r"| veadio | `C:\Users\felix\Coding\veadio` | Reader | TS | active |" "\n"
+        r"| veadio | `Z:\foreign_device\Coding\veadio` | Reader | TS | active |" "\n"
     )
 
     merged, conflicts = merge_table_markdown_with_conflicts(base_table, incoming_table)
     assert f"`{local_repo}`" in merged
-    assert "C:\\Users\\felix" not in merged
+    assert "foreign_device" not in merged
     # Pure path difference should not log conflict
     assert len(conflicts) == 0
 
@@ -77,7 +77,7 @@ def test_merge_projects_table_updates_metadata_while_keeping_local_path(tmp_path
     incoming_table = (
         "| slug | path | role | stack | status |\n"
         "|------|------|------|-------|--------|\n"
-        r"| veadio | `C:\Users\felix\Coding\veadio` | Production App | TS, Python | active |" "\n"
+        r"| veadio | `Z:\foreign_device\Coding\veadio` | Production App | TS, Python | active |" "\n"
     )
 
     merged, conflicts = merge_table_markdown_with_conflicts(base_table, incoming_table)

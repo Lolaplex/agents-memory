@@ -85,24 +85,31 @@ class TestRemoteServerClient(unittest.TestCase):
         self.assertIn("Hello from test client", resp.text)
 
     def test_client_config_cycle(self):
-        # Save config
-        saved = save_remote_config(
-            url="https://memory.test.dev",
-            token="mytoken",
-            auto_pull=True,
-        )
-        self.assertEqual(saved["url"], "https://memory.test.dev")
+        import agents_memory.remote.client as client_mod
+        orig_config_file = client_mod.CONFIG_FILE
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                client_mod.CONFIG_FILE = Path(td) / "remote_config.json"
+                # Save config
+                saved = save_remote_config(
+                    url="https://memory.test.dev",
+                    token="mytoken",
+                    auto_pull=True,
+                )
+                self.assertEqual(saved["url"], "https://memory.test.dev")
 
-        # Get config
-        cfg = get_remote_config()
-        self.assertIsNotNone(cfg)
-        self.assertEqual(cfg["url"], "https://memory.test.dev")
-        self.assertEqual(cfg["token"], "mytoken")
+                # Get config
+                cfg = get_remote_config()
+                self.assertIsNotNone(cfg)
+                self.assertEqual(cfg["url"], "https://memory.test.dev")
+                self.assertEqual(cfg["token"], "mytoken")
 
-        # Clear config
-        cleared = clear_remote_config()
-        self.assertTrue(cleared)
-        self.assertIsNone(get_remote_config())
+                # Clear config
+                cleared = clear_remote_config()
+                self.assertTrue(cleared)
+                self.assertIsNone(get_remote_config())
+        finally:
+            client_mod.CONFIG_FILE = orig_config_file
 
     def test_sse_dns_rebinding_protection_off(self):
         """Reverse-proxy Host headers must reach SSE; do not pin a personal domain."""

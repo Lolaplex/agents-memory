@@ -15,7 +15,7 @@ if hasattr(sys.stdout, "reconfigure"):
 USAGE = """Usage: python -m agents_memory COMMAND [args]
 
 Vault CRUD (MCP mirror):
-  search QUERY              Lexical search over the markdown vault
+  search QUERY [--project SLUG|--all]  User-store search; pass --project for a clone
   add TEXT [--kind ...]     File a durable fact/note
   read FILE_ID              Raw markdown / rule file
   write FILE_ID [--file P]  Overwrite file (TEXT args, --file, or stdin)
@@ -343,18 +343,36 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error saving memory: {e}", file=sys.stderr)
             return 1
     if cmd == "search":
-        from .store import search_memory
+        import argparse
 
-        query = " ".join(rest).strip()
-        if not query:
-            print("usage: python -m agents_memory search QUERY", file=sys.stderr)
+        from .store import project_slug_for_cwd, search_memory
+
+        parser = argparse.ArgumentParser(prog="agents_memory search")
+        parser.add_argument("query", nargs="+", help="Search string")
+        parser.add_argument(
+            "--project",
+            "-p",
+            default=None,
+            help="Clone slug (plus user store). Omit to infer cwd, else user store only.",
+        )
+        parser.add_argument(
+            "--all",
+            action="store_true",
+            help="Search every registered clone plus the user store.",
+        )
+        try:
+            ns = parser.parse_args(rest)
+        except SystemExit:
             return 2
-        hits = search_memory(query)
+        if ns.all:
+            proj = "*"
+        elif ns.project is not None:
+            proj = ns.project.strip()
+        else:
+            proj = project_slug_for_cwd()
+        hits = search_memory(" ".join(ns.query), project=proj)
         for hit in hits:
-            file_id = hit.get("file", "?")
-            line = hit.get("line", 0)
-            text = hit.get("text", "")
-            print(f"{file_id}:{line} {text}")
+            print(f"{hit.get('id', '?')} {hit.get('text', '')}")
         return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:

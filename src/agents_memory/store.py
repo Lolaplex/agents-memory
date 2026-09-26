@@ -7,7 +7,7 @@ Two layers, one retrieval:
 - Project: ``<repo>/.agents/memory`` — staging (inbox), research, sequential
   plans/tasks/waves/roadmap, decisions, lifecycle notes.
 
-Search unions both. Always-on injection stays short (USER.md + PROJECTS.md).
+Search default is the user store; pass `project=` (or `*`) to include clones.
 Chat bodies stay in product folders; only titles/paths are ingested.
 `add_memory` requires kind+name (user taxonomy) or project= (in-tree notes).
 AGENTS.md is the instruction file. Sync splices a closed
@@ -18,6 +18,7 @@ CLAUDE.md is bound to AGENTS.md only when it has no text outside that block.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -65,6 +66,7 @@ ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
 PROJECTS_MD = USER_MEMORY / "PROJECTS.md"
 SCAN_JSON = USER_MEMORY / "scan.json"
+HOST_PATHS_JSON = USER_MEMORY / "host_paths.json"
 INGEST_JSON = USER_MEMORY / "ingest.json"
 FACTS_MD = USER_MEMORY / "facts.md"
 CHATS_INDEX = USER_MEMORY / "chats-index.md"
@@ -119,7 +121,7 @@ NOTE_CLASSES = (
 )
 # add_memory appends bullets. These kinds should be edited in place when facts change.
 REVISE_IN_PLACE_KINDS = frozenset(
-    {"research", "implemented", "decision", "decisions", "adr", "project", "projects"}
+    {"research", "implemented", "decision", "decisions", "adr"}
 )
 APPEND_INBOX_KINDS = frozenset({"staging", "captured", "scratch"})
 PROJECT_MEMORY_TOP = (
@@ -184,6 +186,22 @@ ROW_RE = re.compile(
 )
 
 
+def load_host_paths() -> dict[str, str]:
+    if not HOST_PATHS_JSON.exists():
+        return {}
+    try:
+        data = json.loads(_read(HOST_PATHS_JSON))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_host_path(slug: str, path: str) -> None:
+    data = load_host_paths()
+    data[slug] = str(Path(path).expanduser().resolve())
+    _write(HOST_PATHS_JSON, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+
 @dataclass
 class Project:
     slug: str
@@ -194,7 +212,39 @@ class Project:
 
     @property
     def path_obj(self) -> Path:
-        return Path(self.path)
+        # 1. Host-local path override (host_paths.json)
+        try:
+            hp = load_host_paths().get(self.slug)
+            if hp:
+                p = Path(hp).expanduser()
+                if p.is_dir():
+                    return p
+        except Exception:
+            pass
+
+        # 2. Check self.path directly
+        if self.path:
+            try:
+                p = Path(self.path).expanduser()
+                if p.is_dir():
+                    return p
+            except Exception:
+                pass
+
+        # 3. Convention lookup in scan roots (<root>/<slug>)
+        try:
+            for root_str in scan_roots():
+                candidate = Path(root_str) / self.slug
+                if candidate.is_dir():
+                    return candidate
+        except Exception:
+            pass
+
+        # 4. Fallback
+        try:
+            return Path(self.path).expanduser() if self.path else Path()
+        except Exception:
+            return Path(self.path) if self.path else Path()
 
     @property
     def memory_dir(self) -> Path:
@@ -1478,6 +1528,7 @@ def register_project(
 ) -> Project:
     slug = slug.strip()
     path = str(Path(path).expanduser().resolve())
+    save_host_path(slug, path)
     projects = parse_projects()
     existing = {p.slug: p for p in projects}
     p = Project(slug=slug, path=path, role=role, stack=stack, status=status)
@@ -1505,7 +1556,8 @@ def compact_projects_text(projects: List[Project]) -> str:
     lines = [
         "# Projects (Compact)",
         "",
-        "Use MCP `get_project_memories(project=slug)` or `search_memory` for details.",
+        "Use MCP `get_project_memories(project=slug)`. "
+        "`search_memory` without `project=` is the user store only; pass `project=` for a repo.",
         "",
         "| slug | role | stack | status |",
         "| --- | --- | --- | --- |",
@@ -1929,6 +1981,12 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     return written, warnings
 
 
+def line_content_hash(text: str) -> str:
+    """Stable 8-character hex hash of normalized line content."""
+    clean = text.strip()
+    return hashlib.sha256(clean.encode("utf-8")).hexdigest()[:8]
+
+
 def file_id(path: Path) -> str:
     path = path.resolve()
     try:
@@ -1954,6 +2012,9 @@ def file_id(path: Path) -> str:
 
 
 def resolve_memory_path(rel: str) -> Path:
+    rel = rel.strip()
+    if rel.startswith("memory:"):
+        rel = rel[len("memory:"):].strip()
     rel = rel.replace("\\", "/").lstrip("/")
     if rel in ("user/USER.md", "USER.md", "user.md"):
         return USER_MD
@@ -2015,6 +2076,38 @@ def _markdown_under(root: Path) -> List[Path]:
     return sorted(p for p in root.rglob("*.md") if p.is_file())
 
 
+SEARCH_ALL = "*"
+EXACT_HITS_PER_FILE = 2
+
+
+def resolve_search_project(project: str) -> str:
+    """Normalize search scope. Empty = user store only. `*` / `all` = every clone."""
+    token = (project or "").strip()
+    if token.lower() in ("*", "all"):
+        return SEARCH_ALL
+    return token
+
+
+def project_slug_for_cwd(cwd: Optional[Path] = None) -> str:
+    """Registered clone that contains cwd, longest path wins. Else empty."""
+    try:
+        here = (cwd or Path.cwd()).resolve()
+    except OSError:
+        return ""
+    best = ""
+    best_len = -1
+    for p in parse_projects():
+        if not p.path_obj.is_dir():
+            continue
+        root = p.path_obj.resolve()
+        if here == root or root in here.parents:
+            n = len(root.parts)
+            if n > best_len:
+                best = p.slug
+                best_len = n
+    return best
+
+
 def iter_user_memory_files() -> List[Path]:
     return _markdown_under(USER_MEMORY)
 
@@ -2034,11 +2127,21 @@ def iter_project_memory_files(slug: str = "") -> List[Path]:
 
 
 def iter_memory_files(project: str = "") -> List[Path]:
-    """Overarching retrieval: project store(s) first (higher priority), then user store."""
+    """Search file set: scoped project trees first, then user store.
+
+    Empty project → user store only. `*` → every registered clone + user.
+    A slug → that clone + user. `iter_project_memory_files()` with no slug
+    still lists every clone (check/inventory).
+    """
     seen: set[str] = set()
     out: List[Path] = []
-    # Project-specific facts have higher priority than global user facts
-    chunks = iter_project_memory_files(project.strip() if project else "")
+    token = resolve_search_project(project)
+    if token == SEARCH_ALL:
+        chunks = iter_project_memory_files("")
+    elif token:
+        chunks = iter_project_memory_files(token)
+    else:
+        chunks = []
     chunks.extend(iter_user_memory_files())
     for path in chunks:
         key = str(path.resolve()).lower()
@@ -2085,60 +2188,96 @@ def _read_cached_lines(path: Path) -> List[str]:
     return lines
 
 
+def _line_search_hit(ident: str, line_no: int, text: str) -> dict[str, Any]:
+    clean = text.strip()
+    return {
+        "id": f"{ident}:{line_no}#{line_content_hash(clean)}",
+        "file": ident,
+        "line": line_no,
+        "text": clean,
+    }
+
+
+def _fts_file_hit(fid: str, query: str) -> Optional[dict[str, Any]]:
+    """Map an FTS document id to a real line hit. Skip if no term lands on a line."""
+    try:
+        path = resolve_memory_path(fid)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    if not path.is_file():
+        return None
+    terms = [t.lower() for t in re.findall(r"\w+", query)]
+    if not terms:
+        return None
+    for i, line in enumerate(_read_cached_lines(path), 1):
+        low = line.lower()
+        if any(t in low for t in terms):
+            return _line_search_hit(fid, i, line)
+    return None
+
+
 def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
-    """Exact substring first, then FTS5 fill. A weak exact hit does not hide other files."""
+    """Exact substring first (capped per file), then FTS5 fill from other files."""
     limit = max(1, limit)
     q = query.lower().strip()
-    files = iter_memory_files(project=project)
-    hits: List[dict[str, Any]] = []
-    seen_files: set[str] = set()
+    token = resolve_search_project(project)
+    files = iter_memory_files(project=token)
+    exact: List[dict[str, Any]] = []
+    per_file: dict[str, int] = {}
     for path in files:
-        lines = _read_cached_lines(path)
-        for i, line in enumerate(lines, 1):
+        ident = file_id(path)
+        n = 0
+        for i, line in enumerate(_read_cached_lines(path), 1):
             if not q or q not in line.lower():
                 continue
-            ident = file_id(path)
-            hits.append(
-                {
-                    "id": f"{ident}:{i}",
-                    "file": ident,
-                    "line": i,
-                    "text": line.strip(),
-                }
-            )
-            seen_files.add(ident)
-            if len(hits) >= limit:
-                return hits
+            exact.append(_line_search_hit(ident, i, line))
+            n += 1
+            if n >= EXACT_HITS_PER_FILE:
+                break
+        if n:
+            per_file[ident] = n
 
-    remaining = limit - len(hits)
-    if remaining <= 0:
-        return hits
+    first_by_file: List[dict[str, Any]] = []
+    extra_exact: List[dict[str, Any]] = []
+    seen_first: set[str] = set()
+    for hit in exact:
+        fid = str(hit["file"])
+        if fid in seen_first:
+            extra_exact.append(hit)
+            continue
+        seen_first.add(fid)
+        first_by_file.append(hit)
+
+    hits: List[dict[str, Any]] = list(first_by_file)
+    seen_files = set(seen_first)
+
     idx = USER_MEMORY / ".index" / "fts.sqlite"
-    if not idx.is_file():
-        return hits
-    try:
-        from .index import search_hybrid
+    if idx.is_file() and len(hits) < limit:
+        try:
+            from .index import search_hybrid
 
-        ranked = search_hybrid(query, project=project, limit=limit, db_path=idx)
-        for h in ranked:
-            fid = str(h.get("id") or "").strip()
-            if not fid or fid in seen_files:
-                continue
-            snippet = re.sub(r"<[^>]+>", "", str(h.get("snippet") or "")).strip()
-            hits.append(
-                {
-                    "id": f"{fid}:0",
-                    "file": fid,
-                    "line": 0,
-                    "text": snippet or str(h.get("title") or fid),
-                }
-            )
-            seen_files.add(fid)
+            ranked = search_hybrid(query, project=token, limit=limit, db_path=idx)
+            for h in ranked:
+                if len(hits) >= limit:
+                    break
+                fid = str(h.get("id") or "").strip()
+                if not fid or fid in seen_files:
+                    continue
+                mapped = _fts_file_hit(fid, query)
+                if mapped is None:
+                    continue
+                hits.append(mapped)
+                seen_files.add(fid)
+        except Exception:
+            pass
+
+    if len(hits) < limit:
+        for hit in extra_exact:
             if len(hits) >= limit:
                 break
-    except Exception:
-        pass
-    return hits
+            hits.append(hit)
+
+    return hits[:limit]
 
 
 KIND_FOLDERS = {
@@ -2406,16 +2545,17 @@ def add_memory(
         raise ValueError("empty fact")
     path = memory_file_for(kind=kind, name=name, project=project, collection=collection)
     existed = path.exists()
+    k = (kind or "").strip().lower()
+    if k in REVISE_IN_PLACE_KINDS and existed:
+        fid = file_id(path)
+        raise ValueError(
+            f"Cannot append to existing '{fid}' for revise-in-place kind '{k}'. "
+            f"Revise this file in place using write_memory_file(file_id='{fid}', content=...)."
+        )
     loc = _append_bullet(path, fact)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
-    k = (kind or "").strip().lower()
-    if k in REVISE_IN_PLACE_KINDS and existed:
-        return (
-            f"{loc} — revise this file in place when facts change; "
-            "do not only append bullets"
-        )
     return loc
 
 
@@ -2440,20 +2580,64 @@ def get_project_memories(project: str) -> str:
 
 
 def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
-    if ":" not in memory_id:
+    clean_id = memory_id.strip()
+    if clean_id.startswith("memory:"):
+        clean_id = clean_id[len("memory:") :].strip()
+
+    hash_anchor = ""
+    if "#" in clean_id:
+        clean_id, hash_anchor = clean_id.split("#", 1)
+        hash_anchor = hash_anchor.strip().lower()
+
+    if ":" not in clean_id and not hash_anchor:
         raise ValueError(
-            "id must look like 'user/notes/programming/chat-stores.md:12' "
-            "or 'project/slug/staging/captured.md:8'"
+            "id must look like 'user/notes/programming/chat-stores.md:12#a1b2c3d4' "
+            "or 'project/slug/staging/captured.md:8' or 'user/notes/foo.md#a1b2c3d4'"
         )
-    rel, _, line_s = memory_id.rpartition(":")
-    line_no = int(line_s)
+
+    if ":" in clean_id:
+        rel, _, line_s = clean_id.rpartition(":")
+        try:
+            line_no = int(line_s)
+        except ValueError:
+            line_no = 0
+    else:
+        rel = clean_id
+        line_no = 0
+
     path = resolve_memory_path(rel)
     if not path.exists():
         raise FileNotFoundError(rel)
+
     lines = _read(path).splitlines()
-    if line_no < 1 or line_no > len(lines):
-        raise IndexError(memory_id)
-    removed = lines.pop(line_no - 1)
+    if not lines:
+        raise IndexError(f"Memory file '{rel}' is empty")
+
+    target_idx = None
+    if hash_anchor:
+        # Fast path: check if hinted line_no matches the hash anchor
+        if 1 <= line_no <= len(lines) and line_content_hash(lines[line_no - 1]) == hash_anchor:
+            target_idx = line_no - 1
+        else:
+            # Line shifted due to previous deletes or edits: scan for matching content hash
+            matches = [
+                idx for idx, l in enumerate(lines) if line_content_hash(l) == hash_anchor
+            ]
+            if matches:
+                # If multiple identical lines, pick closest to line_no - 1
+                target_idx = min(
+                    matches, key=lambda idx: abs(idx - (line_no - 1 if line_no > 0 else 0))
+                )
+            else:
+                raise ValueError(
+                    f"Content hash '#{hash_anchor}' not found in '{rel}' (already deleted or modified)"
+                )
+    else:
+        if line_no < 1 or line_no > len(lines):
+            raise IndexError(memory_id)
+        target_idx = line_no - 1
+
+    removed = lines.pop(target_idx)
     _write(path, "\n".join(lines))
     clear_memory_cache()
     if auto_sync:

@@ -276,6 +276,11 @@ def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not content.endswith("\n"):
         content += "\n"
+    try:
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            return
+    except Exception:
+        pass
     # Atomic write via thread-unique temp file + os.replace
     tmp_path = path.with_name(
         f".{path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp"

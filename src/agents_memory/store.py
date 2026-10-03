@@ -2579,11 +2579,80 @@ def get_project_memories(project: str) -> str:
     return "\n".join(parts)
 
 
+def _deleted_log_file() -> Path:
+    return USER_MEMORY / ".deleted.json"
+
+
+def record_local_deletion(rel_path: str) -> None:
+    """Record a deleted file path to propagate on remote sync."""
+    clean_rel = rel_path.replace("\\", "/").strip().lstrip("/")
+    if not clean_rel:
+        return
+    log_file = _deleted_log_file()
+    deleted_paths: list[str] = []
+    if log_file.is_file():
+        try:
+            data = json.loads(log_file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                deleted_paths = data
+        except Exception:
+            pass
+    if clean_rel not in deleted_paths:
+        deleted_paths.append(clean_rel)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text(json.dumps(deleted_paths, indent=2), encoding="utf-8")
+
+
+def load_local_deletions() -> list[str]:
+    """Retrieve list of locally tracked deleted files."""
+    log_file = _deleted_log_file()
+    if not log_file.is_file():
+        return []
+    try:
+        data = json.loads(log_file.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def clear_acknowledged_deletions(acknowledged: list[str]) -> None:
+    """Clear specific acknowledged deletions from .deleted.json."""
+    log_file = _deleted_log_file()
+    if not log_file.is_file():
+        return
+    try:
+        data = json.loads(log_file.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            rem = [p for p in data if p not in acknowledged]
+            if rem:
+                log_file.write_text(json.dumps(rem, indent=2), encoding="utf-8")
+            else:
+                log_file.unlink(missing_ok=True)
+    except Exception:
+        log_file.unlink(missing_ok=True)
+
+
 def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
     """Delete a memory or rule file and sync injection."""
     path = resolve_memory_path(file_id_or_path)
     if not path.is_file():
         raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
+
+    # Track relative path for remote synchronization
+    try:
+        rel = path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+        record_local_deletion(rel)
+    except ValueError:
+        for p in parse_projects():
+            try:
+                rel_p = path.resolve().relative_to(p.memory_dir.resolve()).as_posix()
+                record_local_deletion(f"mirror/projects/{p.slug}/{rel_p}")
+                break
+            except ValueError:
+                pass
+
     path.unlink()
     clear_memory_cache()
     if auto_sync:

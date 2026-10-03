@@ -1,6 +1,7 @@
 """Remote MCP & Cloud Sync Server for agents-memory."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import inspect
 import json
 import os
@@ -80,8 +81,45 @@ async def health_endpoint(request: Request) -> JSONResponse:
     )
 
 
+def _tombstones_file() -> Path:
+    return USER_MEMORY / ".tombstones.json"
+
+
+def record_server_tombstone(rel_path: str) -> None:
+    """Record a deletion tombstone on the server."""
+    clean = rel_path.replace("\\", "/").strip().lstrip("/")
+    if not clean:
+        return
+    tomb_file = _tombstones_file()
+    tombstones = {}
+    if tomb_file.is_file():
+        try:
+            data = json.loads(tomb_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                tombstones = data
+        except Exception:
+            pass
+    tombstones[clean] = datetime.now(timezone.utc).isoformat()
+    tomb_file.parent.mkdir(parents=True, exist_ok=True)
+    tomb_file.write_text(json.dumps(tombstones, indent=2), encoding="utf-8")
+
+
+def get_server_tombstones() -> list[str]:
+    """Retrieve list of all active deletion tombstones."""
+    tomb_file = _tombstones_file()
+    if not tomb_file.is_file():
+        return []
+    try:
+        data = json.loads(tomb_file.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return list(data.keys())
+    except Exception:
+        pass
+    return []
+
+
 async def snapshot_endpoint(request: Request) -> JSONResponse:
-    """Download full snapshot of memory files."""
+    """Download full snapshot of memory files and active deletions."""
     ensure_memory_layout()
     files = get_all_memory_files()
     return JSONResponse(
@@ -89,6 +127,7 @@ async def snapshot_endpoint(request: Request) -> JSONResponse:
             "status": "ok",
             "version": __version__,
             "files": files,
+            "deleted": get_server_tombstones(),
         }
     )
 
@@ -106,6 +145,27 @@ async def merge_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Expected 'files' dictionary"}, status_code=400)
 
     report = apply_sync_bundle(incoming_files, target_root=USER_MEMORY, apply_to_repos=False)
+
+    # Process deletions
+    deleted_files = data.get("deleted", [])
+    deleted_report: list[str] = []
+    if isinstance(deleted_files, list):
+        for rel in deleted_files:
+            rel_clean = str(rel).replace("\\", "/").strip().lstrip("/")
+            if not rel_clean or ".." in rel_clean:
+                continue
+            target = (USER_MEMORY / rel_clean).resolve()
+            try:
+                if target.is_relative_to(USER_MEMORY.resolve()) and target.is_file():
+                    target.unlink()
+                    deleted_report.append(rel_clean)
+                    record_server_tombstone(rel_clean)
+                elif target.is_relative_to(USER_MEMORY.resolve()):
+                    record_server_tombstone(rel_clean)
+            except (ValueError, AttributeError):
+                pass
+    report["deleted"] = deleted_report
+
     # Sync always-on injection after merge
     try:
         sync_injection()
@@ -118,8 +178,35 @@ async def merge_endpoint(request: Request) -> JSONResponse:
             "status": "ok",
             "report": report,
             "snapshot": current_snapshot,
+            "deleted": get_server_tombstones(),
         }
     )
+
+
+async def delete_file_endpoint(request: Request) -> JSONResponse:
+    """Delete a single memory file directly via DELETE /api/v1/file?path=..."""
+    rel_path = request.query_params.get("path", "").strip().lstrip("/\\")
+    if not rel_path or ".." in rel_path:
+        return JSONResponse({"error": "Invalid path"}, status_code=400)
+
+    target = (USER_MEMORY / rel_path).resolve()
+    try:
+        if not target.is_relative_to(USER_MEMORY.resolve()):
+            return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
+    except AttributeError:
+        if not str(target).startswith(str(USER_MEMORY.resolve())):
+            return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
+
+    existed = target.is_file()
+    if existed:
+        target.unlink()
+
+    record_server_tombstone(rel_path)
+    try:
+        sync_injection()
+    except Exception:
+        pass
+    return JSONResponse({"status": "ok", "deleted": rel_path, "existed": existed})
 
 
 async def get_file_endpoint(request: Request) -> Response:
@@ -266,6 +353,7 @@ def create_remote_app(token: str = "") -> Starlette:
         Route("/api/v1/merge", merge_endpoint, methods=["POST"]),
         Route("/api/v1/file", get_file_endpoint, methods=["GET"]),
         Route("/api/v1/file", put_file_endpoint, methods=["POST", "PUT"]),
+        Route("/api/v1/file", delete_file_endpoint, methods=["DELETE"]),
         Route("/api/v1/tool", tool_call_endpoint, methods=["POST"]),
         # Mount FastMCP SSE under root or /mcp
         Mount("", app=sse_subapp),

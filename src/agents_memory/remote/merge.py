@@ -297,6 +297,11 @@ def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, b
         return merged, (merged.strip() != base_content.strip())
 
     name_lower = base_path.name.lower()
+    # Singleton profile documents & editor rules: Incoming Wins (Last-Write-Wins), not bullet sets!
+    singleton_names = {"user.md", "claude.md", "agents.md", "user-rules.mdc"}
+    if name_lower in singleton_names or base_path.suffix.lower() == ".mdc":
+        return incoming_content, True
+
     if name_lower == "projects.md":
         merged = merge_table_markdown(base_content, incoming_content)
     elif "staging" in str(base_path).lower() or name_lower == "captured.md":

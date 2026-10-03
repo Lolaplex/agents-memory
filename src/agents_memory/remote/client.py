@@ -189,13 +189,26 @@ def remote_pull(
         resp.raise_for_status()
         data = resp.json()
 
+    # Process server-propagated deletions
+    server_deleted = data.get("deleted", [])
+    if isinstance(server_deleted, list):
+        for del_path in server_deleted:
+            del_clean = str(del_path).replace("\\", "/").strip().lstrip("/")
+            p = (dest_root / del_clean).resolve()
+            try:
+                if p.is_relative_to(dest_root.resolve()) and p.is_file():
+                    p.unlink()
+            except (ValueError, AttributeError):
+                pass
+
     files = data.get("files", {})
-    report = apply_sync_bundle(files, target_root=dest_root, apply_to_repos=True)
+    filtered_files = {k: v for k, v in files.items() if k not in server_deleted}
+    report = apply_sync_bundle(filtered_files, target_root=dest_root, apply_to_repos=True)
     touch_remote_config_sync_time()
 
     return {
         "status": "ok",
-        "total_files": len(files),
+        "total_files": len(filtered_files),
         "report": report,
     }
 
@@ -208,6 +221,8 @@ def remote_push_merge(
     verify_ssl: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Upload local mirror bundle to remote server for deterministic merging."""
+    from ..store import clear_acknowledged_deletions, load_local_deletions
+
     clean_url = url.strip().rstrip("/")
     target = f"{clean_url}/api/v1/merge"
     headers = _get_auth_headers(token)
@@ -217,7 +232,8 @@ def remote_push_merge(
         include_projects=True,
         memory_root=source_dir or USER_MEMORY,
     )
-    payload = {"files": local_files}
+    local_deleted = load_local_deletions()
+    payload = {"files": local_files, "deleted": local_deleted}
 
     with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.post(target, json=payload, headers=headers)
@@ -226,9 +242,28 @@ def remote_push_merge(
         resp.raise_for_status()
         data = resp.json()
 
+    # Clear locally acknowledged deletions after successful remote merge
+    if local_deleted:
+        clear_acknowledged_deletions(local_deleted)
+
+    server_deleted = data.get("deleted", [])
+    if isinstance(server_deleted, list):
+        for del_path in server_deleted:
+            del_clean = str(del_path).replace("\\", "/").strip().lstrip("/")
+            p = (USER_MEMORY / del_clean).resolve()
+            try:
+                if p.is_relative_to(USER_MEMORY.resolve()) and p.is_file():
+                    p.unlink()
+            except (ValueError, AttributeError):
+                pass
+
     server_snapshot = data.get("snapshot", {})
     if server_snapshot:
-        apply_sync_bundle(server_snapshot, target_root=USER_MEMORY, apply_to_repos=True)
+        filtered_snapshot = {
+            k: v for k, v in server_snapshot.items()
+            if k not in server_deleted and k not in local_deleted
+        }
+        apply_sync_bundle(filtered_snapshot, target_root=USER_MEMORY, apply_to_repos=True)
     touch_remote_config_sync_time()
 
     return {
@@ -236,6 +271,27 @@ def remote_push_merge(
         "server_report": data.get("report", {}),
         "total_files": len(server_snapshot) or len(local_files),
     }
+
+
+def remote_delete_file(
+    url: str,
+    path: str,
+    token: str = "",
+    timeout: float = 10.0,
+    verify_ssl: Optional[bool] = None,
+) -> bool:
+    """Delete a memory file directly on the remote server via REST API."""
+    clean_url = url.strip().rstrip("/")
+    clean_path = urllib.parse.quote(path.replace("\\", "/").strip().lstrip("/"))
+    target = f"{clean_url}/api/v1/file?path={clean_path}"
+    headers = _get_auth_headers(token)
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+        resp = client.delete(target, headers=headers)
+        if resp.status_code == 401:
+            raise PermissionError("Unauthorized: Token rejected by remote server.")
+        return resp.status_code == 200
 
 
 def remote_mirror_injection(url: str, token: str = "") -> bool:

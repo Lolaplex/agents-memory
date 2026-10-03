@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Remote sync deletion propagation: deletions tracked in `.deleted.json`, sent to server in merge payload, unlinked, and recorded as server tombstones (`.tombstones.json`), preventing zombie file resurrection on subsequent pulls.
+- Atomic REST endpoint `DELETE /api/v1/file?path=...` in remote server and `remote_delete_file()` in client.
 - Direct file deletion via `delete_memory_file` and CLI `delete <file_id>` allowing entire memory or rule files to be cleanly removed and synced.
+
+### Changed
+- Remote merge semantics: singleton documents (`USER.md`, `CLAUDE.md`, `AGENTS.md`, and `user-rules.mdc`) use Last-Write-Wins (LWW) document overwrite instead of bullet-union merging to avoid bloated repeated headers across syncs.
 
 ### Fixed
 - Remote sync reporting in `agents-memory remote pull`, `push`, and `connect`: summary metrics now aggregate user, rules, and repository mirrors rather than querying a non-existent flat report structure.

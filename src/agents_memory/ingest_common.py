@@ -20,7 +20,8 @@ CHATTER_RE = re.compile(
     r"|(?:kannst du|könntest du|kann man|könnte man|bitte |warum |wieso |weshalb |was ist|wo ist|"
     r"schau mal|guck mal|lies mal|sag mal|hilf mir|zeig mir|mach mal|mach weiter|weiter|"
     r"hä das|das hab ich schon|er behauptet|ich habs gefühl|ich fänds|meine frage ist|"
-    r"hätte aber halt gerne|hätte aber|lass mal|probiere|probiert|versuche|check mal|wait und|ja wow|hmm aber)\b"
+    r"hätte aber halt gerne|hätte aber|lass mal|probiere|probiert|versuche|check mal|wait und|ja wow|hmm aber|"
+    r"wie (?:kann|könnte|geht|ist|wäre|viel)|war das|sind die|ist das|macht das sinn|oh und steht)\b"
     # Conversational commands & questions (EN)
     r"|(?:can you|could you|how (?:can|do|to|would)|why (?:is|does|do|won't)|what is the|"
     r"write (?:a|me|the)|fix |create (?:a|an)|implement |help me|please |instead of |"
@@ -97,13 +98,27 @@ DURABLE_RULE_KEYWORDS = (
 HOW_TO = CHATTER_RE
 
 
+ARTIFACT_DOC_RE = re.compile(
+    r"@\s*(?:walkthrough|implementation_plan|task|plan|scratch)\.(?:md|json)\b",
+    re.I,
+)
+
+
 def is_ephemeral_noise(text: str) -> tuple[bool, str]:
     """Classify whether a line is ephemeral noise, chatter, build log, or question."""
-    t = re.sub(r"^\[.*?\]\s*", "", text or "").strip()
+    raw = (text or "").strip()
+    if raw.startswith("- "):
+        raw = raw[2:].strip()
+    if ARTIFACT_DOC_RE.search(raw):
+        return True, "artifact_doc"
+    if raw.strip().lower() in ("(none yet)", "- (none yet)", "(none)"):
+        return True, "placeholder"
+    t = re.sub(r"^\[.*?\]\s*", "", raw).strip()
+    if HEADER_STUB_RE.match(t) or HEADER_STUB_RE.match(raw):
+        return True, "header_stub"
+    t = t.strip("`* ").strip()
     if not t or len(t) < 8:
         return True, "too_short"
-    if HEADER_STUB_RE.match(t):
-        return True, "header_stub"
     if URL_ONLY_RE.match(t):
         return True, "url_only"
     if CHATTER_RE.search(t):
@@ -116,7 +131,7 @@ def is_ephemeral_noise(text: str) -> tuple[bool, str]:
         return True, "changelog"
     if BUG_REPORT_RE.search(t):
         return True, "bug_report"
-    if t.endswith("?") and not any(k in t.lower() for k in DURABLE_RULE_KEYWORDS):
+    if ("?" in t or t.endswith("?")) and not any(k in t.lower() for k in DURABLE_RULE_KEYWORDS):
         return True, "question"
     return False, ""
 

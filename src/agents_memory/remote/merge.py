@@ -297,15 +297,18 @@ def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, b
         return merged, (merged.strip() != base_content.strip())
 
     name_lower = base_path.name.lower()
-    # Singleton profile documents & editor rules: Incoming Wins (Last-Write-Wins), not bullet sets!
+    path_str_lower = str(base_path).replace("\\", "/").lower()
+    # Singleton profile documents, editor rules, and staging inboxes: Incoming Wins (Last-Write-Wins), not bullet sets!
     singleton_names = {"user.md", "claude.md", "agents.md", "user-rules.mdc"}
-    if name_lower in singleton_names or base_path.suffix.lower() == ".mdc":
+    if (
+        name_lower in singleton_names
+        or base_path.suffix.lower() == ".mdc"
+        or "staging/" in path_str_lower
+    ):
         return incoming_content, True
 
     if name_lower == "projects.md":
         merged = merge_table_markdown(base_content, incoming_content)
-    elif "staging" in str(base_path).lower() or name_lower == "captured.md":
-        merged = merge_staging_markdown(base_content, incoming_content)
     else:
         merged = merge_bullet_markdown(base_content, incoming_content)
 

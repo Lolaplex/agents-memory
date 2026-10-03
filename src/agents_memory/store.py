@@ -2109,7 +2109,7 @@ def project_slug_for_cwd(cwd: Optional[Path] = None) -> str:
 
 
 def iter_user_memory_files() -> List[Path]:
-    return _markdown_under(USER_MEMORY)
+    return [p for p in _markdown_under(USER_MEMORY) if "mirror" not in p.parts]
 
 
 def iter_project_memory_files(slug: str = "") -> List[Path]:
@@ -3101,14 +3101,21 @@ def auto_distill(
             src_path = item.get("source_path") or item.get("file") or ""
             proj = item.get("project") or ""
 
-            # Check noise using both comprehensive bilingual heuristics and patterns
-            is_noise, _ = is_ephemeral_noise(raw_text)
+            # Check noise using origin, bullet text, and comprehensive bilingual heuristics
+            is_noise = False
+            origin_lower = str(item.get("origin") or "").lower()
+            if any(x in origin_lower for x in ("walkthrough", "implementation_plan", "task", "plan", "scratch")):
+                is_noise = True
+            if not is_noise:
+                is_noise, _ = is_ephemeral_noise(bullet_text)
+            if not is_noise:
+                is_noise, _ = is_ephemeral_noise(raw_text)
             if not is_noise:
                 for r in noise_re:
-                    if r.search(raw_text.strip()):
+                    if r.search(raw_text.strip()) or r.search(bullet_text.strip()):
                         is_noise = True
                         break
-            if len(raw_text.strip()) < 8:
+            if len(raw_text.strip()) < 8 and len(bullet_text.strip()) < 8:
                 is_noise = True
 
             if is_noise:

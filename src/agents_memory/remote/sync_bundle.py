@@ -249,7 +249,11 @@ def apply_sync_bundle(
 
     user_report = _merge_user_files(user_files, root)
     rules_report = _apply_rules(rules_files)
-    mirror_store_report = _store_mirrors_on_server(mirror_files, root)
+    mirror_store_report = (
+        _store_mirrors_on_server(mirror_files, root)
+        if not apply_to_repos
+        else {"added": [], "merged": [], "unchanged": []}
+    )
     repo_report = _apply_mirrors_to_repos(mirror_files) if apply_to_repos else {"applied": [], "skipped": []}
 
     try:

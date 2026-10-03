@@ -243,8 +243,8 @@ def main(argv: list[str] | None = None) -> int:
 
         if not rest:
             print(
-                "usage: python -m agents_memory delete MEMORY_ID  "
-                "(e.g. user/notes/foo.md:3)",
+                "usage: python -m agents_memory delete MEMORY_ID_OR_FILE  "
+                "(e.g. user/notes/foo.md:3 or user/notes/foo.md)",
                 file=sys.stderr,
             )
             return 2

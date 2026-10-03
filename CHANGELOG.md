@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Direct file deletion via `delete_memory_file` and CLI `delete <file_id>` allowing entire memory or rule files to be cleanly removed and synced.
+
+### Fixed
+- Remote sync reporting in `agents-memory remote pull`, `push`, and `connect`: summary metrics now aggregate user, rules, and repository mirrors rather than querying a non-existent flat report structure.
+- `Last Sync` tracking in `agents-memory remote status`: `remote_config.json`'s `last_sync` and `updated_at` timestamps now refresh on every successful snapshot pull and push merge.
+
 ## [1.1.1] - 2026-09-26
 
 ### Added

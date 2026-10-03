@@ -155,6 +155,19 @@ def remote_health_check(
         return resp.json()
 
 
+def touch_remote_config_sync_time() -> None:
+    """Update last_sync and updated_at timestamp in remote_config.json."""
+    cfg = get_remote_config()
+    if cfg:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        cfg["last_sync"] = now_iso
+        cfg["updated_at"] = now_iso
+        try:
+            _config_file().write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+
 def remote_pull(
     url: str,
     token: str = "",
@@ -178,6 +191,7 @@ def remote_pull(
 
     files = data.get("files", {})
     report = apply_sync_bundle(files, target_root=dest_root, apply_to_repos=True)
+    touch_remote_config_sync_time()
 
     return {
         "status": "ok",
@@ -215,6 +229,7 @@ def remote_push_merge(
     server_snapshot = data.get("snapshot", {})
     if server_snapshot:
         apply_sync_bundle(server_snapshot, target_root=USER_MEMORY, apply_to_repos=True)
+    touch_remote_config_sync_time()
 
     return {
         "status": "ok",

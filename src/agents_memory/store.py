@@ -2579,6 +2579,18 @@ def get_project_memories(project: str) -> str:
     return "\n".join(parts)
 
 
+def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
+    """Delete a memory or rule file and sync injection."""
+    path = resolve_memory_path(file_id_or_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
+    path.unlink()
+    clear_memory_cache()
+    if auto_sync:
+        _finish_store_write()
+    return True
+
+
 def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     clean_id = memory_id.strip()
     if clean_id.startswith("memory:"):
@@ -2590,9 +2602,17 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
         hash_anchor = hash_anchor.strip().lower()
 
     if ":" not in clean_id and not hash_anchor:
+        try:
+            path = resolve_memory_path(clean_id)
+            if path.is_file():
+                delete_memory_file(clean_id, auto_sync=auto_sync)
+                return f"[file deleted] {clean_id}"
+        except Exception:
+            pass
         raise ValueError(
             "id must look like 'user/notes/programming/chat-stores.md:12#a1b2c3d4' "
-            "or 'project/slug/staging/captured.md:8' or 'user/notes/foo.md#a1b2c3d4'"
+            "or 'project/slug/staging/captured.md:8' or 'user/notes/foo.md#a1b2c3d4' "
+            "or a memory file path to delete the entire file."
         )
 
     if ":" in clean_id:

@@ -22,6 +22,35 @@ from .client import (
 from .server import run_server
 
 
+def format_sync_report(report: dict) -> str:
+    if not isinstance(report, dict):
+        return "0 added, 0 merged, 0 unchanged."
+
+    # Flat report format fallback
+    if "added" in report or "merged" in report:
+        added = len(report.get("added", []))
+        merged = len(report.get("merged", []))
+        unchanged = len(report.get("unchanged", []))
+        return f"{added} added, {merged} merged, {unchanged} unchanged."
+
+    added_count = 0
+    merged_count = 0
+    unchanged_count = 0
+
+    for sec_key in ("user", "rules", "mirror_store"):
+        sec = report.get(sec_key)
+        if isinstance(sec, dict):
+            added_count += len(sec.get("added", []))
+            merged_count += len(sec.get("merged", []))
+            unchanged_count += len(sec.get("unchanged", []))
+
+    repos = report.get("repos")
+    if isinstance(repos, dict):
+        added_count += len(repos.get("applied", []))
+
+    return f"{added_count} added, {merged_count} merged, {unchanged_count} unchanged."
+
+
 def build_remote_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agents-memory remote",
@@ -150,11 +179,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print("Performing deterministic multi-device merge...")
             res = remote_push_merge(url, token=token, verify_ssl=verify_ssl)
             report = res.get("server_report", {})
-            print(
-                f"Merge complete: {len(report.get('added', []))} added, "
-                f"{len(report.get('merged', []))} merged, "
-                f"{len(report.get('unchanged', []))} unchanged."
-            )
+            print(f"Merge complete: {format_sync_report(report)}")
 
         # Save config
         save_remote_config(
@@ -211,10 +236,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         url = cfg.get("url", "")
         token = cfg.get("token", "")
+        last_sync = cfg.get("last_sync") or cfg.get("updated_at", "unknown")
         print(f"Mode: REMOTE CLOUD SYNC")
         print(f"Server URL : {url}")
         print(f"Token      : {'***' if token else 'NONE'}")
-        print(f"Last Saved : {cfg.get('updated_at', 'unknown')}")
+        print(f"Last Sync  : {last_sync}")
 
         print("\nChecking server health...")
         try:
@@ -236,11 +262,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             res = remote_push_merge(url, token=token)
             report = res.get("server_report", {})
-            print(
-                f"Push & Merge complete: {len(report.get('added', []))} added, "
-                f"{len(report.get('merged', []))} merged, "
-                f"{len(report.get('unchanged', []))} unchanged."
-            )
+            print(f"Push & Merge complete: {format_sync_report(report)}")
             return 0
         except Exception as e:
             print(f"Error pushing memory: {e}", file=sys.stderr)
@@ -257,11 +279,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             res = remote_pull(url, token=token)
             report = res.get("report", {})
-            print(
-                f"Pull complete: {len(report.get('added', []))} added, "
-                f"{len(report.get('merged', []))} merged, "
-                f"{len(report.get('unchanged', []))} unchanged."
-            )
+            print(f"Pull complete: {format_sync_report(report)}")
             return 0
         except Exception as e:
             print(f"Error pulling memory: {e}", file=sys.stderr)

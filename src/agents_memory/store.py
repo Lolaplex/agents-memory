@@ -2802,6 +2802,8 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
         )
         if (USER_MEMORY / "staging").is_dir():
             for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
+                if f.name.startswith("sync-"):
+                    continue
                 if f not in candidate_paths:
                     candidate_paths.append(f)
         for p in parse_projects():
@@ -2809,6 +2811,8 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
                 p_staging = p.memory_dir / "staging"
                 if p_staging.is_dir():
                     for f in sorted(p_staging.rglob("*.md")):
+                        if f.name.startswith("sync-"):
+                            continue
                         if f not in candidate_paths:
                             candidate_paths.append(f)
     return candidate_paths
@@ -3014,8 +3018,11 @@ def auto_distill(
     limit: int = 50, discard_noise: bool = True, auto_sync: bool = True
 ) -> dict:
     """Automatically classify and distill staging inbox bullets into memory or discard noise."""
+    from .ingest_common import is_ephemeral_noise
+
     inbox = get_staging_inbox(limit=limit)
     items_to_distill = []
+    unclassified_candidates = []
     noise_re = [re.compile(pat, re.IGNORECASE) for pat in _NOISE_LINE_PATTERNS]
 
     for group in inbox.get("groups", []):
@@ -3025,13 +3032,13 @@ def auto_distill(
             src_path = item.get("source_path") or item.get("file") or ""
             proj = item.get("project") or ""
 
-            # Check noise
-            is_noise = False
-            for r in noise_re:
-                if r.search(raw_text.strip()):
-                    is_noise = True
-                    break
-
+            # Check noise using both comprehensive bilingual heuristics and patterns
+            is_noise, _ = is_ephemeral_noise(raw_text)
+            if not is_noise:
+                for r in noise_re:
+                    if r.search(raw_text.strip()):
+                        is_noise = True
+                        break
             if len(raw_text.strip()) < 8:
                 is_noise = True
 
@@ -3060,6 +3067,8 @@ def auto_distill(
                     "bevorzuge ",
                     "stack:",
                     "stack defaults",
+                    "datenschutz",
+                    "privacy",
                 )
             ):
                 items_to_distill.append(
@@ -3082,6 +3091,16 @@ def auto_distill(
                         "source_path": src_path,
                     }
                 )
+            else:
+                unclassified_candidates.append(
+                    {
+                        "bullet": bullet_text,
+                        "source_path": src_path,
+                        "project": proj,
+                        "suggested_kind": "note",
+                        "suggested_name": "facts" if proj else "preferences",
+                    }
+                )
 
     if not items_to_distill:
         remaining = count_staging_bullets()
@@ -3089,18 +3108,18 @@ def auto_distill(
             "promoted": 0,
             "discarded": 0,
             "remaining_staging_count": remaining,
+            "candidates": unclassified_candidates[:20],
             "errors": [],
             "message": (
-                "No obvious rules or noise auto-classified. "
-                f"{remaining} bullets remain — you MUST now process them manually: "
-                "get_staging_inbox(limit=100), then distill_batch with explicit "
-                "promote or discard decisions for EVERY bullet until the inbox is empty."
-            )
-            if remaining
-            else "Staging inbox empty.",
+                f"{len(unclassified_candidates)} staging bullets remain for agent decision: "
+                "call distill_batch with your promote/discard decisions."
+                if unclassified_candidates
+                else "Staging inbox empty."
+            ),
         }
 
     res = distill_batch(items_to_distill, auto_sync=auto_sync)
+    res["candidates"] = unclassified_candidates[:20]
     return res
 
 

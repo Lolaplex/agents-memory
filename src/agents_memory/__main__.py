@@ -89,12 +89,12 @@ def main(argv: list[str] | None = None) -> int:
 
         return run(rest)
     if cmd == "distill":
-        from .store import auto_distill, get_staging_inbox
+        from .store import auto_distill_noise_pass, get_staging_inbox
 
         if "--auto" in rest or "-a" in rest:
-            res = auto_distill(limit=50, discard_noise=True, auto_sync=True)
+            res = auto_distill_noise_pass(max_rounds=10, batch_size=100, auto_sync=True)
             print(
-                f"Auto-distill result: {res['promoted']} promoted, {res['discarded']} discarded, {res['remaining_staging_count']} remaining."
+                f"Auto-distill result: {res['promoted']} promoted, {res['discarded']} discarded in {res['rounds']} rounds, {res['remaining_staging_count']} remaining."
             )
             if res.get("errors"):
                 for err in res["errors"]:

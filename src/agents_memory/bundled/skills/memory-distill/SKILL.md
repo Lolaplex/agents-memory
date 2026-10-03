@@ -23,36 +23,33 @@ When staging inbox depth reaches `staging_nag_threshold` (default 50):
 
 Inbox→0 for non-noise bullets remains agent judgment via `distill_batch`.
 
-## Quick Option: Auto-Distill
+## Standard 2-Step Agent Workflow
 
-For fast automated triage of noise and standard facts:
-- Call MCP `auto_distill(limit=50, discard_noise=true)`
-- Or CLI: `python -m agents_memory distill --auto`
+1. **Step 1: Run Auto-Distill (Noise Pruning & Heuristics)**
+   - Call MCP `auto_distill(limit=50, discard_noise=true)` (or CLI: `python -m agents_memory distill --auto`).
+   - Deterministically removes build/test logs, SQL/code dumps, bug reports, questions, and ephemeral banter.
+   - Automatically promotes clear preferences (`always`, `never`, `prefer`, `stack:`, `datenschutz`).
+   - Returns a structured list of remaining `candidates` with suggested targets (`suggested_kind`, `suggested_name`).
 
-## Full LLM Workflow
-
-1. Call MCP `get_staging_inbox(limit=20)` — returns **groups** by source (ingest id / file).
-2. For each bullet in each group, evaluate:
-   - **Keep (Durable Fact)**: Core decisions, tech stack choices, preferences, personal workflow rules, durable architecture constraints.
-     - Select target `kind`: `concept`, `entity`, `workflow`, `note`, `project`, `decision`, `proposed`, `implemented`.
-     - Assign clean slug `name` (and `project` / `collection` if applicable).
-   - **Discard (Noise / Ephemeral)**: One-off debug talk, temporary questions, code snippets with no lasting rule, accidental transcript dumps.
-3. Call MCP `distill_batch(items_json)` with the classified items. **Always pass through** `source_path` (and `project` when present) from the inbox item so removal hits the right file:
-   ```json
-   [
-     {
-       "bullet": "[Homelab @ …] Always use Tailwind v3",
-       "kind": "note",
-       "name": "stack",
-       "project": "customs",
-       "source_path": "user/staging/ingest/cursor/captured.md"
-     },
-     {
-       "bullet": "Can you check line 40 of main.py",
-       "discard": true,
-       "source_path": "user/staging/ingest/cursor/captured.md"
-     }
-   ]
-   ```
-4. Repeat until `get_staging_inbox` reports `"total": 0`.
-5. `distill_batch` automatically syncs to all IDEs/CLIs upon completion.
+2. **Step 2: Confirm Remaining Candidates via Distill Batch**
+   - If `candidates` remain (typically 1–5 bullets):
+   - Review the candidate list returned by `auto_distill`.
+   - Call MCP `distill_batch(items)` in a single call to promote or discard the remaining bullets:
+     ```json
+     [
+       {
+         "bullet": "Die Controls sollen alle einzeln switchable sein",
+         "kind": "note",
+         "name": "ux",
+         "project": "veadio",
+         "source_path": "user/staging/ingest/antigravity/captured.md"
+       },
+       {
+         "bullet": "Can you check line 40 of main.py",
+         "discard": true,
+         "source_path": "user/staging/ingest/cursor/captured.md"
+       }
+     ]
+     ```
+   - Inbox drops to 0 cleanly in one turn.
+3. `distill_batch` automatically syncs to all IDEs/CLIs upon completion.

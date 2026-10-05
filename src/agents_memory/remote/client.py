@@ -28,13 +28,22 @@ from ..store import (
 )
 from .lock import exclusive_sync_lock
 from .merge import merge_file_trees
+from .protocol import (
+    EPOCH_HEADER,
+    VERSION_HEADER,
+    as_epoch,
+    upgrade_required_message,
+    version_older,
+)
 from .sync_bundle import (
     apply_snapshot_replace,
     apply_sync_bundle,
+    capture_pending,
     collect_sync_bundle,
     infer_from_baseline,
     infer_remote_project_absences,
     load_baseline,
+    reapply_pending,
     save_baseline,
 )
 from .tombstones import (
@@ -49,6 +58,19 @@ from .tombstones import (
 )
 
 CONFIG_FILE = USER_MEMORY / "remote_config.json"
+
+
+class UpgradeRequired(RuntimeError):
+    """Server rejected a write because this client is too old or sent no version."""
+
+
+class EpochMismatch(RuntimeError):
+    """Server vault epoch is ahead of the epoch this client last synced."""
+
+    def __init__(self, message: str, server_epoch: int = 0, client_epoch: int = 0):
+        super().__init__(message)
+        self.server_epoch = server_epoch
+        self.client_epoch = client_epoch
 
 
 def _config_file() -> Path:
@@ -106,11 +128,121 @@ def clear_remote_config() -> bool:
     return False
 
 
+def local_epoch() -> int:
+    """Epoch this device last synced. Missing config or key means 0."""
+    cfg = get_remote_config() or {}
+    return as_epoch(cfg.get("epoch"))
+
+
+def remember_epoch(epoch: int) -> None:
+    """Persist the server epoch in remote_config.json when a config exists."""
+    cfg = get_remote_config()
+    if not cfg:
+        return
+    cfg["epoch"] = as_epoch(epoch)
+    cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        _config_file().write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def upgrade_notice() -> str:
+    """Message the server told this client to show, or empty."""
+    cfg = get_remote_config() or {}
+    return str(cfg.get("upgrade_required") or "").strip()
+
+
+def note_upgrade_required(message: str) -> None:
+    """Remember a 426 (or snapshot min-version) so MCP can show it and pushes stop."""
+    message = str(message).strip()
+    if not message:
+        return
+    cfg = get_remote_config()
+    if cfg is not None and cfg.get("upgrade_required") != message:
+        cfg["upgrade_required"] = message
+        cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            _config_file().write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+    try:
+        from ..store import USER_MEMORY as store_root
+        from ..store import _write
+
+        path = Path(store_root) / "staging" / "upgrade-required.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write(path, f"# Upgrade required\n\n{message}\n")
+    except Exception:
+        pass
+    print(message, file=sys.stderr)
+
+
+def clear_upgrade_required() -> None:
+    cfg = get_remote_config()
+    if not cfg or "upgrade_required" not in cfg:
+        return
+    cfg.pop("upgrade_required", None)
+    cfg["updated_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        _config_file().write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _get_auth_headers(token: str) -> dict[str, str]:
-    headers = {"User-Agent": f"agents-memory-client/{__version__}"}
+    headers = {
+        "User-Agent": f"agents-memory-client/{__version__}",
+        VERSION_HEADER: __version__,
+        EPOCH_HEADER: str(local_epoch()),
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _error_message(resp: httpx.Response) -> str:
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+    if isinstance(data, dict) and data.get("error"):
+        return str(data["error"])
+    text = (resp.text or "").strip()
+    return text or f"HTTP {resp.status_code}"
+
+
+def _raise_for_sync(resp: httpx.Response) -> None:
+    if resp.status_code == 401:
+        raise PermissionError("Unauthorized: Token rejected by remote server.")
+    if resp.status_code == 426:
+        message = _error_message(resp)
+        note_upgrade_required(message)
+        raise UpgradeRequired(message)
+    if resp.status_code == 409:
+        message = _error_message(resp)
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        if isinstance(data, dict) and data.get("code") == "epoch_mismatch":
+            raise EpochMismatch(
+                message,
+                server_epoch=as_epoch(data.get("epoch")),
+                client_epoch=as_epoch(data.get("client_epoch")),
+            )
+        raise RuntimeError(message)
+    resp.raise_for_status()
+
+
+def _observe_server_requirements(data: dict[str, Any]) -> None:
+    """Surface min_client_version from a snapshot or health body. Reads are allowed."""
+    minimum = str(data.get("min_client_version") or "").strip()
+    if minimum and version_older(__version__, minimum):
+        hint = str(data.get("update_hint") or "").strip() or None
+        note_upgrade_required(upgrade_required_message(minimum, hint))
+    else:
+        clear_upgrade_required()
 
 
 def _is_ssl_verify_enabled(cfg: Optional[dict[str, Any]] = None) -> bool:
@@ -150,6 +282,8 @@ def verify_remote_tool_api(
             data = resp.json()
             if data.get("locality") == "local":
                 return {"ok": True, "tool_api": True}
+        if resp.status_code == 426:
+            _raise_for_sync(resp)
         resp.raise_for_status()
         return {"ok": True, "tool_api": True}
 
@@ -168,10 +302,11 @@ def remote_health_check(
 
     with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.get(target, headers=headers)
-        if resp.status_code == 401:
-            raise PermissionError("Unauthorized: Token rejected by remote server.")
-        resp.raise_for_status()
-        return resp.json()
+        _raise_for_sync(resp)
+        data = resp.json()
+        if isinstance(data, dict):
+            _observe_server_requirements(data)
+        return data
 
 
 def touch_remote_config_sync_time() -> None:
@@ -230,9 +365,7 @@ def _fetch_snapshot(
     headers = _get_auth_headers(token)
     with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.get(f"{clean_url}/api/v1/snapshot", headers=headers)
-        if resp.status_code == 401:
-            raise PermissionError("Unauthorized: Token rejected by remote server.")
-        resp.raise_for_status()
+        _raise_for_sync(resp)
         data = resp.json()
     if not isinstance(data, dict):
         raise ValueError("snapshot was not a JSON object")
@@ -259,6 +392,17 @@ def _merged_pull_tombstones(dest_root: Path, data: dict[str, Any]) -> dict[str, 
     return merged
 
 
+def _snapshot_files(data: dict[str, Any]) -> dict[str, str]:
+    files = data.get("files") or {}
+    if not isinstance(files, dict):
+        return {}
+    return {
+        str(key).replace("\\", "/").lstrip("/"): value
+        for key, value in files.items()
+        if isinstance(value, str)
+    }
+
+
 def remote_pull(
     url: str,
     token: str = "",
@@ -271,57 +415,92 @@ def remote_pull(
 
     ``replace=True`` makes the local synced store match the snapshot exactly
     (backup first, no table union). Machine-local files stay.
+
+    A snapshot whose ``epoch`` is ahead of this device also replaces (startup
+    pull and the 60s pull). Edits since the last baseline are written back on
+    top and pushed once the new epoch is stored.
     """
     dest_root = target_dir or USER_MEMORY
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+    follow_up_push = False
     with exclusive_sync_lock(dest_root):
         data = _fetch_snapshot(url, token, timeout, verify)
-        files = data.get("files") or {}
-        if not isinstance(files, dict):
-            files = {}
-        files = {str(k).replace("\\", "/").lstrip("/"): v for k, v in files.items() if isinstance(v, str)}
+        _observe_server_requirements(data)
+        files = _snapshot_files(data)
+        server_epoch = as_epoch(data.get("epoch"))
+        auto_epoch = (not replace) and server_epoch > local_epoch()
 
-        if replace:
+        if replace or auto_epoch:
+            pending: dict[str, Any] = {"files": {}, "project_rows": []}
+            if auto_epoch:
+                current = collect_sync_bundle(include_projects=True, memory_root=dest_root)
+                pending = capture_pending(dest_root, current)
             report = apply_snapshot_replace(files, target_root=dest_root, apply_to_repos=True)
+            if auto_epoch:
+                reapply_pending(dest_root, pending)
             save_tombstones(dest_root, normalize_tombstones(data.get("tombstones")))
-            save_baseline(dest_root, files)
+            save_baseline(dest_root, collect_sync_bundle(include_projects=True, memory_root=dest_root))
+            remember_epoch(server_epoch)
             touch_remote_config_sync_time()
-            return {
+            follow_up_push = bool(
+                auto_epoch
+                and (pending.get("files") or pending.get("project_rows"))
+                and not upgrade_notice()
+            )
+            result = {
                 "status": "ok",
                 "replaced": True,
+                "auto_epoch": auto_epoch,
+                "epoch": server_epoch,
                 "total_files": len(files),
                 "backup": report.get("backup"),
                 "report": report,
             }
-
-        current = collect_sync_bundle(include_projects=True, memory_root=dest_root)
-        infer_from_baseline(dest_root, current)
-        tombstones = _merged_pull_tombstones(dest_root, data)
-        explicit = load_writes(dest_root)
-        filtered = {
-            k: v
-            for k, v in files.items()
-            if not file_blocked(
-                tombstones,
-                k,
-                explicit_files=explicit.get("files") or {},
-                explicit_prefixes=explicit.get("prefixes") or {},
+        else:
+            current = collect_sync_bundle(include_projects=True, memory_root=dest_root)
+            infer_from_baseline(dest_root, current)
+            tombstones = _merged_pull_tombstones(dest_root, data)
+            explicit = load_writes(dest_root)
+            filtered = {
+                k: v
+                for k, v in files.items()
+                if not file_blocked(
+                    tombstones,
+                    k,
+                    explicit_files=explicit.get("files") or {},
+                    explicit_prefixes=explicit.get("prefixes") or {},
+                )
+            }
+            report = apply_sync_bundle(
+                filtered,
+                target_root=dest_root,
+                apply_to_repos=True,
+                tombstones=tombstones,
+                writes=explicit,
             )
-        }
-        report = apply_sync_bundle(
-            filtered,
-            target_root=dest_root,
-            apply_to_repos=True,
-            tombstones=tombstones,
-            writes=explicit,
-        )
-        save_baseline(dest_root, collect_sync_bundle(include_projects=True, memory_root=dest_root))
-        touch_remote_config_sync_time()
-        return {
-            "status": "ok",
-            "total_files": len(filtered),
-            "report": report,
-        }
+            save_baseline(dest_root, collect_sync_bundle(include_projects=True, memory_root=dest_root))
+            remember_epoch(server_epoch)
+            touch_remote_config_sync_time()
+            result = {
+                "status": "ok",
+                "epoch": server_epoch,
+                "total_files": len(filtered),
+                "report": report,
+            }
+    if follow_up_push:
+        try:
+            remote_push_merge(
+                url,
+                token=token,
+                source_dir=dest_root,
+                timeout=timeout,
+                verify_ssl=verify,
+            )
+        except UpgradeRequired:
+            raise
+        except Exception:
+            pass
+    return result
 
 
 def remote_push_merge(
@@ -331,43 +510,96 @@ def remote_push_merge(
     timeout: float = 30.0,
     verify_ssl: Optional[bool] = None,
     publish_absences: bool = False,
+    replace: bool = False,
+    _retry: bool = True,
 ) -> dict[str, Any]:
     """Upload local mirror bundle to remote server for deterministic merging.
 
     ``publish_absences`` (CLI ``remote push``) tombstones project rows and
     project-tree files the remote still has but this store does not, when this
     device has no sync baseline yet. Background pushes leave it off.
+
+    ``replace=True`` (CLI ``remote push --replace``) makes the server store
+    match this machine and bumps the vault epoch.
+
+    A 409 epoch mismatch replaces the local store from the snapshot, puts
+    baseline-diverged edits back, then retries the push once.
     """
     root = source_dir or USER_MEMORY
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+    try:
+        return _push_once(
+            url,
+            token=token,
+            root=root,
+            timeout=timeout,
+            verify=verify,
+            publish_absences=publish_absences and not replace,
+            replace=replace,
+        )
+    except EpochMismatch:
+        if replace or not _retry:
+            raise
+        current = collect_sync_bundle(include_projects=True, memory_root=root)
+        pending = capture_pending(root, current)
+        remote_pull(
+            url,
+            token=token,
+            target_dir=root,
+            timeout=timeout,
+            verify_ssl=verify,
+            replace=True,
+        )
+        reapply_pending(root, pending)
+        return remote_push_merge(
+            url,
+            token=token,
+            source_dir=root,
+            timeout=timeout,
+            verify_ssl=verify,
+            publish_absences=False,
+            replace=False,
+            _retry=False,
+        )
+
+
+def _push_once(
+    url: str,
+    token: str,
+    root: Path,
+    timeout: float,
+    verify: bool,
+    publish_absences: bool,
+    replace: bool,
+) -> dict[str, Any]:
     clean_url = url.strip().rstrip("/")
     target = f"{clean_url}/api/v1/merge"
-    headers = _get_auth_headers(token)
-    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
-
     with exclusive_sync_lock(root):
+        headers = _get_auth_headers(token)
         stamps: dict[str, str] = {}
         local_files = collect_sync_bundle(
             include_projects=True,
             memory_root=root,
             stamps=stamps,
         )
-        infer_from_baseline(root, local_files)
-        if publish_absences and load_baseline(root) is None:
-            snap = _fetch_snapshot(url, token, timeout, verify)
-            remote_files = snap.get("files") if isinstance(snap.get("files"), dict) else {}
-            infer_remote_project_absences(root, local_files, remote_files)
-            stamps = {}
-            local_files = collect_sync_bundle(
-                include_projects=True,
-                memory_root=root,
-                stamps=stamps,
-            )
+        if not replace:
+            infer_from_baseline(root, local_files)
+            if publish_absences and load_baseline(root) is None:
+                snap = _fetch_snapshot(url, token, timeout, verify)
+                remote_files = snap.get("files") if isinstance(snap.get("files"), dict) else {}
+                infer_remote_project_absences(root, local_files, remote_files)
+                stamps = {}
+                local_files = collect_sync_bundle(
+                    include_projects=True,
+                    memory_root=root,
+                    stamps=stamps,
+                )
 
         tombstones = load_tombstones(root)
         explicit = load_writes(root)
         send_files: dict[str, str] = {}
         for key, content in local_files.items():
-            if file_blocked(
+            if not replace and file_blocked(
                 tombstones,
                 key,
                 mtime=stamps.get(key),
@@ -377,11 +609,12 @@ def remote_push_merge(
                 continue
             send_files[key] = content
 
-        local_deleted = _pending_deletions(root)
-        payload = {
+        local_deleted = [] if replace else _pending_deletions(root)
+        payload: dict[str, Any] = {
             "files": send_files,
             "deleted": local_deleted,
             "tombstones": tombstones,
+            "epoch": local_epoch(),
             "writes": {
                 "files": stamps,
                 "explicit_files": explicit.get("files") or {},
@@ -390,17 +623,18 @@ def remote_push_merge(
                 "bullets": explicit.get("bullets") or {},
             },
         }
+        if replace:
+            payload["replace"] = True
 
         with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
             resp = client.post(target, json=payload, headers=headers)
-            if resp.status_code == 401:
-                raise PermissionError("Unauthorized: Token rejected by remote server.")
-            resp.raise_for_status()
+            _raise_for_sync(resp)
             data = resp.json()
 
         if local_deleted:
             _clear_pending_deletions(root, local_deleted)
-        clear_writes(root)
+        if not replace:
+            clear_writes(root)
 
         server_ts = normalize_tombstones(data.get("tombstones"))
         if not data.get("tombstones"):
@@ -413,7 +647,7 @@ def remote_push_merge(
 
         server_deleted = set(data.get("deleted") or [])
         server_snapshot = data.get("snapshot") or {}
-        if isinstance(server_snapshot, dict) and server_snapshot:
+        if not replace and isinstance(server_snapshot, dict) and server_snapshot:
             filtered_snapshot = {
                 k: v
                 for k, v in server_snapshot.items()
@@ -428,13 +662,36 @@ def remote_push_merge(
                 tombstones=server_ts,
             )
         save_baseline(root, collect_sync_bundle(include_projects=True, memory_root=root))
+        if "epoch" in data:
+            remember_epoch(as_epoch(data.get("epoch")))
         touch_remote_config_sync_time()
 
         return {
             "status": "ok",
+            "replaced": bool(data.get("replaced")),
+            "epoch": as_epoch(data.get("epoch")),
             "server_report": data.get("report", {}),
             "total_files": len(server_snapshot) or len(send_files),
         }
+
+
+def remote_bump_epoch(
+    url: str,
+    token: str = "",
+    timeout: float = 30.0,
+    verify_ssl: Optional[bool] = None,
+) -> dict[str, Any]:
+    """Ask the server to increment the vault epoch and remember the new value."""
+    clean_url = url.strip().rstrip("/")
+    verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+    headers = _get_auth_headers(token)
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+        resp = client.post(f"{clean_url}/api/v1/epoch", headers=headers)
+        _raise_for_sync(resp)
+        data = resp.json()
+    if isinstance(data, dict) and "epoch" in data:
+        remember_epoch(as_epoch(data.get("epoch")))
+    return data if isinstance(data, dict) else {"status": "ok"}
 
 
 def remote_delete_file(
@@ -453,8 +710,7 @@ def remote_delete_file(
 
     with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
         resp = client.delete(target, headers=headers)
-        if resp.status_code == 401:
-            raise PermissionError("Unauthorized: Token rejected by remote server.")
+        _raise_for_sync(resp)
         return resp.status_code == 200
 
 

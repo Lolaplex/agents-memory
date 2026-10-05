@@ -77,6 +77,30 @@ Writers: `delete_memory` (whole file, a `PROJECTS.md` row, or a bullet line), `d
 
 The command takes the same cross-process lock as MCP pull/push (`.sync.lock`). It is safe while `sync_mcp` is running: the background pull waits, then merges a store that already matches the server. If the lock stays busy for 15 seconds, the command refuses and tells you to retry.
 
+### Vault epoch
+
+The server stores an integer in `~/.agents/memory/.epoch` (a dotfile, not in the bundle). Snapshot and merge responses include `epoch`. Clients store the last epoch they synced in `remote_config.json`.
+
+`agents-memory remote bump-epoch` increments it. `remote push --replace` also increments it, after making the server's synced files match this machine exactly (backup on the server, tombstones cleared). That is the command to run on the machine that holds a cleaned vault.
+
+A merge, `PUT`, or `DELETE` whose `X-Agents-Memory-Epoch` (or JSON `epoch`) is **behind** the server returns **409** `epoch_mismatch`. A missing epoch counts as 0. While the server epoch is still 0, every client is accepted.
+
+A 1.2 client handles 409 itself: replace-pull (backup + exact snapshot), write back files that differ from its last sync baseline, then retry the push once. With no baseline, nothing is written back (a stale vault must not replay itself). `sync_mcp` does the same on its startup pull and on the 60s pull when the snapshot epoch is ahead, and on the push after a memory write.
+
+`remote push --replace` is not rejected for a low epoch. Run it only on the cleaned machine.
+
+### Minimum client version
+
+Set `AGENTS_MEMORY_MIN_CLIENT_VERSION` (or `remote serve --min-client-version`). Writers send `X-Agents-Memory-Version`. `POST /api/v1/merge`, `PUT /api/v1/file`, `DELETE /api/v1/file`, and `POST /api/v1/tool` from a client below that version, **or with no version header**, return **426**. The JSON `error` is:
+
+`agents-memory <version> required. Update: uv tool install --force "git+https://github.com/Lolaplex/agents-memory@dev"`
+
+The install command is `AGENTS_MEMORY_UPDATE_HINT` or `remote serve --update-hint`. Reads (`GET` snapshot, file, health) stay open and include `min_client_version` plus `update_hint`.
+
+A 1.2 client stores that sentence, prints it on MCP startup, prepends it to MCP tool results, and stops background pushes until the running version is new enough.
+
+**1.1.1 clients** call `raise_for_status()`. That exception text is the status line and URL (`426 Upgrade Required`), not the JSON body. `sync_mcp` catches it, retries the push three times, appends the status line to `staging/sync-errors.md`, and returns. The MCP process stays up. The tool result does not include the update sentence. The sentence is only in the HTTP body.
+
 ## Index (FTS)
 - Rebuilt locally after each pull/push (`~/.agents/memory/.index/`).
 - Never synced; markdown is source of truth.

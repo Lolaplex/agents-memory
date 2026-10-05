@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from .client import get_remote_config, remote_pull, remote_push_merge
+from .client import UpgradeRequired, get_remote_config, remote_pull, remote_push_merge, upgrade_notice
 
 _push_lock = threading.Lock()
 _bg_thread: Optional[threading.Thread] = None
@@ -48,6 +48,8 @@ def push_if_connected(refresh_index: bool = True, retries: int = _MAX_RETRIES) -
     cfg = get_remote_config()
     if not cfg or not cfg.get("url"):
         return None
+    if upgrade_notice():
+        return None
     attempts = max(1, min(int(retries), 5))
     last_err: Optional[BaseException] = None
     with _push_lock:
@@ -61,6 +63,9 @@ def push_if_connected(refresh_index: bool = True, retries: int = _MAX_RETRIES) -
                 if refresh_index:
                     _refresh_index()
                 return res
+            except UpgradeRequired as e:
+                _log_sync_error("push", e)
+                return None
             except Exception as e:
                 last_err = e
                 if attempt < attempts:

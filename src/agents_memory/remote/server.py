@@ -24,10 +24,21 @@ from ..store import (
 )
 from .locality import INGEST_TOOLS, LOCAL_TOOLS, assert_ingest_runs_locally
 from .sync_bundle import apply_sync_bundle, collect_sync_bundle, enforce_tombstones
+from .protocol import (
+    as_epoch,
+    bump_epoch,
+    load_epoch,
+    min_client_version,
+    update_hint,
+    upgrade_required_message,
+    version_older,
+)
 from .tombstones import (
     absorb_deleted_list,
     compact,
     diff_projects_text,
+    empty_tombstones,
+    empty_writes,
     file_blocked,
     file_tombstone_paths,
     load_tombstones,
@@ -84,18 +95,76 @@ class TokenAuthMiddleware:
         return await self.app(scope, receive, send)
 
 
+def _protocol_fields() -> dict[str, Any]:
+    minimum = min_client_version()
+    return {
+        "epoch": load_epoch(USER_MEMORY),
+        "min_client_version": minimum,
+        "update_hint": update_hint() if minimum else "",
+    }
+
+
+def _reject_old_client(request: Request) -> Optional[JSONResponse]:
+    """426 for writers below ``min_client_version``, including a missing header."""
+    minimum = min_client_version()
+    if not minimum:
+        return None
+    client_version = request.headers.get("x-agents-memory-version", "").strip()
+    if client_version and not version_older(client_version, minimum):
+        return None
+    message = upgrade_required_message(minimum)
+    return JSONResponse(
+        {
+            "error": message,
+            "min_client_version": minimum,
+            "update": update_hint(),
+        },
+        status_code=426,
+    )
+
+
+def _client_epoch(request: Request, body: Any) -> int:
+    raw = request.headers.get("x-agents-memory-epoch")
+    if raw is not None and str(raw).strip() != "":
+        return as_epoch(raw)
+    if isinstance(body, dict) and "epoch" in body:
+        return as_epoch(body.get("epoch"))
+    return 0
+
+
+def _reject_old_epoch(request: Request, body: Any) -> Optional[JSONResponse]:
+    """409 when the writer last synced an older vault epoch. Epoch 0 accepts everyone."""
+    server_epoch = load_epoch(USER_MEMORY)
+    client_epoch = _client_epoch(request, body)
+    if client_epoch >= server_epoch:
+        return None
+    message = (
+        f"vault epoch {client_epoch} is behind server epoch {server_epoch}. "
+        "Run agents-memory remote pull --replace, then retry the write."
+    )
+    return JSONResponse(
+        {
+            "error": message,
+            "code": "epoch_mismatch",
+            "epoch": server_epoch,
+            "client_epoch": client_epoch,
+        },
+        status_code=409,
+    )
+
+
 async def health_endpoint(request: Request) -> JSONResponse:
     """Return health status and basic memory stats."""
     ensure_memory_layout()
     files = get_all_memory_files()
-    return JSONResponse(
-        {
-            "status": "ok",
-            "version": __version__,
-            "files_count": len(files),
-            "store_path": str(USER_MEMORY),
-        }
-    )
+    body = {
+        "status": "ok",
+        "version": __version__,
+        "files_count": len(files),
+        "store_path": str(USER_MEMORY),
+    }
+    body.update(_protocol_fields())
+    return JSONResponse(body)
 
 
 def _tombstones_file() -> Path:
@@ -192,20 +261,52 @@ async def snapshot_endpoint(request: Request) -> JSONResponse:
     tombstones = compact(load_tombstones(USER_MEMORY))
     save_tombstones(USER_MEMORY, tombstones)
     files = _snapshot_files(tombstones)
-    return JSONResponse(
-        {
-            "status": "ok",
-            "version": __version__,
-            "files": files,
-            "deleted": file_tombstone_paths(tombstones),
-            "tombstones": tombstones,
-        }
-    )
+    body = {
+        "status": "ok",
+        "version": __version__,
+        "files": files,
+        "deleted": file_tombstone_paths(tombstones),
+        "tombstones": tombstones,
+    }
+    body.update(_protocol_fields())
+    return JSONResponse(body)
+
+
+def _replace_server_store(incoming_files: dict[str, str]) -> JSONResponse:
+    """Make the server store match the client bundle, then bump the vault epoch."""
+    from .sync_bundle import apply_snapshot_replace
+
+    files = {
+        str(rel).replace("\\", "/").lstrip("/"): content
+        for rel, content in incoming_files.items()
+        if isinstance(content, str)
+    }
+    report = apply_snapshot_replace(files, target_root=USER_MEMORY, apply_to_repos=False)
+    save_tombstones(USER_MEMORY, empty_tombstones())
+    save_writes(USER_MEMORY, empty_writes())
+    epoch = bump_epoch(USER_MEMORY)
+    fresh = load_tombstones(USER_MEMORY)
+    snapshot = _snapshot_files(fresh)
+    body = {
+        "status": "ok",
+        "replaced": True,
+        "epoch": epoch,
+        "report": report,
+        "snapshot": snapshot,
+        "deleted": [],
+        "tombstones": fresh,
+    }
+    body.update(_protocol_fields())
+    body["epoch"] = epoch
+    return JSONResponse(body)
 
 
 async def merge_endpoint(request: Request) -> JSONResponse:
     """Receive incoming memory files and deterministically merge them into server store."""
     ensure_memory_layout()
+    denied = _reject_old_client(request)
+    if denied is not None:
+        return denied
     try:
         data = await request.json()
     except Exception:
@@ -214,6 +315,13 @@ async def merge_endpoint(request: Request) -> JSONResponse:
     incoming_files = data.get("files", {})
     if not isinstance(incoming_files, dict):
         return JSONResponse({"error": "Expected 'files' dictionary"}, status_code=400)
+
+    if data.get("replace") is True:
+        return _replace_server_store(incoming_files)
+
+    denied = _reject_old_epoch(request, data)
+    if denied is not None:
+        return denied
 
     # Tombstones first, so an old client pushing stale bytes cannot resurrect them.
     tombstones = _prepare_server_tombstones(
@@ -292,19 +400,25 @@ async def merge_endpoint(request: Request) -> JSONResponse:
 
     current_snapshot = _snapshot_files(load_tombstones(USER_MEMORY))
     fresh = load_tombstones(USER_MEMORY)
-    return JSONResponse(
-        {
-            "status": "ok",
-            "report": report,
-            "snapshot": current_snapshot,
-            "deleted": file_tombstone_paths(fresh),
-            "tombstones": fresh,
-        }
-    )
+    body = {
+        "status": "ok",
+        "report": report,
+        "snapshot": current_snapshot,
+        "deleted": file_tombstone_paths(fresh),
+        "tombstones": fresh,
+    }
+    body.update(_protocol_fields())
+    return JSONResponse(body)
 
 
 async def delete_file_endpoint(request: Request) -> JSONResponse:
     """Delete a single memory file directly via DELETE /api/v1/file?path=..."""
+    denied = _reject_old_client(request)
+    if denied is not None:
+        return denied
+    denied = _reject_old_epoch(request, None)
+    if denied is not None:
+        return denied
     rel_path = request.query_params.get("path", "").strip().lstrip("/\\")
     if not rel_path or ".." in rel_path:
         return JSONResponse({"error": "Invalid path"}, status_code=400)
@@ -382,6 +496,9 @@ def _mcp_tool_handlers() -> dict[str, Any]:
 
 async def tool_call_endpoint(request: Request) -> JSONResponse:
     """Execute one MCP tool on the canonical remote store."""
+    denied = _reject_old_client(request)
+    if denied is not None:
+        return denied
     try:
         data = await request.json()
     except Exception:
@@ -420,10 +537,16 @@ async def tool_call_endpoint(request: Request) -> JSONResponse:
 
 async def put_file_endpoint(request: Request) -> JSONResponse:
     """Write/merge a single memory file."""
+    denied = _reject_old_client(request)
+    if denied is not None:
+        return denied
     try:
         data = await request.json()
     except Exception:
         return JSONResponse({"error": "Invalid JSON payload"}, status_code=400)
+    denied = _reject_old_epoch(request, data)
+    if denied is not None:
+        return denied
 
     rel_path = str(data.get("path", "")).strip().lstrip("/\\")
     content = str(data.get("content", ""))
@@ -453,6 +576,19 @@ async def put_file_endpoint(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "path": rel_path})
 
 
+async def bump_epoch_endpoint(request: Request) -> JSONResponse:
+    """Increment the vault epoch. Writers still on the old epoch are rejected."""
+    denied = _reject_old_client(request)
+    if denied is not None:
+        return denied
+    ensure_memory_layout()
+    epoch = bump_epoch(USER_MEMORY)
+    body = {"status": "ok", "epoch": epoch}
+    body.update(_protocol_fields())
+    body["epoch"] = epoch
+    return JSONResponse(body)
+
+
 def create_remote_app(token: str = "") -> Starlette:
     """Create the unified Starlette app containing REST sync endpoints and SSE FastMCP."""
     ensure_memory_layout()
@@ -475,6 +611,7 @@ def create_remote_app(token: str = "") -> Starlette:
         Route("/api/v1/health", health_endpoint, methods=["GET"]),
         Route("/api/v1/snapshot", snapshot_endpoint, methods=["GET"]),
         Route("/api/v1/merge", merge_endpoint, methods=["POST"]),
+        Route("/api/v1/epoch", bump_epoch_endpoint, methods=["POST"]),
         Route("/api/v1/file", get_file_endpoint, methods=["GET"]),
         Route("/api/v1/file", put_file_endpoint, methods=["POST", "PUT"]),
         Route("/api/v1/file", delete_file_endpoint, methods=["DELETE"]),

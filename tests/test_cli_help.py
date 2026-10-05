@@ -73,6 +73,14 @@ class HelpJsonTests(unittest.TestCase):
         connect = spec["commands"]["remote"]["subcommands"]["connect"]
         connect_flags = {flag for opt in connect["options"] for flag in opt.get("flags", [])}
         self.assertIn("--replace", connect_flags)
+        push = spec["commands"]["remote"]["subcommands"]["push"]
+        push_flags = {flag for opt in push["options"] for flag in opt.get("flags", [])}
+        self.assertIn("--replace", push_flags)
+        self.assertIn("bump-epoch", spec["commands"]["remote"]["subcommands"])
+        serve = spec["commands"]["remote"]["subcommands"]["serve"]
+        serve_flags = {flag for opt in serve["options"] for flag in opt.get("flags", [])}
+        self.assertIn("--min-client-version", serve_flags)
+        self.assertIn("--update-hint", serve_flags)
         self.assertIn("write", spec["scripts_no_flags"])
         self.assertIn("delete", spec["scripts_no_flags"])
         self.assertIn("related", spec["scripts_no_flags"])

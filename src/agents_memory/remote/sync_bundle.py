@@ -1,6 +1,7 @@
 """Collect and apply full mirror sync bundles (user store + rules + project mirrors)."""
 from __future__ import annotations
 
+import hashlib
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -617,15 +618,105 @@ def load_baseline(root: Path) -> Optional[dict[str, Any]]:
     return data
 
 
+def _file_sha(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _table_slug_lines(text: str) -> dict[str, str]:
+    """Map a markdown table's slug cell to its raw line. Skips the header."""
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in stripped.strip("|").split("|")]
+        if not cells:
+            continue
+        slug = cells[0].strip().lower()
+        if not slug or slug == "slug" or set(slug) <= {"-", ":"}:
+            continue
+        out[slug] = line
+    return out
+
+
 def save_baseline(root: Path, files: dict[str, str]) -> None:
     import json
 
     text = files.get("PROJECTS.md", "")
     rows = [p.slug.lower() for p in parse_projects(text)]
-    payload = {"files": sorted(files), "rows": {"PROJECTS.md": rows}}
+    payload = {
+        "files": sorted(files),
+        "rows": {"PROJECTS.md": rows},
+        "hashes": {path: _file_sha(content) for path, content in files.items()},
+    }
     path = Path(root) / BASELINE_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def capture_pending(root: Path, files: dict[str, str]) -> dict[str, Any]:
+    """Edits since the last sync baseline.
+
+    No baseline means nothing is pending. A first sync after an epoch bump
+    must not replay a whole stale vault on top of the snapshot.
+    """
+    base = load_baseline(root)
+    if not base:
+        return {"files": {}, "project_rows": []}
+    known = {str(item) for item in (base.get("files") or [])}
+    hashes = base.get("hashes") if isinstance(base.get("hashes"), dict) else {}
+    raw_rows = []
+    if isinstance(base.get("rows"), dict):
+        raw_rows = (base.get("rows") or {}).get("PROJECTS.md") or []
+    base_rows = {str(slug).strip().lower() for slug in raw_rows} if isinstance(raw_rows, list) else set()
+    changed: dict[str, str] = {}
+    for path, content in files.items():
+        if path == "PROJECTS.md":
+            continue
+        digest = _file_sha(content)
+        if path not in known or (hashes and str(hashes.get(path) or "") != digest):
+            changed[path] = content
+    new_rows: list[str] = []
+    for slug, line in _table_slug_lines(files.get("PROJECTS.md") or "").items():
+        if slug not in base_rows:
+            new_rows.append(line)
+    return {"files": changed, "project_rows": new_rows}
+
+
+def reapply_pending(root: Path, pending: dict[str, Any]) -> None:
+    """Write baseline-diverged files back onto a store that was just replaced."""
+    files = pending.get("files") if isinstance(pending.get("files"), dict) else {}
+    if files:
+        user_files, rules_files, mirror_files = _split_bundle(files)
+        for rel, content in {**user_files, **mirror_files}.items():
+            if _bundle_key_skipped(rel):
+                continue
+            _write_verbatim(Path(root) / rel, content)
+        rules_dir = _rules_dir()
+        for rel, content in rules_files.items():
+            name = rel[len(RULES_PREFIX):]
+            if name.endswith(".mdc") and "/" not in name and ".." not in name:
+                rules_dir.mkdir(parents=True, exist_ok=True)
+                _write_verbatim(rules_dir / name, content)
+    rows = pending.get("project_rows") if isinstance(pending.get("project_rows"), list) else []
+    if not rows:
+        return
+    path = Path(root) / "PROJECTS.md"
+    existing = path.read_text(encoding="utf-8") if path.is_file() else (
+        "# Projects\n\n| slug | path | role | stack | status |\n|------|------|------|-------|--------|\n"
+    )
+    have = set(_table_slug_lines(existing))
+    extra: list[str] = []
+    for line in rows:
+        if not isinstance(line, str):
+            continue
+        slug = next(iter(_table_slug_lines(line)), "")
+        if slug and slug not in have:
+            extra.append(line)
+            have.add(slug)
+    if extra:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(existing.rstrip() + "\n" + "\n".join(extra) + "\n", encoding="utf-8")
 
 
 def infer_from_baseline(root: Path, current: dict[str, str]) -> None:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,7 @@ from .client import (
     clear_remote_config,
     get_remote_config,
     main_bridge,
+    remote_bump_epoch,
     remote_health_check,
     remote_pull,
     remote_push_merge,
@@ -75,6 +77,16 @@ def build_remote_parser() -> argparse.ArgumentParser:
     serve_p.add_argument("--port", "-p", type=int, default=8443, help="Port (default: 8443)")
     serve_p.add_argument("--token", "-t", default="", help="Bearer token secret (or AGENTS_MEMORY_TOKEN env)")
     serve_p.add_argument("--log-level", default="info", help="Log level (debug, info, warning)")
+    serve_p.add_argument(
+        "--min-client-version",
+        default="",
+        help="Reject older writers and writers with no version header (env AGENTS_MEMORY_MIN_CLIENT_VERSION)",
+    )
+    serve_p.add_argument(
+        "--update-hint",
+        default="",
+        help="Install command included in the HTTP 426 body (env AGENTS_MEMORY_UPDATE_HINT)",
+    )
 
     # connect
     connect_p = subparsers.add_parser("connect", help="Connect local machine to remote memory server")
@@ -98,6 +110,16 @@ def build_remote_parser() -> argparse.ArgumentParser:
 
     # push
     push_p = subparsers.add_parser("push", help="Push and merge local memory into remote server")
+    push_p.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace the remote store with this machine and bump the vault epoch",
+    )
+
+    subparsers.add_parser(
+        "bump-epoch",
+        help="Increment the server vault epoch so older clients must replace-pull",
+    )
 
     # pull
     pull_p = subparsers.add_parser("pull", help="Pull latest memory snapshot from remote server")
@@ -158,6 +180,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     cmd = args.remote_cmd
 
     if cmd == "serve":
+        if getattr(args, "min_client_version", ""):
+            os.environ["AGENTS_MEMORY_MIN_CLIENT_VERSION"] = args.min_client_version
+        if getattr(args, "update_hint", ""):
+            os.environ["AGENTS_MEMORY_UPDATE_HINT"] = args.update_hint
         run_server(
             host=args.host,
             port=args.port,
@@ -270,12 +296,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Server URL : {url}")
         print(f"Token      : {'***' if token else 'NONE'}")
         print(f"Last Sync  : {last_sync}")
+        print(f"Vault epoch: {cfg.get('epoch', 0)}")
+        if cfg.get("upgrade_required"):
+            print(cfg["upgrade_required"])
 
         print("\nChecking server health...")
         try:
             health = remote_health_check(url, token=token)
             print(f"Server Status : ONLINE (v{health.get('version', '?')})")
             print(f"Remote Files  : {health.get('files_count', 0)}")
+            print(f"Server epoch  : {health.get('epoch', 0)}")
+            if health.get("min_client_version"):
+                print(f"Min client    : {health.get('min_client_version')}")
         except Exception as e:
             print(f"Server Status : OFFLINE / ERROR ({e})")
         return 0
@@ -289,13 +321,32 @@ def main(argv: Optional[list[str]] = None) -> int:
         token = cfg.get("token", "")
         print(f"Pushing and merging local memory to {url}...")
         try:
-            res = remote_push_merge(url, token=token, publish_absences=True)
+            if getattr(args, "replace", False):
+                print("Replacing the remote store with this machine and bumping the vault epoch...")
+                res = remote_push_merge(url, token=token, replace=True)
+            else:
+                res = remote_push_merge(url, token=token, publish_absences=True)
             report = res.get("server_report", {})
             print(f"Push & Merge complete: {format_sync_report(report)}")
+            if res.get("epoch"):
+                print(f"Vault epoch: {res.get('epoch')}")
             return 0
         except Exception as e:
             print(f"Error pushing memory: {e}", file=sys.stderr)
             return 1
+
+    elif cmd == "bump-epoch":
+        cfg = get_remote_config()
+        if not cfg:
+            print("Error: Not connected to a remote server. Run 'agents-memory remote connect <URL>' first.", file=sys.stderr)
+            return 1
+        try:
+            res = remote_bump_epoch(str(cfg.get("url") or ""), token=str(cfg.get("token") or ""))
+        except Exception as e:
+            print(f"Error bumping epoch: {e}", file=sys.stderr)
+            return 1
+        print(f"Vault epoch is now {res.get('epoch')}. Other devices replace-pull on their next sync.")
+        return 0
 
     elif cmd == "pull":
         cfg = get_remote_config()

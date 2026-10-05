@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-05
+
 ### Added
+- Vault epoch (`.epoch`). `remote bump-epoch` and `remote push --replace` increment it. A push from an older epoch is HTTP 409. A 1.2 client replace-pulls, puts baseline-diverged edits back, and retries. `sync_mcp` does this on startup pull and on push.
+- Minimum client version (`AGENTS_MEMORY_MIN_CLIENT_VERSION` / `remote serve --min-client-version`). Writers without `X-Agents-Memory-Version`, or below the minimum, get HTTP 426 with an update command (`AGENTS_MEMORY_UPDATE_HINT`). Reads stay open. A 1.2 client shows the sentence on MCP results and stops pushing until updated.
 - `agents-memory remote pull --replace` and `remote connect --replace`: back up the local store, then make synced files match the remote snapshot exactly (no table union). Keeps machine-local files (`remote_config.json`, `.index/`, host paths).
 - Deletion tombstones (`.tombstones.json`): whole-file deletes, `PROJECTS.md` slug removals, project-tree prefixes, and deleted bullets survive merge. A newer re-add wins. Tombstones expire after 90 days. A 1.1 client that pushes stale content does not resurrect them on a new server.
 - Remote sync deletion propagation: deletions tracked in `.deleted.json`, sent to server in merge payload, unlinked, and recorded as server tombstones (`.tombstones.json`), preventing zombie file resurrection on subsequent pulls.

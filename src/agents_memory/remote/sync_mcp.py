@@ -9,7 +9,7 @@ ensure_memory_layout()
 
 
 def main() -> int:
-    from .sync_hooks import pull_if_connected, start_background_sync
+    from .sync_hooks import pull_if_connected, start_background_sync, upgrade_notice
 
     cfg_import = __import__(
         "agents_memory.remote.client", fromlist=["get_remote_config"]
@@ -21,6 +21,9 @@ def main() -> int:
             file=sys.stderr,
         )
         pull_if_connected(refresh_index=True)
+        notice = upgrade_notice()
+        if notice:
+            print(notice, file=sys.stderr)
         interval = float(cfg.get("sync_interval_seconds", 60))
         start_background_sync(interval=interval)
     else:

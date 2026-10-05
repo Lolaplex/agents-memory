@@ -202,8 +202,8 @@ def full_spec() -> dict[str, Any]:
             "usage": "python -m agents_memory web [DIR]",
         },
         "remote": {
-            "description": "Cloud mirror: serve/connect/disconnect/status/push/pull/client/attach. pull/connect --replace overwrites the local synced store from the snapshot.",
-            "usage": "python -m agents_memory remote {serve,connect,disconnect,status,push,pull,client,attach}",
+            "description": "Cloud mirror: serve/connect/disconnect/status/push/pull/bump-epoch/client/attach. pull/connect --replace matches the local store to the snapshot. push --replace publishes this machine and bumps the vault epoch.",
+            "usage": "python -m agents_memory remote {serve,connect,disconnect,status,push,pull,bump-epoch,client,attach}",
             "aliases": ["cloud", "connect", "disconnect"],
         },
         "reset": {

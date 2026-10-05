@@ -53,7 +53,7 @@ Cloud = source of truth; local files = working copy. All MCP tools run **locally
 | Repo facts | **Local repo** | MCP `add_memory(project=…)` → `<repo>/.agents/memory/` — mirrored to cloud |
 | Status | Either | `python -m agents_memory remote status` |
 | Disconnect | Workstation | `python -m agents_memory disconnect` (final pull) |
-| Manual sync | Workstation | `remote push` / `remote pull` / `python -m agents_memory sync --push` (hand-edits) |
+| Manual sync | Workstation | `remote push` / `remote pull` / `remote pull --replace` (exact snapshot; backup first) / `python -m agents_memory sync --push` (hand-edits) |
 
 After `connect`, IDE MCP entry is `agents_memory.remote.sync_mcp` (pull on start, push after writes).
 

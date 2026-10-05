@@ -130,7 +130,7 @@ Ops / install / batch. Humans and agents rarely need the vault CRUD verbs — th
 | `agents-memory distill [--auto]` | Staging inbox / noise pass |
 | `agents-memory check` | Mechanical store health (no LLM) |
 | `agents-memory rebuild-index` | Rebuild disposable FTS5 cache (MCP start already rebuilds) |
-| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases) |
+| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases). `remote pull --replace` makes this machine match the remote snapshot |
 | `agents-memory serve` / `web` | Local viewer / static HTML export |
 | `agents-memory reset --yes` | Clear local caches / temp state |
 | `agents-memory mcp` | stdio MCP clerk |

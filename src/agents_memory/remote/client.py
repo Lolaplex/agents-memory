@@ -26,8 +26,27 @@ from ..store import (
     is_engine_repo,
     sync_injection,
 )
+from .lock import exclusive_sync_lock
 from .merge import merge_file_trees
-from .sync_bundle import apply_sync_bundle, collect_sync_bundle
+from .sync_bundle import (
+    apply_snapshot_replace,
+    apply_sync_bundle,
+    collect_sync_bundle,
+    infer_from_baseline,
+    infer_remote_project_absences,
+    load_baseline,
+    save_baseline,
+)
+from .tombstones import (
+    clear_writes,
+    file_blocked,
+    load_tombstones,
+    load_writes,
+    merge_tombstones,
+    normalize_tombstones,
+    revive,
+    save_tombstones,
+)
 
 CONFIG_FILE = USER_MEMORY / "remote_config.json"
 
@@ -168,49 +187,141 @@ def touch_remote_config_sync_time() -> None:
             pass
 
 
+def _pending_deletions(root: Path) -> list[str]:
+    path = Path(root) / ".deleted.json"
+    if not path.is_file():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(data, list):
+        return [str(item) for item in data]
+    return []
+
+
+def _clear_pending_deletions(root: Path, acknowledged: list[str]) -> None:
+    path = Path(root) / ".deleted.json"
+    if not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        path.unlink(missing_ok=True)
+        return
+    if not isinstance(data, list):
+        path.unlink(missing_ok=True)
+        return
+    acked = set(acknowledged)
+    remain = [item for item in data if item not in acked]
+    if remain:
+        path.write_text(json.dumps(remain, indent=2) + "\n", encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _fetch_snapshot(
+    url: str,
+    token: str,
+    timeout: float,
+    verify: bool,
+) -> dict[str, Any]:
+    clean_url = url.strip().rstrip("/")
+    headers = _get_auth_headers(token)
+    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+        resp = client.get(f"{clean_url}/api/v1/snapshot", headers=headers)
+        if resp.status_code == 401:
+            raise PermissionError("Unauthorized: Token rejected by remote server.")
+        resp.raise_for_status()
+        data = resp.json()
+    if not isinstance(data, dict):
+        raise ValueError("snapshot was not a JSON object")
+    return data
+
+
+def _merged_pull_tombstones(dest_root: Path, data: dict[str, Any]) -> dict[str, Any]:
+    local_ts = load_tombstones(dest_root)
+    server_ts = normalize_tombstones(data.get("tombstones"))
+    deleted = data.get("deleted") if isinstance(data.get("deleted"), list) else []
+    from .tombstones import now_iso
+
+    for rel in deleted:
+        clean = str(rel).replace("\\", "/").strip().lstrip("/")
+        if clean and clean not in server_ts["files"]:
+            server_ts["files"][clean] = now_iso()
+    merged = merge_tombstones(local_ts, server_ts)
+    explicit = load_writes(dest_root)
+    merged = revive(merged, explicit)
+    from .tombstones import compact
+
+    merged = compact(merged)
+    save_tombstones(dest_root, merged)
+    return merged
+
+
 def remote_pull(
     url: str,
     token: str = "",
     target_dir: Optional[Path] = None,
     timeout: float = 30.0,
     verify_ssl: Optional[bool] = None,
+    replace: bool = False,
 ) -> dict[str, Any]:
-    """Download memory snapshot from remote and update target directory."""
-    clean_url = url.strip().rstrip("/")
-    target = f"{clean_url}/api/v1/snapshot"
-    headers = _get_auth_headers(token)
+    """Download memory snapshot from remote and update target directory.
+
+    ``replace=True`` makes the local synced store match the snapshot exactly
+    (backup first, no table union). Machine-local files stay.
+    """
     dest_root = target_dir or USER_MEMORY
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
+    with exclusive_sync_lock(dest_root):
+        data = _fetch_snapshot(url, token, timeout, verify)
+        files = data.get("files") or {}
+        if not isinstance(files, dict):
+            files = {}
+        files = {str(k).replace("\\", "/").lstrip("/"): v for k, v in files.items() if isinstance(v, str)}
 
-    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
-        resp = client.get(target, headers=headers)
-        if resp.status_code == 401:
-            raise PermissionError("Unauthorized: Token rejected by remote server.")
-        resp.raise_for_status()
-        data = resp.json()
+        if replace:
+            report = apply_snapshot_replace(files, target_root=dest_root, apply_to_repos=True)
+            save_tombstones(dest_root, normalize_tombstones(data.get("tombstones")))
+            save_baseline(dest_root, files)
+            touch_remote_config_sync_time()
+            return {
+                "status": "ok",
+                "replaced": True,
+                "total_files": len(files),
+                "backup": report.get("backup"),
+                "report": report,
+            }
 
-    # Process server-propagated deletions
-    server_deleted = data.get("deleted", [])
-    if isinstance(server_deleted, list):
-        for del_path in server_deleted:
-            del_clean = str(del_path).replace("\\", "/").strip().lstrip("/")
-            p = (dest_root / del_clean).resolve()
-            try:
-                if p.is_relative_to(dest_root.resolve()) and p.is_file():
-                    p.unlink()
-            except (ValueError, AttributeError):
-                pass
-
-    files = data.get("files", {})
-    filtered_files = {k: v for k, v in files.items() if k not in server_deleted}
-    report = apply_sync_bundle(filtered_files, target_root=dest_root, apply_to_repos=True)
-    touch_remote_config_sync_time()
-
-    return {
-        "status": "ok",
-        "total_files": len(filtered_files),
-        "report": report,
-    }
+        current = collect_sync_bundle(include_projects=True, memory_root=dest_root)
+        infer_from_baseline(dest_root, current)
+        tombstones = _merged_pull_tombstones(dest_root, data)
+        explicit = load_writes(dest_root)
+        filtered = {
+            k: v
+            for k, v in files.items()
+            if not file_blocked(
+                tombstones,
+                k,
+                explicit_files=explicit.get("files") or {},
+                explicit_prefixes=explicit.get("prefixes") or {},
+            )
+        }
+        report = apply_sync_bundle(
+            filtered,
+            target_root=dest_root,
+            apply_to_repos=True,
+            tombstones=tombstones,
+            writes=explicit,
+        )
+        save_baseline(dest_root, collect_sync_bundle(include_projects=True, memory_root=dest_root))
+        touch_remote_config_sync_time()
+        return {
+            "status": "ok",
+            "total_files": len(filtered),
+            "report": report,
+        }
 
 
 def remote_push_merge(
@@ -219,58 +330,111 @@ def remote_push_merge(
     source_dir: Optional[Path] = None,
     timeout: float = 30.0,
     verify_ssl: Optional[bool] = None,
+    publish_absences: bool = False,
 ) -> dict[str, Any]:
-    """Upload local mirror bundle to remote server for deterministic merging."""
-    from ..store import clear_acknowledged_deletions, load_local_deletions
+    """Upload local mirror bundle to remote server for deterministic merging.
 
+    ``publish_absences`` (CLI ``remote push``) tombstones project rows and
+    project-tree files the remote still has but this store does not, when this
+    device has no sync baseline yet. Background pushes leave it off.
+    """
+    root = source_dir or USER_MEMORY
     clean_url = url.strip().rstrip("/")
     target = f"{clean_url}/api/v1/merge"
     headers = _get_auth_headers(token)
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
 
-    local_files = collect_sync_bundle(
-        include_projects=True,
-        memory_root=source_dir or USER_MEMORY,
-    )
-    local_deleted = load_local_deletions()
-    payload = {"files": local_files, "deleted": local_deleted}
+    with exclusive_sync_lock(root):
+        stamps: dict[str, str] = {}
+        local_files = collect_sync_bundle(
+            include_projects=True,
+            memory_root=root,
+            stamps=stamps,
+        )
+        infer_from_baseline(root, local_files)
+        if publish_absences and load_baseline(root) is None:
+            snap = _fetch_snapshot(url, token, timeout, verify)
+            remote_files = snap.get("files") if isinstance(snap.get("files"), dict) else {}
+            infer_remote_project_absences(root, local_files, remote_files)
+            stamps = {}
+            local_files = collect_sync_bundle(
+                include_projects=True,
+                memory_root=root,
+                stamps=stamps,
+            )
 
-    with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
-        resp = client.post(target, json=payload, headers=headers)
-        if resp.status_code == 401:
-            raise PermissionError("Unauthorized: Token rejected by remote server.")
-        resp.raise_for_status()
-        data = resp.json()
+        tombstones = load_tombstones(root)
+        explicit = load_writes(root)
+        send_files: dict[str, str] = {}
+        for key, content in local_files.items():
+            if file_blocked(
+                tombstones,
+                key,
+                mtime=stamps.get(key),
+                explicit_files=explicit.get("files") or {},
+                explicit_prefixes=explicit.get("prefixes") or {},
+            ):
+                continue
+            send_files[key] = content
 
-    # Clear locally acknowledged deletions after successful remote merge
-    if local_deleted:
-        clear_acknowledged_deletions(local_deleted)
-
-    server_deleted = data.get("deleted", [])
-    if isinstance(server_deleted, list):
-        for del_path in server_deleted:
-            del_clean = str(del_path).replace("\\", "/").strip().lstrip("/")
-            p = (USER_MEMORY / del_clean).resolve()
-            try:
-                if p.is_relative_to(USER_MEMORY.resolve()) and p.is_file():
-                    p.unlink()
-            except (ValueError, AttributeError):
-                pass
-
-    server_snapshot = data.get("snapshot", {})
-    if server_snapshot:
-        filtered_snapshot = {
-            k: v for k, v in server_snapshot.items()
-            if k not in server_deleted and k not in local_deleted
+        local_deleted = _pending_deletions(root)
+        payload = {
+            "files": send_files,
+            "deleted": local_deleted,
+            "tombstones": tombstones,
+            "writes": {
+                "files": stamps,
+                "explicit_files": explicit.get("files") or {},
+                "prefixes": explicit.get("prefixes") or {},
+                "rows": explicit.get("rows") or {},
+                "bullets": explicit.get("bullets") or {},
+            },
         }
-        apply_sync_bundle(filtered_snapshot, target_root=USER_MEMORY, apply_to_repos=True)
-    touch_remote_config_sync_time()
 
-    return {
-        "status": "ok",
-        "server_report": data.get("report", {}),
-        "total_files": len(server_snapshot) or len(local_files),
-    }
+        with _get_http_client(timeout=timeout, verify_ssl=verify) as client:
+            resp = client.post(target, json=payload, headers=headers)
+            if resp.status_code == 401:
+                raise PermissionError("Unauthorized: Token rejected by remote server.")
+            resp.raise_for_status()
+            data = resp.json()
+
+        if local_deleted:
+            _clear_pending_deletions(root, local_deleted)
+        clear_writes(root)
+
+        server_ts = normalize_tombstones(data.get("tombstones"))
+        if not data.get("tombstones"):
+            server_ts = merge_tombstones(tombstones, server_ts)
+            for rel in data.get("deleted") or []:
+                clean = str(rel).replace("\\", "/").strip().lstrip("/")
+                if clean:
+                    server_ts["files"].setdefault(clean, stamps.get(clean) or "1970-01-01T00:00:00Z")
+        save_tombstones(root, server_ts)
+
+        server_deleted = set(data.get("deleted") or [])
+        server_snapshot = data.get("snapshot") or {}
+        if isinstance(server_snapshot, dict) and server_snapshot:
+            filtered_snapshot = {
+                k: v
+                for k, v in server_snapshot.items()
+                if isinstance(v, str)
+                and k not in server_deleted
+                and not file_blocked(server_ts, str(k))
+            }
+            apply_sync_bundle(
+                filtered_snapshot,
+                target_root=root,
+                apply_to_repos=True,
+                tombstones=server_ts,
+            )
+        save_baseline(root, collect_sync_bundle(include_projects=True, memory_root=root))
+        touch_remote_config_sync_time()
+
+        return {
+            "status": "ok",
+            "server_report": data.get("report", {}),
+            "total_files": len(server_snapshot) or len(send_files),
+        }
 
 
 def remote_delete_file(

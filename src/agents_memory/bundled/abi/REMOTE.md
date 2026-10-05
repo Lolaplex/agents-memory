@@ -35,8 +35,47 @@ Chat graves, FTS index (`.index/`), `remote_config.json`, and `board_attach.json
 
 ### PROJECTS.md merge
 - New slugs: appended.
-- Existing slug row edited on another device: **incoming wins**.
+- Existing slug row edited on another device: **incoming wins** (local path kept when the incoming path is not on this host).
+- A slug removed on one device stays removed. The union drops tombstoned rows.
 - Conflicts logged to `staging/sync-conflicts.md` for agent review.
+
+### Deletion tombstones
+
+Merge unions files and table rows, so a missing path is not a deletion. A deletion is an explicit tombstone. The file is `~/.agents/memory/.tombstones.json` (a dotfile, never part of the bundle). Push and pull carry the same document on `/api/v1/merge` and `/api/v1/snapshot` as `tombstones`, plus the legacy `deleted` path list.
+
+```json
+{
+  "version": 1,
+  "files": {"notes/old.md": "2026-10-05T12:00:00Z"},
+  "prefixes": {"mirror/projects/old-slug/": "2026-10-05T12:00:00Z"},
+  "rows": {"PROJECTS.md": {"old-slug": "2026-10-05T12:00:00Z"}},
+  "bullets": {"concepts/x.md": {"normalized bullet": "2026-10-05T12:00:00Z"}}
+}
+```
+
+Rules, in order:
+
+1. Later deletion stamp wins when two devices tombstone the same key.
+2. A whole-file tombstone blocks that path. A prefix tombstone blocks everything under it (`mirror/projects/<slug>/` and `projects/<slug>/` when a slug is removed).
+3. After the table union, tombstoned `PROJECTS.md` slugs are removed. After a bullet union, tombstoned bullets are removed.
+4. A **re-add wins only when it is strictly newer** than the tombstone. File mtime counts for a single file. It does not punch through a prefix (a touched project tree must not undo a project removal). Putting the slug back (`register_project`, editing the row) records an explicit row and prefix write. `write_memory_file` / `PUT /api/v1/file` records an explicit file write.
+5. Tombstones older than **90 days** are dropped on merge and snapshot. After that, a stale push can create the path again.
+6. An old 1.1 client sends files and no tombstones. The server still applies its tombstones and does not resurrect blocked paths or rows. Those clients do not strip rows on pull; upgrade them. `deleted` path lists are still unlinked.
+
+Writers: `delete_memory` (whole file, a `PROJECTS.md` row, or a bullet line), `delete_memory_file`, `ignore_project` / `inventory --ignore` when the slug is in `PROJECTS.md` (the row and that slug's mirror prefix are tombstoned; the repo checkout is not deleted), and `write_projects` / a `PROJECTS.md` rewrite that drops a slug. A baseline (`.sync-baseline.json`, local only) also tombstones paths this device had after the last sync and has since removed, so a background pull does not union them back.
+
+`remote push` (the CLI, not the background push) with **no baseline yet** also tombstones project rows and `mirror/projects/` / `projects/` paths that the remote still has and this store does not. An empty local `PROJECTS.md` does not wipe a populated remote. Pull once on any other machine before its first `remote push` after upgrade, so it does not publish absences it has merely not seen.
+
+### Replace pull
+
+`agents-memory remote pull --replace` (and `remote connect <url> --replace`) makes this machine's **synced** files match the snapshot exactly:
+
+1. Copy the store to `~/.agents/memory.bak-<UTC>` (sibling of the store directory). Registered repo memory trees are copied under that backup as `repo-memory-snapshot/<slug>/` before they are rewritten.
+2. Leave machine-local files in place: `remote_config.json`, `host_paths.json`, `board_attach.json`, `.index/`, and any other dotfile the bundle already skips.
+3. Delete synced files that are not in the snapshot. Write snapshot bytes verbatim (no table union).
+4. For each slug **still in the snapshot's `PROJECTS.md`** whose repo exists here, make `<repo>/.agents/memory/` match `mirror/projects/<slug>/`. Slugs that were removed are not registered anymore, so their checkouts are left on disk and are not pushed.
+
+The command takes the same cross-process lock as MCP pull/push (`.sync.lock`). It is safe while `sync_mcp` is running: the background pull waits, then merges a store that already matches the server. If the lock stays busy for 15 seconds, the command refuses and tells you to retry.
 
 ## Index (FTS)
 - Rebuilt locally after each pull/push (`~/.agents/memory/.index/`).

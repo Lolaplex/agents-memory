@@ -19,12 +19,23 @@ from .client import (
     save_remote_config,
     verify_remote_tool_api,
 )
+from .lock import SyncBusy
 from .server import run_server
 
 
 def format_sync_report(report: dict) -> str:
     if not isinstance(report, dict):
         return "0 added, 0 merged, 0 unchanged."
+
+    if report.get("replaced"):
+        user = report.get("user") if isinstance(report.get("user"), dict) else {}
+        written = len(user.get("written") or [])
+        removed = len(user.get("removed") or [])
+        backup = report.get("backup") or ""
+        msg = f"replaced: {written} files written, {removed} stale files removed."
+        if backup:
+            msg += f" Backup: {backup}"
+        return msg
 
     # Flat report format fallback
     if "added" in report or "merged" in report:
@@ -71,6 +82,11 @@ def build_remote_parser() -> argparse.ArgumentParser:
     connect_p.add_argument("--token", "-t", default="", help="Authentication token")
     connect_p.add_argument("--merge", "-m", action="store_true", default=True, help="Merge local memory into remote (default: True)")
     connect_p.add_argument("--pull-only", action="store_true", help="Do not upload local files; pull remote state only")
+    connect_p.add_argument(
+        "--replace",
+        action="store_true",
+        help="Replace the local store with the remote snapshot (backup first; no merge)",
+    )
     connect_p.add_argument("--no-auto-pull", action="store_true", help="Do not auto-pull prompt files on client bridge start")
     connect_p.add_argument("--insecure", "-k", action="store_true", help="Allow self-signed or unverified TLS certificates")
 
@@ -85,6 +101,11 @@ def build_remote_parser() -> argparse.ArgumentParser:
 
     # pull
     pull_p = subparsers.add_parser("pull", help="Pull latest memory snapshot from remote server")
+    pull_p.add_argument(
+        "--replace",
+        action="store_true",
+        help="Make the local synced store match the remote snapshot exactly (backup first)",
+    )
 
     # client
     client_p = subparsers.add_parser("client", help="Run stdio-to-remote MCP bridge")
@@ -171,7 +192,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"ERROR: Could not connect to remote server: {e}", file=sys.stderr)
             return 1
 
-        if args.pull_only:
+        if args.replace:
+            print("Replacing local memory with the remote snapshot...")
+            try:
+                res = remote_pull(url, token=token, verify_ssl=verify_ssl, replace=True)
+            except SyncBusy as e:
+                print(f"ERROR: {e}", file=sys.stderr)
+                return 1
+            print(format_sync_report(res.get("report") or {}))
+        elif args.pull_only:
             print("Pulling remote memory snapshot...")
             res = remote_pull(url, token=token, verify_ssl=verify_ssl)
             print(f"Pulled {res.get('total_files', 0)} files.")
@@ -260,7 +289,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         token = cfg.get("token", "")
         print(f"Pushing and merging local memory to {url}...")
         try:
-            res = remote_push_merge(url, token=token)
+            res = remote_push_merge(url, token=token, publish_absences=True)
             report = res.get("server_report", {})
             print(f"Push & Merge complete: {format_sync_report(report)}")
             return 0
@@ -277,10 +306,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         token = cfg.get("token", "")
         print(f"Pulling latest memory snapshot from {url}...")
         try:
-            res = remote_pull(url, token=token)
+            res = remote_pull(url, token=token, replace=bool(getattr(args, "replace", False)))
             report = res.get("report", {})
             print(f"Pull complete: {format_sync_report(report)}")
             return 0
+        except SyncBusy as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 1
         except Exception as e:
             print(f"Error pulling memory: {e}", file=sys.stderr)
             return 1

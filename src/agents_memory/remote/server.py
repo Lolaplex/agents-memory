@@ -1,7 +1,6 @@
 """Remote MCP & Cloud Sync Server for agents-memory."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import inspect
 import json
 import os
@@ -24,7 +23,25 @@ from ..store import (
     sync_injection,
 )
 from .locality import INGEST_TOOLS, LOCAL_TOOLS, assert_ingest_runs_locally
-from .sync_bundle import apply_sync_bundle, collect_sync_bundle, get_all_memory_files
+from .sync_bundle import apply_sync_bundle, collect_sync_bundle, enforce_tombstones
+from .tombstones import (
+    absorb_deleted_list,
+    compact,
+    diff_projects_text,
+    file_blocked,
+    file_tombstone_paths,
+    load_tombstones,
+    load_writes,
+    merge_tombstones,
+    normalize_tombstones,
+    normalize_writes,
+    now_iso,
+    record_explicit_file_write,
+    record_file,
+    revive,
+    save_tombstones,
+    save_writes,
+)
 
 os.environ.setdefault("AGENTS_MEMORY_REMOTE_SERVER", "1")
 
@@ -87,47 +104,101 @@ def _tombstones_file() -> Path:
 
 def record_server_tombstone(rel_path: str) -> None:
     """Record a deletion tombstone on the server."""
-    clean = rel_path.replace("\\", "/").strip().lstrip("/")
-    if not clean:
-        return
-    tomb_file = _tombstones_file()
-    tombstones = {}
-    if tomb_file.is_file():
-        try:
-            data = json.loads(tomb_file.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                tombstones = data
-        except Exception:
-            pass
-    tombstones[clean] = datetime.now(timezone.utc).isoformat()
-    tomb_file.parent.mkdir(parents=True, exist_ok=True)
-    tomb_file.write_text(json.dumps(tombstones, indent=2), encoding="utf-8")
+    record_file(USER_MEMORY, rel_path)
 
 
 def get_server_tombstones() -> list[str]:
-    """Retrieve list of all active deletion tombstones."""
-    tomb_file = _tombstones_file()
-    if not tomb_file.is_file():
-        return []
-    try:
-        data = json.loads(tomb_file.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return list(data.keys())
-    except Exception:
-        pass
-    return []
+    """Active file-tombstone paths (legacy list). Full document is ``tombstones``."""
+    return file_tombstone_paths(load_tombstones(USER_MEMORY))
+
+
+def _prepare_server_tombstones(incoming: Any = None, deleted: Any = None, writes: Any = None, mtimes: Any = None) -> dict:
+    """Merge client tombstones, honor old ``deleted`` lists, revive newer writes, compact."""
+    server_ts = load_tombstones(USER_MEMORY)
+    merged = merge_tombstones(server_ts, normalize_tombstones(incoming))
+    merged = absorb_deleted_list(merged, deleted, when=now_iso())
+    explicit = normalize_writes(writes if isinstance(writes, dict) else {})
+    # Push payload uses ``files`` for mtimes and ``explicit_files`` for re-adds.
+    if isinstance(writes, dict) and isinstance(writes.get("explicit_files"), dict):
+        explicit = normalize_writes({"explicit_files": writes.get("explicit_files"), "prefixes": writes.get("prefixes"), "rows": writes.get("rows"), "bullets": writes.get("bullets")})
+    mt = mtimes if isinstance(mtimes, dict) else {}
+    if not mt and isinstance(writes, dict) and isinstance(writes.get("files"), dict) and "explicit_files" in writes:
+        mt = {str(k): str(v) for k, v in writes["files"].items() if isinstance(v, str)}
+    merged = revive(merged, explicit, mtimes=mt)
+    merged = compact(merged)
+    save_tombstones(USER_MEMORY, merged)
+    return merged
+
+
+def _persist_client_writes(payload: Any) -> None:
+    """Keep explicit re-adds so a later snapshot does not re-delete them under a prefix."""
+    if not isinstance(payload, dict):
+        return
+    from .tombstones import norm_rel as _norm
+
+    current = load_writes(USER_MEMORY)
+    explicit = payload.get("explicit_files") if isinstance(payload.get("explicit_files"), dict) else {}
+    for key, stamp in explicit.items():
+        if not isinstance(stamp, str):
+            continue
+        rel = _norm(str(key))
+        prev = current["files"].get(rel)
+        if rel and (prev is None or stamp > prev):
+            current["files"][rel] = stamp
+    prefixes = payload.get("prefixes") if isinstance(payload.get("prefixes"), dict) else {}
+    for key, stamp in prefixes.items():
+        if not isinstance(stamp, str):
+            continue
+        rel = _norm(str(key))
+        if rel and not rel.endswith("/"):
+            rel += "/"
+        prev = current["prefixes"].get(rel)
+        if rel and (prev is None or stamp > prev):
+            current["prefixes"][rel] = stamp
+    rows = payload.get("rows") if isinstance(payload.get("rows"), dict) else {}
+    for file_key, mapping in rows.items():
+        if not isinstance(mapping, dict):
+            continue
+        bucket = current["rows"].setdefault(str(file_key), {})
+        for pk, stamp in mapping.items():
+            if isinstance(stamp, str) and str(pk).strip():
+                name = str(pk).strip().lower()
+                prev = bucket.get(name)
+                if prev is None or stamp > prev:
+                    bucket[name] = stamp
+    save_writes(USER_MEMORY, current)
+
+
+def _snapshot_files(tombstones: dict) -> dict[str, str]:
+    writes = load_writes(USER_MEMORY)
+    enforce_tombstones(USER_MEMORY, tombstones, writes=writes, apply_to_repos=False)
+    files = collect_sync_bundle(include_projects=True, memory_root=USER_MEMORY)
+    kept = {}
+    for key, content in files.items():
+        if file_blocked(
+            tombstones,
+            key,
+            explicit_files=writes.get("files") or {},
+            explicit_prefixes=writes.get("prefixes") or {},
+        ):
+            continue
+        kept[key] = content
+    return kept
 
 
 async def snapshot_endpoint(request: Request) -> JSONResponse:
     """Download full snapshot of memory files and active deletions."""
     ensure_memory_layout()
-    files = get_all_memory_files()
+    tombstones = compact(load_tombstones(USER_MEMORY))
+    save_tombstones(USER_MEMORY, tombstones)
+    files = _snapshot_files(tombstones)
     return JSONResponse(
         {
             "status": "ok",
             "version": __version__,
             "files": files,
-            "deleted": get_server_tombstones(),
+            "deleted": file_tombstone_paths(tombstones),
+            "tombstones": tombstones,
         }
     )
 
@@ -144,41 +215,90 @@ async def merge_endpoint(request: Request) -> JSONResponse:
     if not isinstance(incoming_files, dict):
         return JSONResponse({"error": "Expected 'files' dictionary"}, status_code=400)
 
-    report = apply_sync_bundle(incoming_files, target_root=USER_MEMORY, apply_to_repos=False)
+    # Tombstones first, so an old client pushing stale bytes cannot resurrect them.
+    tombstones = _prepare_server_tombstones(
+        incoming=data.get("tombstones"),
+        deleted=data.get("deleted"),
+        writes=data.get("writes"),
+    )
+    _persist_client_writes(data.get("writes"))
+    kept_writes = load_writes(USER_MEMORY)
+    filtered: dict[str, str] = {}
+    for rel, content in incoming_files.items():
+        rel_clean = str(rel).replace("\\", "/").lstrip("/")
+        mtime = None
+        explicit = {}
+        prefixes = kept_writes.get("prefixes") or {}
+        if isinstance(data.get("writes"), dict):
+            raw_files = data["writes"].get("files") or {}
+            if isinstance(raw_files, dict):
+                mtime = raw_files.get(rel_clean)
+            raw_explicit = data["writes"].get("explicit_files") or {}
+            if isinstance(raw_explicit, dict):
+                explicit = raw_explicit
+            raw_prefixes = data["writes"].get("prefixes") or {}
+            if isinstance(raw_prefixes, dict):
+                prefixes = {**prefixes, **raw_prefixes}
+        explicit = {**(kept_writes.get("files") or {}), **explicit}
+        if file_blocked(
+            tombstones,
+            rel_clean,
+            mtime=str(mtime) if isinstance(mtime, str) else None,
+            explicit_files=explicit,
+            explicit_prefixes=prefixes,
+        ):
+            continue
+        if isinstance(content, str):
+            filtered[rel_clean] = content
 
-    # Process deletions
-    deleted_files = data.get("deleted", [])
+    report = apply_sync_bundle(
+        filtered,
+        target_root=USER_MEMORY,
+        apply_to_repos=False,
+        tombstones=tombstones,
+        writes={
+            "explicit_files": {**(kept_writes.get("files") or {}), **((data.get("writes") or {}).get("explicit_files") or {})},
+            "prefixes": {**(kept_writes.get("prefixes") or {}), **((data.get("writes") or {}).get("prefixes") or {})},
+            "rows": (data.get("writes") or {}).get("rows") if isinstance(data.get("writes"), dict) else {},
+            "bullets": (data.get("writes") or {}).get("bullets") if isinstance(data.get("writes"), dict) else {},
+        },
+    )
+
     deleted_report: list[str] = []
-    if isinstance(deleted_files, list):
-        for rel in deleted_files:
-            rel_clean = str(rel).replace("\\", "/").strip().lstrip("/")
-            if not rel_clean or ".." in rel_clean:
-                continue
-            target = (USER_MEMORY / rel_clean).resolve()
-            try:
-                if target.is_relative_to(USER_MEMORY.resolve()) and target.is_file():
-                    target.unlink()
-                    deleted_report.append(rel_clean)
-                    record_server_tombstone(rel_clean)
-                elif target.is_relative_to(USER_MEMORY.resolve()):
-                    record_server_tombstone(rel_clean)
-            except (ValueError, AttributeError):
-                pass
+    requested = data.get("deleted") if isinstance(data.get("deleted"), list) else []
+    for rel in requested:
+        rel_clean = str(rel).replace("\\", "/").strip().lstrip("/")
+        if not rel_clean or ".." in rel_clean:
+            continue
+        target = (USER_MEMORY / rel_clean).resolve()
+        try:
+            inside = target.is_relative_to(USER_MEMORY.resolve())
+        except AttributeError:
+            inside = str(target).startswith(str(USER_MEMORY.resolve()))
+        if not inside:
+            continue
+        if target.is_file():
+            target.unlink()
+        deleted_report.append(rel_clean)
+    for rel in report.get("removed") or []:
+        if rel not in deleted_report:
+            deleted_report.append(rel)
     report["deleted"] = deleted_report
 
-    # Sync always-on injection after merge
     try:
         sync_injection()
     except Exception:
         pass
 
-    current_snapshot = get_all_memory_files()
+    current_snapshot = _snapshot_files(load_tombstones(USER_MEMORY))
+    fresh = load_tombstones(USER_MEMORY)
     return JSONResponse(
         {
             "status": "ok",
             "report": report,
             "snapshot": current_snapshot,
-            "deleted": get_server_tombstones(),
+            "deleted": file_tombstone_paths(fresh),
+            "tombstones": fresh,
         }
     )
 
@@ -318,8 +438,12 @@ async def put_file_endpoint(request: Request) -> JSONResponse:
         if not str(target).startswith(str(USER_MEMORY.resolve())):
             return JSONResponse({"error": "Forbidden path traversal"}, status_code=403)
 
+    previous = target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""
+    record_explicit_file_write(USER_MEMORY, rel_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
+    if Path(rel_path).name.lower() == "projects.md":
+        diff_projects_text(USER_MEMORY, previous, content)
 
     try:
         sync_injection()

@@ -67,6 +67,12 @@ class HelpJsonTests(unittest.TestCase):
         ):
             self.assertIn(name, commands, msg=f"missing command {name}")
         self.assertTrue(commands["extract-openai"].get("deprecated"))
+        pull = spec["commands"]["remote"]["subcommands"]["pull"]
+        pull_flags = {flag for opt in pull["options"] for flag in opt.get("flags", [])}
+        self.assertIn("--replace", pull_flags)
+        connect = spec["commands"]["remote"]["subcommands"]["connect"]
+        connect_flags = {flag for opt in connect["options"] for flag in opt.get("flags", [])}
+        self.assertIn("--replace", connect_flags)
         self.assertIn("write", spec["scripts_no_flags"])
         self.assertIn("delete", spec["scripts_no_flags"])
         self.assertIn("related", spec["scripts_no_flags"])

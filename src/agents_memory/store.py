@@ -1167,7 +1167,12 @@ def render_projects_table(projects: Iterable[Project]) -> str:
 
 
 def write_projects(projects: List[Project]) -> None:
-    _write(PROJECTS_MD, render_projects_table(projects))
+    previous = _read(PROJECTS_MD)
+    rendered = render_projects_table(projects)
+    _write(PROJECTS_MD, rendered)
+    from .remote.tombstones import diff_projects_text
+
+    diff_projects_text(USER_MEMORY, previous, rendered)
 
 
 def _looks_like_project(path: Path) -> bool:
@@ -1550,6 +1555,11 @@ def ignore_slug(slug: str) -> None:
         ignored.append(slug)
         cfg["ignore_slugs"] = sorted(ignored)
         save_scan(cfg)
+    key = slug.strip().lower()
+    projects = parse_projects()
+    kept = [p for p in projects if p.slug.lower() != key]
+    if len(kept) != len(projects):
+        write_projects(kept)
 
 
 def is_compact_always_on() -> bool:
@@ -2068,11 +2078,25 @@ def write_memory_file(
 ) -> str:
     """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs."""
     path = resolve_memory_path(file_id_or_path)
+    previous = _read(path) if path.is_file() else ""
     _write(path, content)
+    _note_memory_write(path, previous, content)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
     return file_id(path)
+
+
+def _note_memory_write(path: Path, previous: str, content: str) -> None:
+    """A direct write is a re-add: it must beat an older tombstone for this path."""
+    key = bundle_key_for_path(path)
+    if not key:
+        return
+    from .remote.tombstones import diff_projects_text, record_explicit_file_write
+
+    record_explicit_file_write(USER_MEMORY, key)
+    if path.resolve() == PROJECTS_MD.resolve() or key == "PROJECTS.md":
+        diff_projects_text(USER_MEMORY, previous, content)
 
 
 def _markdown_under(root: Path) -> List[Path]:
@@ -2501,15 +2525,28 @@ def _append_bullet(path: Path, fact: str) -> str:
             else f"# {_heading_from_stem(path.stem)}\n"
         )
         _write(path, f"{header}\n{bullet}\n")
+        _note_bullet_write(path, bullet)
         return file_id(path)
     text = _read(path)
     if _already_has_fact(text, fact):
+        _note_bullet_write(path, bullet)
         return file_id(path)
     body = text.rstrip()
     if body and not body.splitlines()[-1].lstrip().startswith("- "):
         body += "\n"
     _write(path, body + f"\n{bullet}\n")
+    _note_bullet_write(path, bullet)
     return file_id(path)
+
+
+def _note_bullet_write(path: Path, bullet: str) -> None:
+    key = bundle_key_for_path(path)
+    if not key:
+        return
+    from .remote.merge import _normalize_bullet
+    from .remote.tombstones import record_bullet_write
+
+    record_bullet_write(USER_MEMORY, key, _normalize_bullet(bullet))
 
 
 def _append_repo_captured(path: Path, fact: str) -> str:
@@ -2588,24 +2625,30 @@ def _deleted_log_file() -> Path:
     return USER_MEMORY / ".deleted.json"
 
 
+def bundle_key_for_path(path: Path) -> str:
+    """Sync-bundle key for a memory or rule file. Empty when the path is outside the store."""
+    try:
+        return path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+    except ValueError:
+        pass
+    for proj in parse_projects():
+        try:
+            rel_p = path.resolve().relative_to(proj.memory_dir.resolve()).as_posix()
+        except ValueError:
+            continue
+        return f"mirror/projects/{proj.slug}/{rel_p}"
+    try:
+        rel = path.resolve().relative_to(AGENTS_RULES.resolve()).as_posix()
+    except ValueError:
+        return ""
+    return f"rules/{rel}"
+
+
 def record_local_deletion(rel_path: str) -> None:
     """Record a deleted file path to propagate on remote sync."""
-    clean_rel = rel_path.replace("\\", "/").strip().lstrip("/")
-    if not clean_rel:
-        return
-    log_file = _deleted_log_file()
-    deleted_paths: list[str] = []
-    if log_file.is_file():
-        try:
-            data = json.loads(log_file.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                deleted_paths = data
-        except Exception:
-            pass
-    if clean_rel not in deleted_paths:
-        deleted_paths.append(clean_rel)
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        log_file.write_text(json.dumps(deleted_paths, indent=2), encoding="utf-8")
+    from .remote.tombstones import record_file
+
+    record_file(USER_MEMORY, rel_path)
 
 
 def load_local_deletions() -> list[str]:
@@ -2733,10 +2776,28 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
 
     removed = lines.pop(target_idx)
     _write(path, "\n".join(lines))
+    _note_removed_line(path, removed)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
     return removed
+
+
+def _note_removed_line(path: Path, line: str) -> None:
+    key = bundle_key_for_path(path)
+    if not key:
+        return
+    from .remote.tombstones import record_bullet, record_row
+
+    if path.resolve() == PROJECTS_MD.resolve() or key == "PROJECTS.md":
+        match = ROW_RE.match(line.strip())
+        if match:
+            record_row(USER_MEMORY, "PROJECTS.md", match.group("slug"))
+            return
+    if re.match(r"^\s*[-*+\d]\s*", line):
+        from .remote.merge import _normalize_bullet
+
+        record_bullet(USER_MEMORY, key, _normalize_bullet(line))
 
 
 def remove_staging_bullet(

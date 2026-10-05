@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `agents-memory remote pull --replace` and `remote connect --replace`: back up the local store, then make synced files match the remote snapshot exactly (no table union). Keeps machine-local files (`remote_config.json`, `.index/`, host paths).
+- Deletion tombstones (`.tombstones.json`): whole-file deletes, `PROJECTS.md` slug removals, project-tree prefixes, and deleted bullets survive merge. A newer re-add wins. Tombstones expire after 90 days. A 1.1 client that pushes stale content does not resurrect them on a new server.
 - Remote sync deletion propagation: deletions tracked in `.deleted.json`, sent to server in merge payload, unlinked, and recorded as server tombstones (`.tombstones.json`), preventing zombie file resurrection on subsequent pulls.
 - Atomic REST endpoint `DELETE /api/v1/file?path=...` in remote server and `remote_delete_file()` in client.
 - Direct file deletion via `delete_memory_file` and CLI `delete <file_id>` allowing entire memory or rule files to be cleanly removed and synced.

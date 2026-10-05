@@ -1,6 +1,7 @@
 """Local markdown memory MCP — reference implementation of abi/MCP.md."""
 from __future__ import annotations
 
+import functools
 import json
 import sys
 from mcp.server.fastmcp import FastMCP
@@ -27,6 +28,36 @@ from .store import (
 ensure_memory_layout()
 
 mcp = FastMCP("agents-memory")
+
+
+def _with_upgrade_notice(text: str) -> str:
+    """Prepend a server upgrade message so the calling agent can act on it."""
+    try:
+        from .remote.sync_hooks import upgrade_notice
+
+        notice = upgrade_notice()
+    except Exception:
+        return text
+    if not notice or text.startswith(notice):
+        return text
+    return f"{notice}\n\n{text}"
+
+
+_original_add_tool = mcp.add_tool
+
+
+def _add_tool(fn, *args, **kwargs):
+    @functools.wraps(fn)
+    def wrapped(*a, **kw):
+        result = fn(*a, **kw)
+        if isinstance(result, str):
+            return _with_upgrade_notice(result)
+        return result
+
+    return _original_add_tool(wrapped, *args, **kwargs)
+
+
+mcp.add_tool = _add_tool  # type: ignore[method-assign]
 
 
 @mcp.tool()

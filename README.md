@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.1.1-blue.svg?style=flat-square" alt="Version 1.1.1"></a>
+  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.2.0-blue.svg?style=flat-square" alt="Version 1.2.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-memory/"><img src="https://img.shields.io/pypi/v/agents-memory.svg?style=flat-square" alt="PyPI"></a>
@@ -92,6 +92,7 @@ agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
 - Project trees sync as `mirror/projects/<slug>/` in the bundle, then merge back into registered clones.
 - Ingest still reads **local** chat folders, then pushes the distilled markdown.
 - `agents-memory disconnect` pulls a last snapshot and restores stdio MCP.
+- After a cleanup, `remote push --replace` (or `remote bump-epoch`) bumps the vault epoch. Older clients are rejected until they replace-pull. Set `AGENTS_MEMORY_MIN_CLIENT_VERSION=1.2.0` on the server so 1.1.x writers get HTTP 426.
 
 Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 
@@ -130,7 +131,7 @@ Ops / install / batch. Humans and agents rarely need the vault CRUD verbs — th
 | `agents-memory distill [--auto]` | Staging inbox / noise pass |
 | `agents-memory check` | Mechanical store health (no LLM) |
 | `agents-memory rebuild-index` | Rebuild disposable FTS5 cache (MCP start already rebuilds) |
-| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases) |
+| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases). `remote pull --replace` matches this machine to the snapshot. `remote push --replace` and `remote bump-epoch` publish a cleaned vault |
 | `agents-memory serve` / `web` | Local viewer / static HTML export |
 | `agents-memory reset --yes` | Clear local caches / temp state |
 | `agents-memory mcp` | stdio MCP clerk |

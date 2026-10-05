@@ -202,8 +202,8 @@ def full_spec() -> dict[str, Any]:
             "usage": "python -m agents_memory web [DIR]",
         },
         "remote": {
-            "description": "Cloud mirror: serve/connect/disconnect/status/push/pull/client/attach.",
-            "usage": "python -m agents_memory remote {serve,connect,disconnect,status,push,pull,client,attach}",
+            "description": "Cloud mirror: serve/connect/disconnect/status/push/pull/bump-epoch/client/attach. pull/connect --replace matches the local store to the snapshot. push --replace publishes this machine and bumps the vault epoch.",
+            "usage": "python -m agents_memory remote {serve,connect,disconnect,status,push,pull,bump-epoch,client,attach}",
             "aliases": ["cloud", "connect", "disconnect"],
         },
         "reset": {
@@ -244,6 +244,18 @@ def full_spec() -> dict[str, Any]:
             for name, meta in simple.items()
         },
     }
+
+    from .remote.cli import build_remote_parser
+
+    remote_subs: dict[str, Any] = {}
+    remote_parser = build_remote_parser()
+    for action in remote_parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for sub_name, sub in action.choices.items():
+                remote_subs[sub_name] = cli_spec(
+                    sub, name=f"remote {sub_name}", description=sub.description or ""
+                )
+    commands["remote"]["subcommands"] = remote_subs
 
     # Back-compat keys (older agents/skills scrape these).
     scripts_no_flags = {

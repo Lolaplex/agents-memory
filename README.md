@@ -92,7 +92,7 @@ agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
 - Project trees sync as `mirror/projects/<slug>/` in the bundle, then merge back into registered clones.
 - Ingest still reads **local** chat folders, then pushes the distilled markdown.
 - `agents-memory disconnect` pulls a last snapshot and restores stdio MCP.
-- After a cleanup, `remote push --replace` (or `remote bump-epoch`) bumps the vault epoch. Older clients are rejected until they replace-pull. Set `AGENTS_MEMORY_MIN_CLIENT_VERSION=1.2.0` on the server so 1.1.x writers get HTTP 426.
+- After a cleanup, `remote push --replace` (or `remote bump-epoch`) bumps the vault epoch. Older clients replace-pull on the next sync. Local edits since the last baseline land in `staging/epoch-questions.md` (`get_staging_inbox`) and are not pushed back. Set `AGENTS_MEMORY_MIN_CLIENT_VERSION=1.2.0` on the server so 1.1.x writers get HTTP 426.
 
 Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 

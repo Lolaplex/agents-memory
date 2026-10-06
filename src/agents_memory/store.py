@@ -3167,6 +3167,21 @@ def auto_distill(
             src_path = item.get("source_path") or item.get("file") or ""
             proj = item.get("project") or ""
 
+            # Epoch questions hold local bytes the new epoch must not auto-publish
+            # or discard. The agent re-adds them with add/write.
+            src_norm = str(src_path).replace("\\", "/")
+            if src_norm.endswith("/epoch-questions.md") or src_norm.endswith("epoch-questions.md"):
+                unclassified_candidates.append(
+                    {
+                        "bullet": bullet_text,
+                        "source_path": src_path,
+                        "project": proj,
+                        "suggested_kind": "note",
+                        "suggested_name": "facts" if proj else "preferences",
+                    }
+                )
+                continue
+
             # Check noise using origin, bullet text, and comprehensive bilingual heuristics
             is_noise = False
             origin_lower = str(item.get("origin") or "").lower()

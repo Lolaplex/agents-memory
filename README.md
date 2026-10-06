@@ -113,8 +113,13 @@ Primary surface. Agents talk to the vault here — not via scraping CLI help.
 | `get_staging_inbox` / `distill_batch` / `auto_distill` | Staging → typed memory |
 | `delete_memory` | Drop a search hit by id |
 | `sync_local_agents_md` | Rewrite always-on inject |
+| `propose_rule` | Propose a hard rule into staging (the user applies it) |
 
-Fifteen tools. Full contract: [`abi/MCP.md`](abi/MCP.md). Session snap/grep/tail live on **agents-traces**.
+Sixteen tools. Full contract: [`abi/MCP.md`](abi/MCP.md). Session snap/grep/tail live on **agents-traces**.
+
+### Hard rules
+
+Always-on rules live in `~/.agents/memory/rules/HARD.md`, one imperative rule per line. A project can add `projects/<slug>/RULES.md`. One renderer builds a `<memory_rules>` block for the MCP `instructions`, the first tool result of each session (plus a project's rules on its first project-scoped call), `agents-memory context`, and the synced `AGENTS.md` / agent rule. Budget: 30 lines and 2000 characters globally, 10 lines per project (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). Agents only `propose_rule` into `staging/rule-proposals.md`; the user edits with `agents-memory rules`.
 
 ---
 
@@ -129,6 +134,8 @@ Ops / install / batch. Humans and agents rarely need the vault CRUD verbs — th
 | `agents-memory search` / `add` / `read` / `write` / `delete` / `related` | MCP vault mirrors (scripts / no-MCP hosts) |
 | `agents-memory ingest catalog\|extract\|status` | Chat catalog and staging extract |
 | `agents-memory distill [--auto]` | Staging inbox / noise pass |
+| `agents-memory context [--project X] [--format md\|json]` | Rendered hard rules |
+| `agents-memory rules show\|add\|edit\|remove\|set\|check` | Edit hard rules (budgeted) |
 | `agents-memory check` | Mechanical store health (no LLM) |
 | `agents-memory rebuild-index` | Rebuild disposable FTS5 cache (MCP start already rebuilds) |
 | `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases). `remote pull --replace` matches this machine to the snapshot. `remote push --replace` and `remote bump-epoch` publish a cleaned vault |

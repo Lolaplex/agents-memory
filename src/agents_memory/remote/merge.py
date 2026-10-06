@@ -353,6 +353,7 @@ def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, b
         name_lower in singleton_names
         or base_path.suffix.lower() == ".mdc"
         or "staging/" in path_str_lower
+        or _is_budgeted_rules_file(path_str_lower)
     ):
         return incoming_content, True
 
@@ -362,6 +363,15 @@ def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, b
         merged = merge_bullet_markdown(base_content, incoming_content)
 
     return merged, (merged.strip() != base_content.strip())
+
+
+def _is_budgeted_rules_file(path_lower: str) -> bool:
+    """Hard-rule files have a line budget; a bullet union could silently exceed it."""
+    if path_lower.endswith("/rules/hard.md") or path_lower == "rules/hard.md":
+        return True
+    if "mirror/projects/" in path_lower:
+        return False
+    return re.search(r"(?:^|/)projects/[^/]+/rules\.md$", path_lower) is not None
 
 
 def merge_file_trees(

@@ -65,18 +65,56 @@ class IndexAndViewerTests(unittest.TestCase):
     def test_rebuild_index_and_search_hybrid(self):
         stats = index.rebuild_index(db_path=self.test_fts_db)
         self.assertGreaterEqual(stats["indexed"], 2)
+        self.assertGreater(stats["tfidf_postings"], 0)
         self.assertTrue(self.test_fts_db.exists())
 
-        # Search exact & hybrid terms
+        # Search exact & hybrid terms (FTS + TF-IDF fused by RRF)
         hits = index.search_hybrid("disposable cache", db_path=self.test_fts_db)
         self.assertGreaterEqual(len(hits), 1)
         self.assertEqual(hits[0]["id"], "user/concepts/cache-law.md")
         self.assertEqual(hits[0]["title"], "Index As Cache Law")
+        self.assertIn("rrf", hits[0])
+        self.assertGreater(hits[0]["rrf"], 0)
 
         # Project scoped search
         proj_hits = index.search_hybrid("Demonstration", project="demo", db_path=self.test_fts_db)
         self.assertEqual(len(proj_hits), 1)
         self.assertEqual(proj_hits[0]["project"], "demo")
+
+    def test_tfidf_lives_in_same_sqlite(self):
+        index.rebuild_index(db_path=self.test_fts_db)
+        conn = index.get_db(self.test_fts_db)
+        try:
+            n_docs = conn.execute(
+                "SELECT value FROM tfidf_meta WHERE key = 'n_docs'"
+            ).fetchone()[0]
+            self.assertGreaterEqual(int(n_docs), 2)
+            terms = conn.execute("SELECT COUNT(*) FROM tfidf_idf").fetchone()[0]
+            self.assertGreater(terms, 0)
+            postings = conn.execute("SELECT COUNT(*) FROM tfidf_postings").fetchone()[0]
+            self.assertGreater(postings, 0)
+        finally:
+            conn.close()
+
+    def test_rrf_surfaces_tfidf_only_candidate(self):
+        """A doc that FTS misses still ranks if TF-IDF shares query terms."""
+        notes = self.user / "notes" / "programming"
+        notes.mkdir(parents=True)
+        (notes / "amber.md").write_text(
+            "# Amber Token\n\nThe sandbox canary string is amber-47 exclusively here.\n",
+            encoding="utf-8",
+        )
+        index.rebuild_index(db_path=self.test_fts_db)
+        # "exclusively" is rare; pair with canary so cosine prefers amber.md
+        hits = index.search_hybrid("amber canary exclusively", db_path=self.test_fts_db)
+        ids = [h["id"] for h in hits]
+        self.assertIn("user/notes/programming/amber.md", ids)
+        top = next(h for h in hits if h["id"] == "user/notes/programming/amber.md")
+        self.assertGreater(top["tfidf"], 0)
+
+    def test_semantic_kwarg_removed(self):
+        with self.assertRaises(TypeError):
+            index.search_hybrid("cache", semantic=False, db_path=self.test_fts_db)
 
     def test_get_related_explicit_and_content(self):
         index.rebuild_index(db_path=self.test_fts_db)

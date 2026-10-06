@@ -141,6 +141,20 @@ def main(argv: list[str] | None = None) -> int:
         from .check import main as run_check
 
         return run_check(rest)
+    if cmd == "search":
+        query = " ".join(rest).strip()
+        if not query:
+            print("usage: python -m agents_memory search QUERY", file=sys.stderr)
+            return 2
+        from .store import search_memory
+
+        hits = search_memory(query, limit=10)
+        if not hits:
+            print("no hits")
+            return 0
+        for hit in hits:
+            print(f"{hit.get('file', '')}:{hit.get('line', '')}  {hit.get('text', '')}")
+        return 0
     if cmd == "serve":
         from .viewer import serve_viewer
 

@@ -1,7 +1,6 @@
 """Client utilities, sync client, and Stdio-to-Remote SSE bridge."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
@@ -358,25 +357,24 @@ def canonical_attach_url(url: str) -> str:
     return u
 
 
-def unregistered_attach_dest(url: str) -> Path:
-    digest = hashlib.sha256(canonical_attach_url(url).encode("utf-8")).hexdigest()[:16]
-    return (AGENTS_HOME / "shared" / "by-url" / digest).resolve()
-
-
 def attach_dest_from_url(url: str, project: str = "") -> Path:
-    """Registered clone ``.agents/memory`` when known; else opaque URL id (not a project name)."""
+    """Registered clone ``<repo>/.agents/memory`` only — no shadow tree under ~/.agents/shared."""
     wanted = project.strip()
     if not wanted:
         parsed = _slug_from_memory_url(canonical_attach_url(url))
         if parsed != "board":
             wanted = parsed
-    if wanted:
-        found = find_project(wanted)
-        if found and found.path_obj.is_dir() and not is_engine_repo(found.path_obj):
-            return found.memory_dir.resolve()
-        if project.strip():
-            raise ValueError(f"no registered project for {wanted!r}")
-    return unregistered_attach_dest(url)
+    if not wanted:
+        raise ValueError(
+            "could not infer project from board URL; pass --project <registered-slug>"
+        )
+    found = find_project(wanted)
+    if not found or not found.path_obj.is_dir() or is_engine_repo(found.path_obj):
+        raise ValueError(
+            f"no registered clone for {wanted!r}; "
+            "run register_project first or pass --project with a registered slug"
+        )
+    return found.memory_dir.resolve()
 
 
 def _slug_from_memory_url(url: str) -> str:
@@ -458,8 +456,15 @@ def board_attach(
     """Pull a board project memory snapshot into a directory that is not USER_MEMORY."""
     clean_url = canonical_attach_url(url)
     snap = f"{clean_url}/snapshot"
-    dest = dest_dir or attach_dest_from_url(clean_url, project=project)
-    dest = dest.expanduser().resolve()
+    expected = attach_dest_from_url(clean_url, project=project)
+    if dest_dir is not None:
+        dest = dest_dir.expanduser().resolve()
+        if dest != expected:
+            raise ValueError(
+                f"--dir must be the registered clone memory dir ({expected}), not {dest}"
+            )
+    else:
+        dest = expected
     personal = USER_MEMORY.resolve()
     if dest == personal or personal in dest.parents:
         raise ValueError("attach dir must not be inside the personal memory store")

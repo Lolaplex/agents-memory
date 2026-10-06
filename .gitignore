@@ -24,3 +24,4 @@ examples/orphans/
 memory-bootstrap/
 *.log
 .env
+uv.lock

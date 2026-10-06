@@ -89,7 +89,7 @@ def build_remote_parser() -> argparse.ArgumentParser:
     attach_p.add_argument(
         "--dir",
         default="",
-        help="Override dest. Default: registered project memory, else ~/.agents/shared/by-url/<id>/",
+        help="Override dest (must equal registered <repo>/.agents/memory; no shadow copy)",
     )
     attach_p.add_argument("--insecure", "-k", action="store_true", help="Skip TLS verify")
 

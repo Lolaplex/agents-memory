@@ -28,15 +28,26 @@ ensure_memory_layout()
 
 mcp = FastMCP("agents-memory")
 
+# Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed
+try:
+    from agents_traces import auto_trace_mcp
+    auto_trace_mcp(mcp)
+except Exception:
+    pass
 
 @mcp.tool()
 def search_memory(query: str, project: str = "") -> str:
     """Search typed markdown. Empty project= is the user store only (~/.agents/memory).
 
+    Scans typed markdown under ~/.agents/memory and registered repo `.agents/memory/`.
     Pass project=<slug> for that clone plus the user store. project=* searches every
     registered clone. Exact substring first (max two hits per file, hash ids), then
     ranked FTS5 fill so one noisy file does not hide another. Repo architecture:
     get_project_memories(slug) or pass project=. Does not search product chat/jsonl.
+    CALL PROACTIVELY before guessing architecture, decisions, or preferences.
+
+    Not for chat transcripts — use `session_grep` / `session_snap` (agents-traces) or
+    `chats-index.md` for product jsonl body paths.
     """
     try:
         hits = store_search(query, project=project)
@@ -264,8 +275,190 @@ def sync_local_agents_md(project_folder_path: str = "", project_slug: str = "") 
 
 
 @mcp.tool()
+def ingest_catalog() -> str:
+    """Catalog phase: rebuild chats-index.md + entity cards (titles/paths only). Bodies stay in product folders. Same contract for every ingest source."""
+    try:
+        from .remote.locality import assert_ingest_runs_locally
+
+        assert_ingest_runs_locally()
+        from .ingest_catalog import run_catalog
+
+        result = run_catalog()
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error running ingest catalog: {e}"
+
+
+@mcp.tool()
+def ingest_extract(source_id: str = "") -> str:
+    """Extract phase: filter durable user lines into staging/ingest/<id>/captured.md (inbox, not memory). Distill explicitly afterward."""
+    try:
+        from .remote.locality import assert_ingest_runs_locally
+
+        assert_ingest_runs_locally()
+        from .ingest_extractors import run_extract
+
+        result = run_extract(source_id=source_id)
+        maybe_run_after_extract_noise_pass(auto_sync=True)
+        try:
+            from .remote.sync_hooks import push_if_connected
+
+            push_if_connected(refresh_index=True)
+        except Exception:
+            pass
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error running ingest extract: {e}"
+
+
+@mcp.tool()
+def ingest_status() -> str:
+    """Show ingest/state.json summary plus staging inbox depth and nag."""
+    try:
+        from .ingest_common import ingest_state_path, load_state
+        from .ingest_config import list_sources, load_ingest
+        from .store import staging_status_summary
+
+        cfg = load_ingest()
+        state = load_state()
+        rows = []
+        for src in list_sources(cfg):
+            sid = str(src["id"])
+            entry = state.get("sources", {}).get(sid, {})
+            rows.append(
+                {
+                    "id": sid,
+                    "kind": src.get("kind"),
+                    "last_catalog": entry.get("last_catalog"),
+                    "last_extract": entry.get("last_extract"),
+                    "catalog_count": entry.get("catalog_count"),
+                    "extract_count": entry.get("extract_count"),
+                    "extract_capped": entry.get("extract_capped"),
+                    "extract_total_before_cap": entry.get("extract_total_before_cap"),
+                    "staging": entry.get("staging"),
+                }
+            )
+        body = {
+            "state_file": str(ingest_state_path()),
+            "staging": staging_status_summary(),
+            "sources": rows,
+        }
+        if body["staging"].get("nag"):
+            body["notice"] = body["staging"]["nag"]
+        return json.dumps(body, indent=2)
+    except Exception as e:
+        return f"Error reading ingest status: {e}"
+
+
+@mcp.tool()
+def get_baton(project: str = "", cwd: str = "") -> str:
+    """Read the session handoff baton marker for a project or global user store."""
+    try:
+        return store_get_baton(project=project, cwd=cwd)
+    except Exception as e:
+        return f"Error reading baton: {e}"
+
+
+@mcp.tool()
+def set_baton(text: str, project: str = "", cwd: str = "") -> str:
+    """Write or update the session handoff baton marker (mutable ritual)."""
+    try:
+        loc = store_set_baton(text, project=project, cwd=cwd)
+        return f"Baton updated at {loc}"
+    except Exception as e:
+        return f"Error setting baton: {e}"
+
+
+@mcp.tool()
+def append_chronicle(
+    beat: str, project: str = "", emoji: str = "📝", refs: list[str] | None = None
+) -> str:
+    """Append a beat to the event chronicle (~/.agents/memory/events/chronicle/<slug>.md)."""
+    try:
+        loc = store_append_chronicle(beat, project=project, emoji=emoji, refs=refs)
+        return f"Beat recorded to {loc}"
+    except Exception as e:
+        return f"Error appending chronicle: {e}"
+
+
+@mcp.tool()
+def session_snap(limit: int = 20, project: str = "", cwd: str = "") -> str:
+    """Recent **conversation** lines from agents-traces plus baton header.
+
+    Session/transcript tier — not markdown memory. For architecture/ADRs/facts use
+    `get_project_memories` or `search_memory`. Run `python -m agents_traces ingest` first
+    if vendor chats are not yet in traces.
+    """
+    try:
+        return store_session_snap(limit=limit, project=project, cwd=cwd)
+    except Exception as e:
+        return f"Error taking session snap: {e}"
+
+
+@mcp.tool()
+def session_grep(pattern: str, since: str = "", project: str = "") -> str:
+    """Regex search in agents-traces session messages — not markdown memory.
+
+    For durable notes/ADRs use `search_memory`. For full chat file paths see `chats-index.md`.
+    """
+    try:
+        return store_session_grep(pattern=pattern, since=since, project=project)
+    except Exception as e:
+        return f"Error running session grep: {e}"
+
+
+@mcp.tool()
+def session_tail(session_id: str = "", limit: int = 10) -> str:
+    """Tail agents-traces lines for one session id (or latest). Not markdown memory."""
+    try:
+        return store_session_tail(session_id=session_id, limit=limit)
+    except Exception as e:
+        return f"Error running session tail: {e}"
+
+
+@mcp.tool()
+def rebuild_index() -> str:
+    """Rebuild disposable SQLite FTS cache from markdown on disk.
+
+    Maintenance only — normal search goes through `search_memory` (auto-rebuilds if missing).
+    Call when `check_memory_freshness` reports a stale index or after bulk file edits outside MCP.
+    """
+    try:
+        from .index import rebuild_index as run_rebuild
+        res = run_rebuild()
+        return f"Index rebuilt: {res['indexed']} documents in {res['duration_ms']}ms -> {res['db_path']}"
+    except Exception as e:
+        return f"Error rebuilding index: {e}"
+
+
+@mcp.tool()
+def search_hybrid(query: str, project: str = "", limit: int = 20) -> str:
+    """FTS5 BM25 + sparse TF-IDF fused by RRF — secondary to `search_memory`.
+
+    Prefer `search_memory` (exact substring first, then this index). Use this when you
+    need raw ranks/snippets. Same disposable `fts.sqlite` cache; no embedding model.
+    Does not search product chat/jsonl. For graph neighbors use `get_related`.
+    """
+    try:
+        from .index import search_hybrid as run_search
+        hits = run_search(query, project=project, limit=limit)
+        if not hits:
+            return f"No matches found for '{query}'"
+        lines = [f"Found {len(hits)} matches:"]
+        for h in hits:
+            lines.append(f"- [{h['id']}] {h['title']} — {h['snippet']}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error running search: {e}"
+
+
+@mcp.tool()
 def get_related(memory_id: str, limit: int = 5) -> str:
-    """Follow explicit frontmatter relations (refs/supersedes/same_as) from a search hit id."""
+    """Graph neighbors for a known memory id (refs, supersedes, same_as, backlinks).
+
+    Requires an id from `search_memory` / `read_memory_file`, not free-text query.
+    To propose new links from overlap use `suggest_links` (human review only).
+    """
     try:
         from .index import get_related as run_related
         res = run_related(memory_id, limit=limit)
@@ -274,13 +467,34 @@ def get_related(memory_id: str, limit: int = 5) -> str:
         return f"Error fetching related memories: {e}"
 
 
-# Auto-trace all tool calls to ~/.agents/traces/ if agents-traces is installed
-try:
-    from agents_traces import auto_trace_mcp
-    auto_trace_mcp(mcp)
-except Exception:
-    pass
+@mcp.tool()
+def suggest_links(from_id: str, limit: int = 5) -> str:
+    """Propose candidate typed relation links for human review — does not write memory.
+    For existing relations on a known id use `get_related`.
+    """
+    try:
+        from .index import suggest_links as run_suggest
+        suggestions = run_suggest(from_id, limit=limit)
+        return json.dumps(suggestions, indent=2)
+    except Exception as e:
+        return f"Error suggesting links: {e}"
 
+
+@mcp.tool()
+def check_memory_freshness() -> str:
+    """Mechanical health: staging depth, baton/index staleness — not a search tool.
+
+    Run before long tasks; follow nag with `get_staging_inbox`, `rebuild_index`, or distill.
+    """
+    try:
+        from .store import check_memory_freshness as run_check
+        res = run_check()
+        summary = staging_status_summary()
+        if summary.get("nag"):
+            res["staging_notice"] = summary["nag"]
+        return json.dumps(res, indent=2)
+    except Exception as e:
+        return f"Error checking memory freshness: {e}"
 
 def main() -> int:
     print("Starting local agents-memory MCP on stdio...", file=sys.stderr)

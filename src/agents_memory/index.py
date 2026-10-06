@@ -3,14 +3,18 @@
 Source of truth is always markdown on disk.
 The index lives in USER_MEMORY/.index/ (gitignored) and is rebuildable in one command.
 USER_MEMORY follows AGENTS_MEMORY_PATH, else AGENTS_HOME/memory.
+
+One SQLite file holds FTS5 BM25 and sparse TF-IDF postings. Query-time RRF
+fuses the two rank lists. No embedding model; no second store.
 """
 from __future__ import annotations
 
 import json
-import os
+import math
 import re
 import sqlite3
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -19,7 +23,6 @@ from .store import (
     PROJECTS_MD,
     SEARCH_ALL,
     USER_MEMORY,
-    Project,
     _read,
     parse_projects,
     resolve_search_project,
@@ -27,7 +30,14 @@ from .store import (
 
 INDEX_DIR = USER_MEMORY / ".index"
 FTS_DB = INDEX_DIR / "fts.sqlite"
-EMBEDDINGS_DB = INDEX_DIR / "embeddings.sqlite"
+
+# Reciprocal Rank Fusion constant (Cormack et al.; Azure Search default).
+RRF_K = 60
+# How many candidates to pull from each list before fusion.
+_CANDIDATE_MULT = 5
+_CANDIDATE_FLOOR = 50
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
 
 def ensure_index_dir() -> Path:
@@ -66,7 +76,6 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             );
             """
         )
-        # FTS5 virtual table
         conn.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
@@ -78,6 +87,47 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             );
             """
         )
+        # Sparse TF-IDF lives in the same disposable cache as FTS5.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tfidf_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tfidf_idf (
+                term TEXT PRIMARY KEY,
+                idf REAL NOT NULL
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tfidf_postings (
+                term TEXT NOT NULL,
+                doc_id TEXT NOT NULL,
+                weight REAL NOT NULL,
+                PRIMARY KEY (term, doc_id)
+            );
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tfidf_postings_term ON tfidf_postings(term);"
+        )
+
+
+def _tokenize(text: str) -> List[str]:
+    return _TOKEN_RE.findall((text or "").lower())
+
+
+def _doc_tf(text: str) -> Dict[str, int]:
+    tf: Dict[str, int] = {}
+    for t in _tokenize(text):
+        tf[t] = tf.get(t, 0) + 1
+    return tf
 
 
 def parse_frontmatter_and_content(text: str) -> Tuple[Dict[str, Any], str, str, List[str]]:
@@ -138,8 +188,56 @@ def parse_frontmatter_and_content(text: str) -> Tuple[Dict[str, Any], str, str, 
     return frontmatter, title, content.strip(), headings
 
 
+def _build_tfidf(
+    conn: sqlite3.Connection,
+    records: List[Tuple[str, str, str, str, str, str, str, float]],
+) -> int:
+    """Write L2-normalized TF-IDF postings for the same docs as FTS."""
+    conn.execute("DELETE FROM tfidf_meta;")
+    conn.execute("DELETE FROM tfidf_idf;")
+    conn.execute("DELETE FROM tfidf_postings;")
+    if not records:
+        conn.execute(
+            "INSERT INTO tfidf_meta(key, value) VALUES ('n_docs', '0'), ('kind', 'tfidf');"
+        )
+        return 0
+
+    # record: id, path, project, title, headings, fm, content, mtime
+    doc_tfs: List[Tuple[str, Dict[str, int]]] = []
+    df: Dict[str, int] = defaultdict(int)
+    for r in records:
+        text = f"{r[3]}\n{r[4]}\n{r[6]}"
+        tf = _doc_tf(text)
+        doc_tfs.append((r[0], tf))
+        for term in tf:
+            df[term] += 1
+
+    n_docs = len(doc_tfs)
+    idf = {t: math.log((n_docs + 1) / (c + 1)) + 1.0 for t, c in df.items()}
+    conn.executemany(
+        "INSERT INTO tfidf_idf(term, idf) VALUES (?, ?);",
+        list(idf.items()),
+    )
+
+    postings: List[Tuple[str, str, float]] = []
+    for doc_id, tf in doc_tfs:
+        weights = {t: c * idf[t] for t, c in tf.items() if t in idf}
+        norm = math.sqrt(sum(v * v for v in weights.values())) or 1.0
+        for t, w in weights.items():
+            postings.append((t, doc_id, w / norm))
+    conn.executemany(
+        "INSERT INTO tfidf_postings(term, doc_id, weight) VALUES (?, ?, ?);",
+        postings,
+    )
+    conn.execute(
+        "INSERT INTO tfidf_meta(key, value) VALUES ('n_docs', ?), ('kind', 'tfidf');",
+        (str(n_docs),),
+    )
+    return len(postings)
+
+
 def rebuild_index(db_path: Optional[Path] = None) -> Dict[str, Any]:
-    """Crawl user memory + project memory trees and rebuild the FTS index."""
+    """Crawl user memory + project memory trees and rebuild the FTS+TF-IDF index."""
     t0 = time.perf_counter()
     target_path = db_path or (INDEX_DIR / "fts.sqlite")
     conn = get_db(target_path)
@@ -195,7 +293,7 @@ def rebuild_index(db_path: Optional[Path] = None) -> Dict[str, Any]:
                 mtime,
             ))
 
-    # Write into SQLite
+    # Write into SQLite (FTS5 + sparse TF-IDF, one disposable cache)
     with conn:
         conn.execute("DELETE FROM documents;")
         conn.execute("DELETE FROM documents_fts;")
@@ -213,41 +311,30 @@ def rebuild_index(db_path: Optional[Path] = None) -> Dict[str, Any]:
             """,
             [(r[0], r[3], r[4], r[6]) for r in records],
         )
+        n_postings = _build_tfidf(conn, records)
 
     conn.close()
     duration_ms = (time.perf_counter() - t0) * 1000.0
     return {
         "indexed": len(records),
+        "tfidf_postings": n_postings,
         "duration_ms": round(duration_ms, 2),
         "db_path": str(target_path),
     }
 
 
-def search_hybrid(
-    query: str,
-    semantic: bool = False,
-    project: str = "",
-    limit: int = 20,
-    db_path: Optional[Path] = None,
-) -> List[Dict[str, Any]]:
-    """Hybrid FTS search across indexed markdown files."""
-    if not query.strip():
-        return []
+def _candidate_limit(limit: int) -> int:
+    return max(_CANDIDATE_FLOOR, max(1, limit) * _CANDIDATE_MULT)
 
-    target_path = db_path or (INDEX_DIR / "fts.sqlite")
-    # Auto-rebuild if db missing
-    if not target_path.exists():
-        rebuild_index(target_path)
 
-    conn = get_db(target_path)
-    # Sanitize FTS5 query terms (safe match)
-    clean_terms = re.findall(r"\w+", query)
-    if not clean_terms:
-        return []
-
-    # Match exact phrase or individual words
-    fts_query = ' OR '.join(f'"{t}"' for t in clean_terms)
-
+def _fts_ranked(
+    conn: sqlite3.Connection,
+    terms: List[str],
+    project: str,
+    pool: int,
+) -> List[Tuple[str, str, str, str, str, float]]:
+    """Return (id, title, project, fm_json, snippet, bm25_rank) ordered by FTS rank."""
+    fts_query = " OR ".join(f'"{t}"' for t in terms)
     sql = """
         SELECT d.id, d.title, d.project, d.frontmatter_json,
                snippet(documents_fts, 3, '<b>', '</b>', '...', 15) as snip,
@@ -257,40 +344,182 @@ def search_hybrid(
         WHERE documents_fts MATCH ?
     """
     params: List[Any] = [fts_query]
-    token = resolve_search_project(project)
-    if token == SEARCH_ALL:
-        pass
-    elif token:
-        sql += " AND (d.project = ? OR d.project = '')"
-        params.append(token)
-    else:
-        sql += " AND d.project = ''"
-
+    if project:
+        sql += " AND d.project = ?"
+        params.append(project)
     sql += " ORDER BY rank LIMIT ?"
-    params.append(max(1, limit))
+    params.append(pool)
+    cur = conn.cursor()
+    cur.execute(sql, params)
+    return list(cur.fetchall())
 
-    hits: List[Dict[str, Any]] = []
+
+def _tfidf_ranked(
+    conn: sqlite3.Connection,
+    terms: List[str],
+    project: str,
+    pool: int,
+) -> List[Tuple[str, float]]:
+    """Cosine-style scores via pre-normalized TF-IDF postings. Ordered desc."""
+    cur = conn.cursor()
+    cur.execute("SELECT term, idf FROM tfidf_idf WHERE term IN (%s)" % ",".join("?" * len(terms)), terms)
+    idf_rows = {t: float(i) for t, i in cur.fetchall()}
+    if not idf_rows:
+        return []
+
+    q_tf: Dict[str, int] = {}
+    for t in terms:
+        if t in idf_rows:
+            q_tf[t] = q_tf.get(t, 0) + 1
+    if not q_tf:
+        return []
+
+    q_w = {t: c * idf_rows[t] for t, c in q_tf.items()}
+    q_norm = math.sqrt(sum(v * v for v in q_w.values())) or 1.0
+
+    scores: Dict[str, float] = defaultdict(float)
+    for t, qw in q_w.items():
+        qw_n = qw / q_norm
+        if project:
+            cur.execute(
+                """
+                SELECT p.doc_id, p.weight FROM tfidf_postings p
+                JOIN documents d ON d.id = p.doc_id
+                WHERE p.term = ? AND d.project = ?
+                """,
+                (t, project),
+            )
+        else:
+            cur.execute(
+                "SELECT doc_id, weight FROM tfidf_postings WHERE term = ?",
+                (t,),
+            )
+        for doc_id, weight in cur.fetchall():
+            scores[str(doc_id)] += qw_n * float(weight)
+
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return ranked[:pool]
+
+
+def _rrf_fuse(
+    fts_ids: List[str],
+    tfidf_ids: List[str],
+    *,
+    k: int = RRF_K,
+) -> List[Tuple[str, float]]:
+    """Reciprocal Rank Fusion over two ordered id lists."""
+    scores: Dict[str, float] = defaultdict(float)
+    for rank, doc_id in enumerate(fts_ids, start=1):
+        scores[doc_id] += 1.0 / (k + rank)
+    for rank, doc_id in enumerate(tfidf_ids, start=1):
+        scores[doc_id] += 1.0 / (k + rank)
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+
+def _ensure_tfidf(conn: sqlite3.Connection) -> bool:
+    """True if TF-IDF tables have postings; rebuild path handles empty vaults."""
+    cur = conn.cursor()
     try:
+        cur.execute("SELECT value FROM tfidf_meta WHERE key = 'n_docs'")
+        row = cur.fetchone()
+        if row is None:
+            return False
+        cur.execute("SELECT 1 FROM tfidf_idf LIMIT 1")
+        return cur.fetchone() is not None or int(row[0] or 0) == 0
+    except sqlite3.OperationalError:
+        return False
+
+
+def search_hybrid(
+    query: str,
+    project: str = "",
+    limit: int = 20,
+    db_path: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """FTS5 BM25 + sparse TF-IDF cosine, fused with RRF. Same disposable index."""
+    if not query.strip():
+        return []
+
+    target_path = db_path or (INDEX_DIR / "fts.sqlite")
+    if not target_path.exists():
+        rebuild_index(target_path)
+
+    terms = _tokenize(query)
+    if not terms:
+        return []
+
+    pool = _candidate_limit(limit)
+    conn = get_db(target_path)
+    try:
+        if not _ensure_tfidf(conn):
+            conn.close()
+            rebuild_index(target_path)
+            conn = get_db(target_path)
+
+        sql = """
+            SELECT d.id, d.title, d.project, d.frontmatter_json,
+                snippet(documents_fts, 3, '<b>', '</b>', '...', 15) as snip,
+                rank
+            FROM documents_fts
+            JOIN documents d ON documents_fts.id = d.id
+            WHERE documents_fts MATCH ?
+        """
+        params: List[Any] = [fts_query]
+        token = resolve_search_project(project)
+        if token == SEARCH_ALL:
+            pass
+        elif token:
+            sql += " AND (d.project = ? OR d.project = '')"
+            params.append(token)
+        else:
+            sql += " AND d.project = ''"
+        try:
+            fts_rows = _fts_ranked(conn, terms, project, pool)
+        except sqlite3.OperationalError:
+            conn.close()
+            rebuild_index(target_path)
+            conn = get_db(target_path)
+            fts_rows = _fts_ranked(conn, terms, project, pool)
+
+        tfidf_rows = _tfidf_ranked(conn, terms, project, pool)
+
+        fts_ids = [r[0] for r in fts_rows]
+        tfidf_ids = [r[0] for r in tfidf_rows]
+        fused = _rrf_fuse(fts_ids, tfidf_ids)[: max(1, limit)]
+
+        fts_by_id = {r[0]: r for r in fts_rows}
+        tfidf_score = {doc_id: score for doc_id, score in tfidf_rows}
+
+        hits: List[Dict[str, Any]] = []
         cur = conn.cursor()
-        cur.execute(sql, params)
-        for row in cur.fetchall():
-            doc_id, title, proj, fm_json, snip, rank = row
+        for doc_id, rrf in fused:
+            if doc_id in fts_by_id:
+                _id, title, proj, fm_json, snip, bm25 = fts_by_id[doc_id]
+            else:
+                cur.execute(
+                    "SELECT id, title, project, frontmatter_json, content FROM documents WHERE id = ?",
+                    (doc_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    continue
+                _id, title, proj, fm_json, content = row
+                snip = (content or "").replace("\n", " ").strip()[:160]
+                bm25 = 0.0
             fm = json.loads(fm_json) if fm_json else {}
             hits.append({
-                "id": doc_id,
+                "id": _id,
                 "title": title,
                 "project": proj,
                 "snippet": snip,
-                "rank": rank,
+                "rank": bm25,
+                "tfidf": tfidf_score.get(doc_id, 0.0),
+                "rrf": rrf,
                 "frontmatter": fm,
             })
-    except sqlite3.OperationalError:
-        # Fallback: rebuild and retry once
-        rebuild_index(target_path)
+        return hits
     finally:
         conn.close()
-
-    return hits
 
 
 def get_related(
@@ -343,33 +572,28 @@ def get_related(
         "at_project": fm.get("at_project") or "",
     }
 
-    # 2. Distinctive search terms for content overlap (avoid generic stop words like facts/notes)
-    generic_terms = {
-        "facts", "fact", "readme", "note", "notes", "project", "projects",
-        "untitled", "index", "rules", "preferences", "preference", "global",
-        "the", "and", "for", "with", "from", "that", "this", "file", "memory",
-    }
-    raw_terms = re.findall(r"\w+", f"{title} {headings_str or ''}")
-    clean_terms = [t for t in raw_terms if len(t) > 2 and t.lower() not in generic_terms]
-    if not clean_terms:
-        content_words = re.findall(r"\w+", content[:600])
-        clean_terms = [t for t in content_words if len(t) > 3 and t.lower() not in generic_terms]
-
+    # 2. Content neighbors via the same fused search (not a second store)
     related: List[Dict[str, Any]] = []
-    if clean_terms:
-        fts_query = " OR ".join(f'"{t}"' for t in clean_terms[:6])
-        cur.execute(
-            """
-            SELECT d.id, d.title, snippet(documents_fts, 3, '<b>', '</b>', '...', 12) as snip
-            FROM documents_fts
-            JOIN documents d ON documents_fts.id = d.id
-            WHERE documents_fts MATCH ? AND d.id != ?
-            ORDER BY rank LIMIT ?
-            """,
-            (fts_query, doc_id, limit),
-        )
-        for r in cur.fetchall():
-            related.append({"id": r[0], "title": r[1], "snippet": r[2]})
+    seed = f"{title} {headings_str or ''}".strip() or " ".join(_tokenize(content[:400])[:8])
+    if seed.strip():
+        conn.close()
+        neighbors = search_hybrid(seed, project=proj or "", limit=limit + 3, db_path=target_path)
+        for n in neighbors:
+            if n["id"] == doc_id:
+                continue
+            related.append({
+                "id": n["id"],
+                "title": n["title"],
+                "snippet": n["snippet"],
+            })
+            if len(related) >= limit:
+                break
+        return {
+            "id": doc_id,
+            "title": title,
+            "explicit_relations": explicit,
+            "related_documents": related,
+        }
 
     conn.close()
     return {

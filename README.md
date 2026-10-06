@@ -49,6 +49,16 @@ Vendors keep chat in product graves (Cursor jsonl, Claude sessions, Antigravity 
 
 **Cloud sync (new in 1.1.0).** Several machines, one vault — see below.
 
+**Local & Offline:** Your identity and repo memory live in plain files (`~/.agents/memory/` and `<repo>/.agents/memory/`).
+
+**Human-Readable & Git-Friendly:** Edit with any text editor, diff with git, commit when you want.
+
+**Universal MCP Server:** Exposes memory tools to all modern agents.
+
+**Ranked Hybrid Retrieval:** Exact-substring precision first; fallback is FTS5 BM25 + sparse TF-IDF fused by RRF in one disposable `fts.sqlite` (no embedding model). Wikilink relation navigation stays separate.
+
+**Autonomous Ingest & Distillation:** Extracts durable rules and architecture decisions from session logs (OpenAI, Claude, Cursor, Copilot, Antigravity, Pi).
+
 ---
 
 ## Where it runs
@@ -100,6 +110,7 @@ Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 ## MCP tools
 
 Primary surface. Agents talk to the vault here — not via scraping CLI help.
+Files land only in that clone's `<repo>/.agents/memory/` when the project is registered (LAYOUT: in-tree, gitignored). If it is not registered locally, attach fails. Pass `--project <slug>` when a remote path name is not the local slug. Personal MCP stays local.
 
 | Tool | What it does |
 | :--- | :--- |

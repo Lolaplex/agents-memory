@@ -1896,6 +1896,21 @@ def install_skills() -> List[str]:
         for path in d_targets:
             _write(path, d_text)
             written.append(str(path))
+
+    remote_src = (
+        (ROOT / "skills" / "memory-remote" / "SKILL.md")
+        if (ROOT / "skills" / "memory-remote" / "SKILL.md").is_file()
+        else (PACKAGE_DIR / "bundled" / "skills" / "memory-remote" / "SKILL.md")
+    )
+    if remote_src.is_file():
+        r_text = _read(remote_src)
+        for path in [
+            Path.home() / ".cursor" / "skills" / "memory-remote" / "SKILL.md",
+            Path.home() / ".agents" / "skills" / "memory-remote" / "SKILL.md",
+            Path.home() / ".gemini" / "config" / "skills" / "memory-remote" / "SKILL.md",
+        ]:
+            _write(path, r_text)
+            written.append(str(path))
     return written
 
 
@@ -2203,9 +2218,10 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
 
     idx = USER_MEMORY / ".index" / "fts.sqlite"
     if idx.is_file() and len(hits) < limit:
+        # Recall booster: FTS5 BM25 + sparse TF-IDF fused by RRF when exact
+        # substring found nothing (multi-word queries, word-order variants).
         try:
             from .index import search_hybrid
-
             ranked = search_hybrid(query, project=token, limit=limit, db_path=idx)
             for h in ranked:
                 if len(hits) >= limit:

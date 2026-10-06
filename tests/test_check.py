@@ -1,10 +1,31 @@
+import io
 import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from contextlib import redirect_stdout
 
 from agents_memory import check, frontmatter, store
+
+
+class SearchCliTests(unittest.TestCase):
+    def test_search_prints_hits(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        user = Path(tmp.name) / "user"
+        note = user / "notes" / "programming"
+        note.mkdir(parents=True)
+        (note / "canary.md").write_text("The sandbox canary is amber-47.\n", encoding="utf-8")
+        buf = io.StringIO()
+        with patch.object(store, "USER_MEMORY", user), patch.object(
+            store, "parse_projects", return_value=[]
+        ), redirect_stdout(buf):
+            from agents_memory.__main__ import main as mem_main
+
+            rc = mem_main(["search", "amber-47"])
+        self.assertEqual(rc, 0)
+        self.assertIn("amber-47", buf.getvalue())
 
 
 class EnvPathTests(unittest.TestCase):

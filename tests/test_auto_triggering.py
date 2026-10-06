@@ -48,6 +48,18 @@ def match_skill_intent(prompt: str) -> str:
         if trig in p_lower:
             return "memory-distill"
 
+    remote_triggers = [
+        "remote connect",
+        "remote attach",
+        "remote push",
+        "remote pull",
+        "memory-remote",
+        "board_attach.json",
+    ]
+    for trig in remote_triggers:
+        if trig in p_lower:
+            return "memory-remote"
+
     # Memory Sync triggers
     sync_triggers = [
         "bestandsaufnahme",
@@ -97,6 +109,20 @@ class AutoTriggeringTests(unittest.TestCase):
         self.assertEqual(meta.get("name"), "memory-sync")
         self.assertIn("inventory", meta.get("description", "").lower())
 
+    def test_memory_remote_skill_is_bundled(self):
+        src = ROOT / "skills" / "memory-remote" / "SKILL.md"
+        bundled = ROOT / "src" / "agents_memory" / "bundled" / "skills" / "memory-remote" / "SKILL.md"
+        self.assertTrue(src.is_file(), "memory-remote SKILL.md missing")
+        content = src.read_text(encoding="utf-8")
+        meta = parse_skill_frontmatter(content)
+        self.assertEqual(meta.get("name"), "memory-remote")
+        desc = meta.get("description", "").lower()
+        self.assertIn("remote connect", desc)
+        self.assertIn("remote attach", desc)
+        self.assertNotIn("board.lolaplex", content.lower())
+        self.assertTrue(bundled.is_file(), "memory-remote missing from bundled/skills")
+        self.assertEqual(src.read_text(encoding="utf-8"), bundled.read_text(encoding="utf-8"))
+
     def test_skill_sync_mirroring(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -116,6 +142,9 @@ class AutoTriggeringTests(unittest.TestCase):
         self.assertTrue((gemini_skills / "memory-distill" / "SKILL.md").exists())
         self.assertTrue((cursor_skills / "memory-distill" / "SKILL.md").exists())
         self.assertTrue((agents_skills / "memory-sync" / "SKILL.md").exists())
+        self.assertTrue((agents_skills / "memory-remote" / "SKILL.md").exists())
+        self.assertTrue((cursor_skills / "memory-remote" / "SKILL.md").exists())
+        self.assertFalse((agents_skills / "board-memory" / "SKILL.md").exists())
 
     def test_prompt_intent_classification(self):
         test_cases = [
@@ -126,6 +155,11 @@ class AutoTriggeringTests(unittest.TestCase):
             ("Bitte Memory verdichten", "memory-distill"),
             ("Distill staging items into typed files", "memory-distill"),
             ("Clean up staging inbox now", "memory-distill"),
+
+            # Remote CLI
+            ("Run remote attach for the shared project", "memory-remote"),
+            ("python -m agents_memory remote connect then remote push", "memory-remote"),
+            ("Check board_attach.json after attach", "memory-remote"),
 
             # Sync prompts
             ("Mach mal eine Bestandsaufnahme der Projekte", "memory-sync"),

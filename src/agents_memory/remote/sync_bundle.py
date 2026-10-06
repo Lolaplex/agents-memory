@@ -486,7 +486,12 @@ def _backup_store(root: Path) -> Path:
         n += 1
         dest = root.parent / f"{root.name}.bak-{ts}-{n}"
     if root.is_dir():
-        shutil.copytree(root, dest, symlinks=True)
+        shutil.copytree(
+            root,
+            dest,
+            symlinks=True,
+            ignore=shutil.ignore_patterns(".sync.lock", "*.lock"),
+        )
     else:
         dest.mkdir(parents=True, exist_ok=True)
     return dest

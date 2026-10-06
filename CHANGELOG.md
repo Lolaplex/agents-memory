@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-06
+
 ### Added
 - Vault epoch (`.epoch`). `remote bump-epoch` and `remote push --replace` increment it. A push from an older epoch is HTTP 409. A 1.2 client replace-pulls and parks baseline-diverged edits in `staging/epoch-questions.md` instead of pushing them; it does not retry the push. `sync_mcp` does this on startup pull and on push.
 - Minimum client version (`AGENTS_MEMORY_MIN_CLIENT_VERSION` / `remote serve --min-client-version`). Writers without `X-Agents-Memory-Version`, or below the minimum, get HTTP 426 with an update command (`AGENTS_MEMORY_UPDATE_HINT`). Reads stay open. A 1.2 client shows the sentence on MCP results and stops pushing until updated.
@@ -128,7 +130,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of local markdown memory and FastMCP server.
 
-[Unreleased]: https://github.com/Lolaplex/agents-memory/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Lolaplex/agents-memory/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Lolaplex/agents-memory/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/Lolaplex/agents-memory/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Lolaplex/agents-memory/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Lolaplex/agents-memory/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Lolaplex/agents-memory/compare/v1.0.0...v1.0.1

@@ -1,6 +1,7 @@
 """Vault epoch and minimum client version."""
 from __future__ import annotations
 
+import json
 import os
 import socket
 import tempfile
@@ -23,7 +24,7 @@ import agents_memory.store as store_mod
 from agents_memory.remote.client import remote_pull, remote_push_merge, save_remote_config
 from agents_memory.remote.protocol import DEFAULT_UPDATE_HINT, upgrade_required_message
 from agents_memory.remote.server import create_remote_app
-from agents_memory.remote.sync_bundle import save_baseline
+from agents_memory.remote.sync_bundle import collect_sync_bundle, save_baseline
 
 EXACT = upgrade_required_message("1.2.0", DEFAULT_UPDATE_HINT)
 
@@ -225,25 +226,101 @@ class ClientEpochRecoveryTests(unittest.TestCase):
         self.assertIn('"epoch": 3', cfg)
         self.assertFalse((self.server_dir / "stale.md").exists())
 
-    def test_push_409_replaces_then_retries_pending_write(self) -> None:
+    def test_push_409_stages_edited_file_instead_of_pushing(self) -> None:
+        """Replace removed the file. The stale client's edit must not resurrect it."""
         (self.server_dir / "USER.md").write_text("# Clean\n", encoding="utf-8")
-        (self.server_dir / ".epoch").write_text("1\n", encoding="utf-8")
+        (self.server_dir / ".epoch").write_text("2\n", encoding="utf-8")
         user = "# Clean\n"
-        stale = "# stale\n"
+        old = "# v1\n"
+        edited = "# v2 edited\n\nkeep me\n"
         (self.client_dir / "USER.md").write_text(user, encoding="utf-8")
-        (self.client_dir / "stale.md").write_text(stale, encoding="utf-8")
-        save_baseline(self.client_dir, {"USER.md": user, "stale.md": stale})
         notes = self.client_dir / "notes"
         notes.mkdir(exist_ok=True)
-        (notes / "fresh.md").write_text("# Fresh\n", encoding="utf-8")
+        (notes / "edited.md").write_text(old, encoding="utf-8")
+        save_baseline(self.client_dir, collect_sync_bundle(memory_root=self.client_dir))
+        (notes / "edited.md").write_text(edited, encoding="utf-8")
 
         result = remote_push_merge(self.base, token="tok", source_dir=self.client_dir)
         self.assertEqual(result["status"], "ok")
-        self.assertFalse((self.server_dir / "stale.md").exists())
-        self.assertFalse((self.client_dir / "stale.md").exists())
-        self.assertEqual((self.server_dir / "notes" / "fresh.md").read_text(encoding="utf-8"), "# Fresh\n")
-        self.assertTrue((self.client_dir / "notes" / "fresh.md").is_file())
-        self.assertIn('"epoch": 1', (self.client_dir / "remote_config.json").read_text(encoding="utf-8"))
+        self.assertEqual(result.get("staged"), ["notes/edited.md"])
+        self.assertFalse((self.server_dir / "notes" / "edited.md").exists())
+        self.assertFalse((self.server_dir / "staging" / "epoch-questions.md").exists())
+        self.assertFalse((self.client_dir / "notes" / "edited.md").exists())
+        self.assertIn('"epoch": 2', (self.client_dir / "remote_config.json").read_text(encoding="utf-8"))
+
+        inbox = store_mod.get_staging_inbox(limit=0)
+        blob = json.dumps(inbox)
+        self.assertIn("notes/edited.md", blob)
+        self.assertIn("keep me", blob)
+        self.assertIn("Remote epoch changed", blob)
+        self.assertIn("epoch 2", blob)
+        self.assertTrue((self.client_dir / "staging" / "epoch-questions.md").is_file())
+
+    def test_pull_newer_epoch_stages_edited_file_and_does_not_push(self) -> None:
+        (self.server_dir / "USER.md").write_text("# Clean\n", encoding="utf-8")
+        (self.server_dir / ".epoch").write_text("4\n", encoding="utf-8")
+        user = "# Clean\n"
+        (self.client_dir / "USER.md").write_text(user, encoding="utf-8")
+        notes = self.client_dir / "notes"
+        notes.mkdir(exist_ok=True)
+        (notes / "edited.md").write_text("# before\n", encoding="utf-8")
+        save_baseline(self.client_dir, collect_sync_bundle(memory_root=self.client_dir))
+        (notes / "edited.md").write_text("# local rewrite\n", encoding="utf-8")
+
+        result = remote_pull(self.base, token="tok", target_dir=self.client_dir)
+        self.assertTrue(result.get("auto_epoch"))
+        self.assertEqual(result.get("staged"), ["notes/edited.md"])
+        self.assertFalse((self.server_dir / "notes" / "edited.md").exists())
+        self.assertFalse((self.client_dir / "notes" / "edited.md").exists())
+        text = (self.client_dir / "staging" / "epoch-questions.md").read_text(encoding="utf-8")
+        self.assertIn("notes/edited.md", text)
+        self.assertIn("local rewrite", text)
+        self.assertIn("Remote epoch changed", text)
+
+    def test_epoch_mismatch_does_not_tombstone_local_deletions(self) -> None:
+        (self.server_dir / "USER.md").write_text("# Clean\n", encoding="utf-8")
+        (self.server_dir / "gone.md").write_text("# stay\n", encoding="utf-8")
+        (self.server_dir / ".epoch").write_text("2\n", encoding="utf-8")
+        user = "# Clean\n"
+        (self.client_dir / "USER.md").write_text(user, encoding="utf-8")
+        save_baseline(self.client_dir, {"USER.md": user, "gone.md": "# stay\n"})
+        (self.client_dir / ".deleted.json").write_text('["gone.md"]\n', encoding="utf-8")
+
+        remote_push_merge(self.base, token="tok", source_dir=self.client_dir)
+        self.assertEqual((self.server_dir / "gone.md").read_text(encoding="utf-8"), "# stay\n")
+        self.assertEqual((self.client_dir / "gone.md").read_text(encoding="utf-8"), "# stay\n")
+        self.assertFalse((self.client_dir / ".deleted.json").exists())
+        server_ts = self.server_dir / ".tombstones.json"
+        if server_ts.is_file():
+            self.assertNotIn("gone.md", server_ts.read_text(encoding="utf-8"))
+        questions = self.client_dir / "staging" / "epoch-questions.md"
+        if questions.is_file():
+            self.assertNotIn("gone.md", questions.read_text(encoding="utf-8"))
+
+        remote_push_merge(self.base, token="tok", source_dir=self.client_dir)
+        self.assertEqual((self.server_dir / "gone.md").read_text(encoding="utf-8"), "# stay\n")
+        if server_ts.is_file():
+            self.assertNotIn("gone.md", server_ts.read_text(encoding="utf-8"))
+
+    def test_same_epoch_push_still_merges(self) -> None:
+        (self.server_dir / "USER.md").write_text("# Same\n", encoding="utf-8")
+        (self.server_dir / ".epoch").write_text("1\n", encoding="utf-8")
+        save_remote_config(url=self.base, token="tok", extra={"epoch": 1})
+        user = "# Same\n"
+        (self.client_dir / "USER.md").write_text(user, encoding="utf-8")
+        save_baseline(self.client_dir, collect_sync_bundle(memory_root=self.client_dir))
+        (self.client_dir / "USER.md").write_text("# Same but edited\n", encoding="utf-8")
+        notes = self.client_dir / "notes"
+        notes.mkdir(exist_ok=True)
+        (notes / "live.md").write_text("# live edit\n", encoding="utf-8")
+
+        result = remote_push_merge(self.base, token="tok", source_dir=self.client_dir)
+        self.assertEqual(result["status"], "ok")
+        self.assertFalse(result.get("auto_epoch"))
+        self.assertEqual((self.server_dir / "USER.md").read_text(encoding="utf-8"), "# Same but edited\n")
+        self.assertEqual((self.server_dir / "notes" / "live.md").read_text(encoding="utf-8"), "# live edit\n")
+        self.assertFalse((self.client_dir / "staging" / "epoch-questions.md").exists())
+        self.assertEqual((self.server_dir / ".epoch").read_text(encoding="utf-8").strip(), "1")
 
 
 class UpgradeSurfaceTests(unittest.TestCase):
@@ -292,3 +369,75 @@ class UpgradeSurfaceTests(unittest.TestCase):
             self.assertIn("agents-memory 1.2.0 required", log)
         finally:
             tmp.cleanup()
+
+
+class EpochQuestionUnitTests(unittest.TestCase):
+    def test_changed_projects_file_is_staged(self) -> None:
+        from agents_memory.remote.sync_bundle import capture_pending, stage_epoch_questions
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        old = "| slug | path | role | stack | status |\n| --- | --- | --- | --- | --- |\n| a | /a | r | s | on |\n"
+        new = old + "| b | /b | r | s | on |\n"
+        save_baseline(root, {"PROJECTS.md": old, "notes/edited.md": "# v1\n"})
+        (root / "PROJECTS.md").write_text(new, encoding="utf-8")
+        notes = root / "notes"
+        notes.mkdir()
+        (notes / "edited.md").write_text("# v2\n", encoding="utf-8")
+        # Deleted since baseline: must not be staged.
+        pending = capture_pending(
+            root,
+            {"PROJECTS.md": new, "notes/edited.md": "# v2\n"},
+        )
+        self.assertIn("PROJECTS.md", pending["files"])
+        self.assertIn("notes/edited.md", pending["files"])
+        staged = stage_epoch_questions(root, pending, 3)
+        self.assertEqual(staged, ["PROJECTS.md", "notes/edited.md"])
+        text = (root / "staging" / "epoch-questions.md").read_text(encoding="utf-8")
+        self.assertIn("PROJECTS.md", text)
+        self.assertIn("notes/edited.md", text)
+        self.assertIn("Remote epoch changed", text)
+        self.assertIn("| b | /b | r | s | on |", text)
+        self.assertNotIn("deleted.md", text)
+
+    def test_epoch_questions_are_not_auto_distilled(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        staging = root / "staging"
+        staging.mkdir()
+        (staging / "epoch-questions.md").write_text(
+            "# Epoch questions\n\n"
+            "- [notes/edited.md @ epoch 2] Remote epoch changed. "
+            "Local content: Always keep this?\\n",
+            encoding="utf-8",
+        )
+        with patch.object(store_mod, "USER_MEMORY", root), patch.object(store_mod, "parse_projects", return_value=[]):
+            result = store_mod.auto_distill()
+        self.assertEqual(result["promoted"], 0)
+        self.assertEqual(result["discarded"], 0)
+        kept = (staging / "epoch-questions.md").read_text(encoding="utf-8")
+        self.assertIn("Always keep this?", kept)
+        self.assertGreaterEqual(len(result.get("candidates") or []), 1)
+
+    def test_save_remote_config_keeps_epoch_for_same_url(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        cfg_path = Path(tmp.name) / "remote_config.json"
+        with patch.object(client_mod, "CONFIG_FILE", cfg_path), patch.object(store_mod, "USER_MEMORY", Path(tmp.name)):
+            client_mod.save_remote_config(
+                "https://memory.test",
+                token="tok",
+                extra={"epoch": 4, "last_sync": "t1"},
+            )
+            saved = client_mod.save_remote_config(
+                "https://memory.test",
+                token="tok",
+                extra={"verify_ssl": False},
+            )
+            self.assertEqual(saved["epoch"], 4)
+            self.assertEqual(saved["last_sync"], "t1")
+            self.assertIs(saved["verify_ssl"], False)
+            other = client_mod.save_remote_config("https://other.test", token="tok")
+            self.assertNotIn("epoch", other)

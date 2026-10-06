@@ -85,7 +85,7 @@ The server stores an integer in `~/.agents/memory/.epoch` (a dotfile, not in the
 
 A merge, `PUT`, or `DELETE` whose `X-Agents-Memory-Epoch` (or JSON `epoch`) is **behind** the server returns **409** `epoch_mismatch`. A missing epoch counts as 0. While the server epoch is still 0, every client is accepted.
 
-A 1.2 client handles 409 itself: replace-pull (backup + exact snapshot), write back files that differ from its last sync baseline, then retry the push once. With no baseline, nothing is written back (a stale vault must not replay itself). `sync_mcp` does the same on its startup pull and on the 60s pull when the snapshot epoch is ahead, and on the push after a memory write.
+A 1.2 client handles 409 itself: replace-pull (backup + exact snapshot), then stop. Files changed or added since `.sync-baseline.json` are parked in `staging/epoch-questions.md` (same bullet log as `staging/sync-conflicts.md`, but this file is in `get_staging_inbox` and `remote status`). They are not written back and not pushed. Re-add with `add` / `write_memory_file` on the new epoch if you still want them. With no baseline, nothing is parked (a stale vault must not replay itself). Local deletions since that baseline do not become tombstones on the new epoch. `sync_mcp` does this on its startup pull and on the 60s pull when the snapshot epoch is ahead, and on the push after a memory write. `remote pull --replace` still matches the snapshot exactly and does not park local edits.
 
 `remote push --replace` is not rejected for a low epoch. Run it only on the cleaned machine.
 

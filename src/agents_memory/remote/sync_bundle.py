@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,6 +34,13 @@ from .tombstones import (
 MIRROR_PREFIX = "mirror/projects/"
 RULES_PREFIX = "rules/"
 SYNC_CONFLICTS = USER_MEMORY / "staging" / "sync-conflicts.md"
+# Not sync-*.md: those logs are hidden from get_staging_inbox. This file is a review queue.
+EPOCH_QUESTIONS_REL = "staging/epoch-questions.md"
+_EPOCH_QUESTIONS_HEADER = (
+    "# Epoch questions\n\n"
+    "Not memory. The remote vault epoch changed, so these local edits were not pushed.\n"
+    "They show up in `get_staging_inbox`. Re-add with add/write on the new epoch if you still want the file.\n\n"
+)
 
 _SKIP_SUFFIXES = {".sqlite", ".db", ".lock", ".tmp", ".pyc"}
 _SKIP_NAMES = {"remote_config.json", "board_attach.json", "host_paths.json"}
@@ -671,8 +679,6 @@ def capture_pending(root: Path, files: dict[str, str]) -> dict[str, Any]:
     base_rows = {str(slug).strip().lower() for slug in raw_rows} if isinstance(raw_rows, list) else set()
     changed: dict[str, str] = {}
     for path, content in files.items():
-        if path == "PROJECTS.md":
-            continue
         digest = _file_sha(content)
         if path not in known or (hashes and str(hashes.get(path) or "") != digest):
             changed[path] = content
@@ -683,40 +689,69 @@ def capture_pending(root: Path, files: dict[str, str]) -> dict[str, Any]:
     return {"files": changed, "project_rows": new_rows}
 
 
-def reapply_pending(root: Path, pending: dict[str, Any]) -> None:
-    """Write baseline-diverged files back onto a store that was just replaced."""
-    files = pending.get("files") if isinstance(pending.get("files"), dict) else {}
-    if files:
-        user_files, rules_files, mirror_files = _split_bundle(files)
-        for rel, content in {**user_files, **mirror_files}.items():
-            if _bundle_key_skipped(rel):
-                continue
-            _write_verbatim(Path(root) / rel, content)
-        rules_dir = _rules_dir()
-        for rel, content in rules_files.items():
-            name = rel[len(RULES_PREFIX):]
-            if name.endswith(".mdc") and "/" not in name and ".." not in name:
-                rules_dir.mkdir(parents=True, exist_ok=True)
-                _write_verbatim(rules_dir / name, content)
-    rows = pending.get("project_rows") if isinstance(pending.get("project_rows"), list) else []
-    if not rows:
-        return
-    path = Path(root) / "PROJECTS.md"
-    existing = path.read_text(encoding="utf-8") if path.is_file() else (
-        "# Projects\n\n| slug | path | role | stack | status |\n|------|------|------|-------|--------|\n"
+def _epoch_question_bullet(path: str, content: str, server_epoch: int) -> str:
+    return (
+        f"- [{path} @ epoch {server_epoch}] Remote epoch changed. "
+        "Local edit was not pushed. Re-add with add/write on the new epoch if you still want it. "
+        f"Local content (JSON string): {json.dumps(content, ensure_ascii=False)}"
     )
-    have = set(_table_slug_lines(existing))
-    extra: list[str] = []
-    for line in rows:
-        if not isinstance(line, str):
+
+
+def _union_question_lines(*texts: str) -> list[str]:
+    seen: set[str] = set()
+    lines: list[str] = []
+    for text in texts:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- ") or stripped in seen:
+                continue
+            seen.add(stripped)
+            lines.append(stripped)
+    return lines
+
+
+def stage_epoch_questions(root: Path, pending: dict[str, Any], server_epoch: int) -> list[str]:
+    """Park baseline-diverged files for review. Do not write them back onto the store.
+
+    ``sync-conflicts.md`` is a merge log and is excluded from ``get_staging_inbox``.
+    Epoch questions use the same bullet log, in ``staging/epoch-questions.md``, so
+    agents see them in the inbox. Deletions are not pending and are not staged.
+    """
+    files = pending.get("files") if isinstance(pending.get("files"), dict) else {}
+    rows = pending.get("project_rows") if isinstance(pending.get("project_rows"), list) else []
+    preserved = files.get(EPOCH_QUESTIONS_REL)
+    preserved_text = preserved if isinstance(preserved, str) else ""
+    server_epoch = max(0, int(server_epoch))
+    staged: list[str] = []
+    bullets: list[str] = []
+
+    def add(path: str, content: str) -> None:
+        clean = norm_rel(path)
+        if not clean or clean == EPOCH_QUESTIONS_REL or ".." in clean.split("/"):
+            return
+        bullets.append(_epoch_question_bullet(clean, content, server_epoch))
+        if clean not in staged:
+            staged.append(clean)
+
+    for path in sorted(files):
+        content = files[path]
+        if not isinstance(content, str) or path == EPOCH_QUESTIONS_REL:
             continue
-        slug = next(iter(_table_slug_lines(line)), "")
-        if slug and slug not in have:
-            extra.append(line)
-            have.add(slug)
-    if extra:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(existing.rstrip() + "\n" + "\n".join(extra) + "\n", encoding="utf-8")
+        add(str(path), content)
+    if "PROJECTS.md" not in files:
+        for line in rows:
+            if isinstance(line, str) and line.strip():
+                add("PROJECTS.md", line.strip())
+
+    dest = Path(root) / EPOCH_QUESTIONS_REL
+    on_disk = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+    kept = _union_question_lines(on_disk, preserved_text, *bullets)
+    if not kept:
+        return []
+    body = _EPOCH_QUESTIONS_HEADER + "\n".join(kept) + "\n"
+    if body != on_disk:
+        _write(dest, body)
+    return staged
 
 
 def infer_from_baseline(root: Path, current: dict[str, str]) -> None:

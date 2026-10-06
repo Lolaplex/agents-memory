@@ -78,8 +78,12 @@ def injection_spec() -> dict[str, Any]:
         "generated_on_sync": [
             {
                 "path": "~/.agents/AGENTS.md",
-                "from": ["~/.agents/memory/USER.md", "~/.agents/memory/PROJECTS.md"],
-                "edit": "Edit USER.md / PROJECTS.md, then re-run python -m agents_memory sync",
+                "from": [
+                    "~/.agents/memory/rules/HARD.md",
+                    "~/.agents/memory/USER.md",
+                    "~/.agents/memory/PROJECTS.md",
+                ],
+                "edit": "Edit USER.md / PROJECTS.md (hard rules: agents-memory rules), then re-run python -m agents_memory sync",
             },
             {
                 "path": "~/.agents/CLAUDE.md",
@@ -171,6 +175,14 @@ def full_spec() -> dict[str, Any]:
             "usage": "python -m agents_memory related MEMORY_ID [--limit N]",
             "aliases": ["rels"],
         },
+        "context": {
+            "description": "Print the rendered hard rules block (global plus optional project overlay). Same renderer as MCP instructions and injection.",
+            "usage": "python -m agents_memory context [--project SLUG] [--format md|json]",
+        },
+        "rules": {
+            "description": "User-intent edits of hard rules (rules/HARD.md, projects/<slug>/RULES.md) with a line/char budget. Agents propose via MCP propose_rule.",
+            "usage": "python -m agents_memory rules {show,add,edit,remove,set,check} [--project SLUG]",
+        },
         "distill": {
             "description": "Peek staging inbox, or auto_distill with --auto.",
             "usage": "python -m agents_memory distill [--auto]",
@@ -256,6 +268,20 @@ def full_spec() -> dict[str, Any]:
                     sub, name=f"remote {sub_name}", description=sub.description or ""
                 )
     commands["remote"]["subcommands"] = remote_subs
+
+    from .rules_cli import build_context_parser, build_rules_parser
+
+    commands["context"].update(
+        {k: v for k, v in cli_spec(build_context_parser(), name="context").items() if k in ("options", "arguments")}
+    )
+    rules_subs: dict[str, Any] = {}
+    for action in build_rules_parser()._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for sub_name, sub in action.choices.items():
+                rules_subs[sub_name] = cli_spec(
+                    sub, name=f"rules {sub_name}", description=sub.description or ""
+                )
+    commands["rules"]["subcommands"] = rules_subs
 
     # Back-compat keys (older agents/skills scrape these).
     scripts_no_flags = {

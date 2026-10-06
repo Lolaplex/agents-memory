@@ -332,6 +332,17 @@ def _bundle_key_skipped(rel: str) -> bool:
     return False
 
 
+def is_agent_rule_key(rel: str) -> bool:
+    """``rules/<name>.mdc`` is a host rule file (``~/.agents/rules``).
+
+    Anything else under ``rules/`` (e.g. ``rules/HARD.md``) is user-store content.
+    """
+    if not rel.startswith(RULES_PREFIX):
+        return False
+    name = rel[len(RULES_PREFIX):]
+    return name.endswith(".mdc") and "/" not in name
+
+
 def _split_bundle(
     incoming_files: dict[str, str],
 ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
@@ -342,7 +353,7 @@ def _split_bundle(
         norm = norm_rel(rel)
         if norm.startswith(MIRROR_PREFIX):
             mirror_files[norm] = content
-        elif norm.startswith(RULES_PREFIX):
+        elif is_agent_rule_key(norm):
             rules_files[norm] = content
         else:
             user_files[norm] = content

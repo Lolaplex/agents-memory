@@ -474,6 +474,7 @@ def _mcp_tool_handlers() -> dict[str, Any]:
         "add_memory",
         "read_memory_file",
         "write_memory_file",
+        "propose_rule",
         "auto_distill",
         "get_staging_inbox",
         "distill_batch",

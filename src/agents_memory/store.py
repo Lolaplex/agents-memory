@@ -1583,7 +1583,12 @@ def compact_projects_text(projects: List[Project]) -> str:
 
 
 def always_on_body() -> str:
+    from .rules import render_rules
+
     user = _read(USER_MD).strip()
+    rules_block = render_rules()
+    if rules_block:
+        user = f"{rules_block}\n\n{user}" if user else rules_block
     if is_compact_always_on():
         projects = compact_projects_text(parse_projects()).strip()
     else:
@@ -1625,7 +1630,9 @@ def gemini_agents_text() -> str:
 
 
 def project_agents_text(p: Project) -> str:
-    return (
+    from .rules import render_rules
+
+    text = (
         f"# Project: {p.slug}\n\n"
         f"**Path:** `{p.path}`  \n"
         f"**Role:** {p.role}  \n"
@@ -1634,6 +1641,8 @@ def project_agents_text(p: Project) -> str:
         f"Global profile: `~/.agents/AGENTS.md`. "
         f'MCP `search_memory` / `get_project_memories("{p.slug}")` for detail.\n'
     )
+    overlay = render_rules(p.slug, include_global=False)
+    return f"{text}\n{overlay}\n" if overlay else text
 
 
 def purge_legacy_rules(rules_dir: Path) -> List[str]:
@@ -2078,6 +2087,7 @@ def write_memory_file(
 ) -> str:
     """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs."""
     path = resolve_memory_path(file_id_or_path)
+    _refuse_rules_write(path)
     previous = _read(path) if path.is_file() else ""
     _write(path, content)
     _note_memory_write(path, previous, content)
@@ -2085,6 +2095,13 @@ def write_memory_file(
     if auto_sync:
         _finish_store_write()
     return file_id(path)
+
+
+def _refuse_rules_write(path: Path) -> None:
+    """Hard-rule files are user-owned (see rules.py); vault CRUD must not edit them."""
+    from .rules import assert_agent_write_allowed
+
+    assert_agent_write_allowed(path)
 
 
 def _note_memory_write(path: Path, previous: str, content: str) -> None:
@@ -2586,6 +2603,7 @@ def add_memory(
     if not fact:
         raise ValueError("empty fact")
     path = memory_file_for(kind=kind, name=name, project=project, collection=collection)
+    _refuse_rules_write(path)
     existed = path.exists()
     k = (kind or "").strip().lower()
     if k in REVISE_IN_PLACE_KINDS and existed:
@@ -2685,6 +2703,7 @@ def clear_acknowledged_deletions(acknowledged: list[str]) -> None:
 def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
     """Delete a memory or rule file and sync injection."""
     path = resolve_memory_path(file_id_or_path)
+    _refuse_rules_write(path)
     if not path.is_file():
         raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
 
@@ -2745,6 +2764,7 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     path = resolve_memory_path(rel)
     if not path.exists():
         raise FileNotFoundError(rel)
+    _refuse_rules_write(path)
 
     lines = _read(path).splitlines()
     if not lines:
@@ -3149,6 +3169,12 @@ _NOISE_LINE_PATTERNS = (
 )
 
 
+def is_rule_proposals_file(file_id_or_path: str) -> bool:
+    from .rules import is_proposals_file
+
+    return is_proposals_file(file_id_or_path)
+
+
 def auto_distill(
     limit: int = 50, discard_noise: bool = True, auto_sync: bool = True
 ) -> dict:
@@ -3161,6 +3187,8 @@ def auto_distill(
     noise_re = [re.compile(pat, re.IGNORECASE) for pat in _NOISE_LINE_PATTERNS]
 
     for group in inbox.get("groups", []):
+        if is_rule_proposals_file(group.get("file") or ""):
+            continue  # Rule proposals wait for the user (agents-memory rules add).
         for item in group.get("bullets", []):
             raw_text = item.get("text") or item.get("bullet") or ""
             bullet_text = item.get("bullet") or raw_text

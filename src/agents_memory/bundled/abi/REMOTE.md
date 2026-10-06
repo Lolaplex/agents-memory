@@ -93,7 +93,7 @@ A 1.2 client handles 409 itself: replace-pull (backup + exact snapshot), then st
 
 Set `AGENTS_MEMORY_MIN_CLIENT_VERSION` (or `remote serve --min-client-version`). Writers send `X-Agents-Memory-Version`. `POST /api/v1/merge`, `PUT /api/v1/file`, `DELETE /api/v1/file`, and `POST /api/v1/tool` from a client below that version, **or with no version header**, return **426**. The JSON `error` is:
 
-`agents-memory <version> required. Update: uv tool install --force "git+https://github.com/Lolaplex/agents-memory@dev"`
+`agents-memory <version> required. Update: uv tool install --upgrade agents-memory (or: pip install --upgrade agents-memory)`
 
 The install command is `AGENTS_MEMORY_UPDATE_HINT` or `remote serve --update-hint`. Reads (`GET` snapshot, file, health) stay open and include `min_client_version` plus `update_hint`.
 

@@ -244,7 +244,7 @@ def list_projects() -> str:
 
 @mcp.tool()
 def inventory_projects() -> str:
-    """Bestandaufnahme: compare scan.json roots to PROJECTS.md. Returns unknown and missing folders."""
+    """Inventory: compare scan.json roots to PROJECTS.md. Returns unknown and missing folders."""
     try:
         return json.dumps(inventory_report(), indent=2, ensure_ascii=False)
     except Exception as e:

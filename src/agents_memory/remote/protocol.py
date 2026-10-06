@@ -18,7 +18,7 @@ EPOCH_FILE = ".epoch"
 VERSION_HEADER = "X-Agents-Memory-Version"
 EPOCH_HEADER = "X-Agents-Memory-Epoch"
 DEFAULT_UPDATE_HINT = (
-    'uv tool install --force "git+https://github.com/Lolaplex/agents-memory@dev"'
+    "uv tool install --upgrade agents-memory (or: pip install --upgrade agents-memory)"
 )
 
 

@@ -57,7 +57,7 @@ Cloud = source of truth; local files = working copy. All MCP tools run **locally
 
 After `connect`, IDE MCP entry is `agents_memory.remote.sync_mcp` (pull on start, push after writes).
 
-## Bestandaufnahme workflow
+## Inventory workflow
 
 1. Run `python -m agents_memory inventory` (or MCP `inventory_projects`).
 2. Show the user a tight list:

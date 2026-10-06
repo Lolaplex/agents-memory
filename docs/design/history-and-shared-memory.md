@@ -43,26 +43,26 @@ Local files are the working copy. `sync_mcp` pulls on startup, pushes after a wr
 
 | Piece | Where | Role |
 | --- | --- | --- |
-| Live bundle | server store | `USER.md`, notes, `rules/*.mdc`, `mirror/projects/<slug>/…` |
+| Live bundle | server store | `USER.md`, notes, `rules/HARD.md`, `rules/*.mdc`, `mirror/projects/<slug>/…` |
 | Auth | `Authorization: Bearer` | One shared token (`AGENTS_MEMORY_TOKEN`). No user, no device. |
 | Epoch | `.epoch`, client copy in `remote_config.json` | Writer behind the server epoch gets **409** `epoch_mismatch`. Epoch 0 accepts everyone. |
 | Min client | `AGENTS_MEMORY_MIN_CLIENT_VERSION` | Writer older than the floor, or with no `X-Agents-Memory-Version`, gets **426**. Reads stay open. |
 | Tombstones | `.tombstones.json` | Files, prefixes, `PROJECTS.md` rows, bullets. Newer explicit re-add wins. Entries older than 90 days drop. Not part of the file bundle. |
 | Explicit writes | `.sync-writes.json` | Re-adds that must beat a prefix tombstone. |
-| Baseline | `.sync-baseline.json` on the client only | Paths, `PROJECTS.md` slugs, sha256 per file at last sync. Missing baseline means "replay nothing" after a 409 replace-pull. |
+| Baseline | `.sync-baseline.json` on the client only | Paths, `PROJECTS.md` slugs, sha256 per file at last sync. Decides which local edits are parked after an epoch replace-pull. Missing baseline parks nothing. |
 | Replace | `remote pull --replace`, `remote push --replace` | Exact tree, backup under `*.bak-<UTC>`, then epoch bump on the push form. |
 
 Merge, in `merge_markdown_files`:
 
-- `USER.md`, `CLAUDE.md`, `AGENTS.md`, `*.mdc`, and `staging/` are **incoming wins** for the whole file. The push that arrives last replaces the server bytes. There is no check that the client based that edit on the current server bytes.
+- `USER.md`, `CLAUDE.md`, `AGENTS.md`, `*.mdc`, the hard-rule files (`rules/HARD.md`, `projects/<slug>/RULES.md`), and `staging/` are **incoming wins** for the whole file. The push that arrives last replaces the server bytes. There is no check that the client based that edit on the current server bytes.
 - Other markdown is a **union** of bullets. `PROJECTS.md` is a union of rows; on a row both sides edited, incoming wins, and a line is appended to `staging/sync-conflicts.md` whose header says the conflict was resolved that way.
 - A path missing from the push is not deleted. Deletion is a tombstone, a baseline absence, or `DELETE /api/v1/file`.
 
-Two holes remain, and they are different.
+One hole remains.
 
 The example incident is a normal push, not a 409. The stale machine sends its tree. The server union-merges bullets and rows, so deleted projects return unless a live tombstone blocks them, and incoming-wins replaces `USER.md` with whatever that push contains. Tombstones expire after 90 days. Nothing checked that the sender had based the edit on the current server bytes.
 
-The 409 path has a second hole, for after an epoch bump. `remote_push_merge` catches `EpochMismatch`, `pull --replace`s, then `reapply_pending` writes back every local file whose sha256 differs from `.sync-baseline.json` (and any path the baseline does not list). `remote_pull` does the same when the snapshot epoch is ahead. If this machine edited `USER.md` since its baseline, those paragraphs are put back on top of the server copy and pushed again. Two machines that are still on the same epoch never enter this path: the later push wins outright.
+The 409 path no longer re-pushes. After an epoch bump, `remote_push_merge` catches `EpochMismatch` and adopts the server epoch with a replace-pull; `remote_pull` does the same when the snapshot epoch is ahead. Every local file whose sha256 differs from `.sync-baseline.json` (or that the baseline does not list) is parked as a bullet in `staging/epoch-questions.md`, which `get_staging_inbox` shows. Those bytes are not written back and not pushed, and deletions since the baseline do not become tombstones on the new epoch. A person or agent re-adds what is still wanted with add/write on the new epoch. The cost is that a legitimate offline edit waits for review instead of landing. Two machines that are still on the same epoch never enter this path: the later push wins outright.
 
 `remote attach` is a separate, read-shaped door for one project tree. It does not carry `USER.md` and does not switch MCP to `sync_mcp`. Shared memory should grow from scopes, not by overloading `connect` with a second vault.
 
@@ -146,7 +146,7 @@ Crash window: write blobs, fsync, append the log line, fsync, then update `HEAD`
 
 `revert` of a delete revives the file and records an explicit write, so the 1.2.0 tombstone rule ("strictly newer re-add wins") accepts it.
 
-`restore` is the incident command. It is owner-only once roles exist. It bumps the epoch because a 1.2 client that still has the bad tree will otherwise push it again under last-push-wins. 1.3 clients already replace-pull on 409 and then reapply local edits. That reapply becomes base-aware in the same milestone: a local file is written back only when the server blob for that path still equals the baseline hash. Overlapping files stay as the server left them. The displaced local bytes are saved on that machine under `staging/rejected/` and are not pushed until a later edit is based on the new head.
+`restore` is the incident command. It is owner-only once roles exist. It bumps the epoch because a 1.2 client that still has the bad tree will otherwise push it again under last-push-wins. 1.2 clients already replace-pull on 409 and park local edits in `staging/epoch-questions.md` without pushing them. In 1.3 that step becomes base-aware: a local file is written back only when the server blob for that path still equals the baseline hash. Overlapping files stay as the server left them. The displaced local bytes are saved on that machine under `staging/rejected/` and are not pushed until a later edit is based on the new head.
 
 A revert also bumps the epoch in 1.3, for the same 1.2 reason. After legacy merge is refused by `min_client_version`, an epoch bump on every revert is optional. Until then it is cheap and it matches clients that already exist.
 
@@ -746,7 +746,7 @@ Names as of 1.2.0, so a later change can land in the right module.
 | Incoming-wins singletons, bullet union, table union | `src/agents_memory/remote/merge.py` |
 | Tombstones, 90-day compact, newer re-add | `src/agents_memory/remote/tombstones.py` |
 | Bundle skip of dotfiles, baseline hashes, conflict log header, replace-pull | `src/agents_memory/remote/sync_bundle.py` |
-| 409 handling, replace-then-reapply, version header on the client | `src/agents_memory/remote/client.py` |
+| 409 handling, replace-then-park, version header on the client | `src/agents_memory/remote/client.py`, `stage_epoch_questions` in `sync_bundle.py` |
 | 60-second pull, push after write | `src/agents_memory/remote/sync_hooks.py`, `sync_mcp.py` |
 | Tools run locally | `src/agents_memory/remote/locality.py` |
 | Closed frontmatter | `src/agents_memory/frontmatter.py`, `abi/HYGIENE.md` |

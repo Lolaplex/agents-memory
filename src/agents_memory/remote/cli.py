@@ -21,6 +21,7 @@ from .client import (
     save_remote_config,
     verify_remote_tool_api,
 )
+from .sync_bundle import EPOCH_QUESTIONS_REL
 from .lock import SyncBusy
 from .server import run_server
 
@@ -62,6 +63,16 @@ def format_sync_report(report: dict) -> str:
         added_count += len(repos.get("applied", []))
 
     return f"{added_count} added, {merged_count} merged, {unchanged_count} unchanged."
+
+
+def _print_epoch_questions(res: dict) -> None:
+    staged = res.get("staged") if isinstance(res.get("staged"), list) else []
+    if not staged:
+        return
+    print(
+        f"Epoch changed: parked {len(staged)} local edit(s) in {EPOCH_QUESTIONS_REL} (not pushed)."
+    )
+    print("Review with get_staging_inbox, then re-add via add/write if you still want them.")
 
 
 def build_remote_parser() -> argparse.ArgumentParser:
@@ -236,12 +247,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             report = res.get("server_report", {})
             print(f"Merge complete: {format_sync_report(report)}")
 
-        # Save config
+        # Save config. Keep the epoch this sync just adopted (first connect has no file yet).
+        extra: dict = {"verify_ssl": verify_ssl}
+        if isinstance(res, dict) and res.get("epoch") is not None:
+            extra["epoch"] = res.get("epoch")
         save_remote_config(
             url=url,
             token=token,
             auto_pull=not args.no_auto_pull,
-            extra={"verify_ssl": verify_ssl},
+            extra=extra,
         )
         print(f"Saved remote config to {USER_MEMORY / 'remote_config.json'}")
 
@@ -299,6 +313,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"Vault epoch: {cfg.get('epoch', 0)}")
         if cfg.get("upgrade_required"):
             print(cfg["upgrade_required"])
+        questions = USER_MEMORY / EPOCH_QUESTIONS_REL
+        if questions.is_file():
+            parked = sum(
+                1
+                for line in questions.read_text(encoding="utf-8").splitlines()
+                if line.strip().startswith("- ")
+            )
+            if parked:
+                print(
+                    f"Epoch questions: {parked} local edit(s) not pushed "
+                    f"({EPOCH_QUESTIONS_REL}). Review with get_staging_inbox."
+                )
 
         print("\nChecking server health...")
         try:
@@ -326,8 +352,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 res = remote_push_merge(url, token=token, replace=True)
             else:
                 res = remote_push_merge(url, token=token, publish_absences=True)
-            report = res.get("server_report", {})
-            print(f"Push & Merge complete: {format_sync_report(report)}")
+            if res.get("auto_epoch"):
+                print("Remote vault epoch changed. Local store replaced from the snapshot.")
+                _print_epoch_questions(res)
+            else:
+                report = res.get("server_report", {})
+                print(f"Push & Merge complete: {format_sync_report(report)}")
             if res.get("epoch"):
                 print(f"Vault epoch: {res.get('epoch')}")
             return 0
@@ -360,6 +390,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             res = remote_pull(url, token=token, replace=bool(getattr(args, "replace", False)))
             report = res.get("report", {})
             print(f"Pull complete: {format_sync_report(report)}")
+            _print_epoch_questions(res)
             return 0
         except SyncBusy as e:
             print(f"ERROR: {e}", file=sys.stderr)

@@ -140,7 +140,7 @@ def _reject_old_epoch(request: Request, body: Any) -> Optional[JSONResponse]:
         return None
     message = (
         f"vault epoch {client_epoch} is behind server epoch {server_epoch}. "
-        "Run agents-memory remote pull --replace, then retry the write."
+        "Replace-pull the snapshot before writing. Do not push the old vault over the new epoch."
     )
     return JSONResponse(
         {

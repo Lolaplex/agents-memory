@@ -36,6 +36,7 @@ from .protocol import (
     version_older,
 )
 from .sync_bundle import (
+    EPOCH_QUESTIONS_REL,
     apply_snapshot_replace,
     apply_sync_bundle,
     capture_pending,
@@ -43,8 +44,8 @@ from .sync_bundle import (
     infer_from_baseline,
     infer_remote_project_absences,
     load_baseline,
-    reapply_pending,
     save_baseline,
+    stage_epoch_questions,
 )
 from .tombstones import (
     clear_writes,
@@ -104,15 +105,29 @@ def save_remote_config(
     """Save remote sync configuration to ~/.agents/memory/remote_config.json."""
     ensure_memory_layout()
     clean_url = url.strip().rstrip("/")
+    cfg_path = _config_file()
+    previous: dict[str, Any] = {}
+    if cfg_path.is_file():
+        try:
+            loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                previous = loaded
+        except (OSError, json.JSONDecodeError):
+            previous = {}
     cfg = {
         "url": clean_url,
         "token": token.strip(),
         "auto_pull": auto_pull,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    # Same server: do not drop the epoch a sync just stored. A new URL starts at 0.
+    if str(previous.get("url") or "").rstrip("/") == clean_url:
+        for key in ("epoch", "last_sync", "upgrade_required"):
+            if key in previous and (not extra or key not in extra):
+                cfg[key] = previous[key]
     if extra:
         cfg.update(extra)
-    _config_file().write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     return cfg
 
 
@@ -335,6 +350,18 @@ def _pending_deletions(root: Path) -> list[str]:
     return []
 
 
+def _clear_unsent_deletions(root: Path) -> None:
+    """Drop the local deletion outbox.
+
+    A replace-pull adopts the snapshot. Unsent ``.deleted.json`` entries were
+    recorded against the previous store; the next push would tombstone them
+    on the epoch just adopted.
+    """
+    path = Path(root) / ".deleted.json"
+    if path.is_file():
+        path.unlink()
+
+
 def _clear_pending_deletions(root: Path, acknowledged: list[str]) -> None:
     path = Path(root) / ".deleted.json"
     if not path.is_file():
@@ -414,15 +441,16 @@ def remote_pull(
     """Download memory snapshot from remote and update target directory.
 
     ``replace=True`` makes the local synced store match the snapshot exactly
-    (backup first, no table union). Machine-local files stay.
+    (backup first, no table union). Machine-local files stay. Explicit replace
+    does not park local edits; the caller asked for the snapshot.
 
     A snapshot whose ``epoch`` is ahead of this device also replaces (startup
-    pull and the 60s pull). Edits since the last baseline are written back on
-    top and pushed once the new epoch is stored.
+    pull and the 60s pull). Files changed or added since the last baseline are
+    parked in ``staging/epoch-questions.md`` and are not pushed. Deletions
+    since that baseline do not become tombstones on the new epoch.
     """
     dest_root = target_dir or USER_MEMORY
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
-    follow_up_push = False
     with exclusive_sync_lock(dest_root):
         data = _fetch_snapshot(url, token, timeout, verify)
         _observe_server_requirements(data)
@@ -435,23 +463,29 @@ def remote_pull(
             if auto_epoch:
                 current = collect_sync_bundle(include_projects=True, memory_root=dest_root)
                 pending = capture_pending(dest_root, current)
+                # Keep an existing review queue even when it matches the baseline.
+                # Replace would delete it when the snapshot does not have it yet.
+                qpath = dest_root / EPOCH_QUESTIONS_REL
+                if qpath.is_file():
+                    held = dict(pending.get("files") or {})
+                    held.setdefault(EPOCH_QUESTIONS_REL, qpath.read_text(encoding="utf-8"))
+                    pending = {**pending, "files": held}
             report = apply_snapshot_replace(files, target_root=dest_root, apply_to_repos=True)
+            staged: list[str] = []
             if auto_epoch:
-                reapply_pending(dest_root, pending)
+                staged = stage_epoch_questions(dest_root, pending, server_epoch)
+            # Snapshot is the store now. Old unsent deletions must not tombstone it.
+            _clear_unsent_deletions(dest_root)
             save_tombstones(dest_root, normalize_tombstones(data.get("tombstones")))
             save_baseline(dest_root, collect_sync_bundle(include_projects=True, memory_root=dest_root))
             remember_epoch(server_epoch)
             touch_remote_config_sync_time()
-            follow_up_push = bool(
-                auto_epoch
-                and (pending.get("files") or pending.get("project_rows"))
-                and not upgrade_notice()
-            )
             result = {
                 "status": "ok",
                 "replaced": True,
                 "auto_epoch": auto_epoch,
                 "epoch": server_epoch,
+                "staged": staged,
                 "total_files": len(files),
                 "backup": report.get("backup"),
                 "report": report,
@@ -487,19 +521,6 @@ def remote_pull(
                 "total_files": len(filtered),
                 "report": report,
             }
-    if follow_up_push:
-        try:
-            remote_push_merge(
-                url,
-                token=token,
-                source_dir=dest_root,
-                timeout=timeout,
-                verify_ssl=verify,
-            )
-        except UpgradeRequired:
-            raise
-        except Exception:
-            pass
     return result
 
 
@@ -522,8 +543,9 @@ def remote_push_merge(
     ``replace=True`` (CLI ``remote push --replace``) makes the server store
     match this machine and bumps the vault epoch.
 
-    A 409 epoch mismatch replaces the local store from the snapshot, puts
-    baseline-diverged edits back, then retries the push once.
+    A 409 epoch mismatch replace-pulls the snapshot and parks baseline-diverged
+    edits in staging. It does not push those edits. With no baseline, nothing
+    is parked (a stale vault must not replay itself).
     """
     root = source_dir or USER_MEMORY
     verify = verify_ssl if verify_ssl is not None else _is_ssl_verify_enabled()
@@ -540,26 +562,14 @@ def remote_push_merge(
     except EpochMismatch:
         if replace or not _retry:
             raise
-        current = collect_sync_bundle(include_projects=True, memory_root=root)
-        pending = capture_pending(root, current)
-        remote_pull(
+        # Adopt the server epoch. Do not write local diffs back or push them.
+        return remote_pull(
             url,
             token=token,
             target_dir=root,
             timeout=timeout,
             verify_ssl=verify,
-            replace=True,
-        )
-        reapply_pending(root, pending)
-        return remote_push_merge(
-            url,
-            token=token,
-            source_dir=root,
-            timeout=timeout,
-            verify_ssl=verify,
-            publish_absences=False,
             replace=False,
-            _retry=False,
         )
 
 

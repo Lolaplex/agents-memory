@@ -32,16 +32,31 @@ mcp = FastMCP("agents-memory", instructions=rules_mod.render_instructions())
 
 
 def _with_upgrade_notice(text: str) -> str:
-    """Prepend a server upgrade message so the calling agent can act on it."""
+    """Prepend remote-upgrade and/or PyPI update notices for the calling agent."""
+    notices: list[str] = []
     try:
         from .remote.sync_hooks import upgrade_notice
 
-        notice = upgrade_notice()
+        remote = upgrade_notice()
+        if remote:
+            notices.append(remote)
     except Exception:
+        pass
+    try:
+        from . import __version__
+        from .updates import mcp_update_notice
+
+        pypi = mcp_update_notice("agents-memory", __version__)
+        if pypi:
+            notices.append(pypi)
+    except Exception:
+        pass
+    if not notices:
         return text
-    if not notice or text.startswith(notice):
+    prefix = "\n\n".join(notices)
+    if any(text.startswith(n) for n in notices):
         return text
-    return f"{notice}\n\n{text}"
+    return f"{prefix}\n\n{text}"
 
 
 _original_add_tool = mcp.add_tool

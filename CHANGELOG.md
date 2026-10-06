@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hard rules from the vault: `rules/HARD.md` plus an optional `projects/<slug>/RULES.md` overlay, rendered by one function into a `<memory_rules>` block. It feeds the MCP `instructions` (with a hint to load project memories), the first tool result of each MCP session (a project's overlay once on its first project-scoped call, deduplicated by content hash), `agents-memory context [--project X] [--format md|json]`, and the synced `AGENTS.md` / agent rule.
 - Rule budget: 30 lines and 2000 characters globally, 10 lines per project (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). Over-budget writes are rejected with a request to consolidate.
 - MCP `propose_rule` stages rule proposals in `staging/rule-proposals.md`; `auto_distill` leaves them alone. `agents-memory rules show|add|edit|remove|set|check` is the only write path to the rule files; vault write/add/delete refuse them.
+- CLI (and MCP, when present) check PyPI at most once per day for a newer release and print one stderr / tool-response line (`uv tool upgrade …`). Disabled with `AGENTS_NO_UPDATE_CHECK=1` or when `CI` is set; offline/timeout stays silent.
 
 ### Changed
 - Remote merge semantics: singleton documents (`USER.md`, `CLAUDE.md`, `AGENTS.md`, and `user-rules.mdc`) use Last-Write-Wins (LWW) document overwrite instead of bullet-union merging to avoid bloated repeated headers across syncs.

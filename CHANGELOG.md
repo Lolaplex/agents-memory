@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Remote merge semantics: singleton documents (`USER.md`, `CLAUDE.md`, `AGENTS.md`, and `user-rules.mdc`) use Last-Write-Wins (LWW) document overwrite instead of bullet-union merging to avoid bloated repeated headers across syncs.
+- The default update hint for too-old clients installs from PyPI (`uv tool install --upgrade agents-memory`, or `pip install --upgrade agents-memory`). The memory-sync skill heading and inventory help text are in English.
 
 ### Fixed
 - Stale clients after `remote push --replace` or `remote bump-epoch` no longer resurrect files the cleanup removed. HTTP 409 (and a pull that sees a newer epoch) replace-pulls, then writes each locally changed or added file into `staging/epoch-questions.md` for `get_staging_inbox`. Those bytes are not pushed. Deletions since `.sync-baseline.json` are not tombstoned on the new epoch. Re-add with add/write, which pushes on the new epoch. Same-epoch merge is unchanged. The 409 body no longer says to retry the write.

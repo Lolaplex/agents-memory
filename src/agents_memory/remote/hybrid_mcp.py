@@ -1,6 +1,7 @@
 """Hybrid MCP server: local ingest/inventory + remote canonical store."""
 from __future__ import annotations
 
+import functools
 import json
 import os
 import sys
@@ -13,10 +14,27 @@ ensure_memory_layout()
 os.environ.setdefault("AGENTS_MEMORY_HYBRID", "1")
 
 from .. import mcp_server as local_mcp  # noqa: E402
+from .. import rules as rules_mod  # noqa: E402
 from .client import get_remote_config, remote_mirror_injection  # noqa: E402
 from .tool_dispatch import dispatch_tool, remote_connected  # noqa: E402
 
-mcp = FastMCP("agents-memory")
+mcp = FastMCP("agents-memory", instructions=rules_mod.render_instructions())
+
+_original_add_tool = mcp.add_tool
+
+
+def _add_tool(fn, *args, **kwargs):
+    @functools.wraps(fn)
+    def wrapped(*a, **kw):
+        result = fn(*a, **kw)
+        if isinstance(result, str):
+            return rules_mod.deliver_for_call(mcp, fn, a, kw, result)
+        return result
+
+    return _original_add_tool(wrapped, *args, **kwargs)
+
+
+mcp.add_tool = _add_tool  # type: ignore[method-assign]
 
 
 def _wrap(name: str, fn):
@@ -63,6 +81,12 @@ def write_memory_file(file_id: str, content: str) -> str:
     return dispatch_tool(
         "write_memory_file", local_mcp.write_memory_file, file_id=file_id, content=content
     )
+
+
+@mcp.tool()
+def propose_rule(rule: str, project: str = "") -> str:
+    """Propose one hard rule for user review (staging only; never edits rule files)."""
+    return dispatch_tool("propose_rule", local_mcp.propose_rule, rule=rule, project=project)
 
 
 @mcp.tool()
@@ -178,6 +202,7 @@ def main() -> int:
     mode = "hybrid (local ingest + remote store)" if remote_connected() else "hybrid (local only; not connected)"
     print(f"Starting agents-memory MCP [{mode}]...", file=sys.stderr)
     _startup_pull()
+    rules_mod.refresh_instructions(mcp)
     mcp.run()
     return 0
 

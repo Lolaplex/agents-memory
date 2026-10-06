@@ -9,12 +9,132 @@ from typing import Any, List
 
 from .store import USER_MEMORY, _append_bullet, _read, _write
 
-HOW_TO = re.compile(
-    r"^(how (can|do|to|would)|write (a|me|the)|fix |create (a|an) |"
-    r"implement |help me|can you|could you|please |instead of |"
-    r"why (is|does|do|won't)|what is the (best|correct) )",
+# Expanded bilingual ephemeral chat patterns (EN + DE)
+CHATTER_RE = re.compile(
+    r"^(?:"
+    # Greetings / confirmations / fillers / reactions (DE + EN)
+    r"(?:ok|okay|danke|vielen dank|super|perfekt|thanks|thx|thank you|hi|hallo|hey|heya|heyho|"
+    r"yes|no|ja|nein|cool|top|nice|alles klar|genau|stimmt|achso|ach so|hä|warte|warte mal|moment|"
+    r"probiers|versuchs|ja safe|safe|yep|nope|sure|done|testung|ah nvm|nvm|wait|hmm aber|ja wow)\b"
+    # Conversational commands & questions (DE)
+    r"|(?:kannst du|könntest du|kann man|könnte man|bitte |warum |wieso |weshalb |was ist|wo ist|"
+    r"schau mal|guck mal|lies mal|sag mal|hilf mir|zeig mir|mach mal|mach weiter|weiter|"
+    r"hä das|das hab ich schon|er behauptet|ich habs gefühl|ich fänds|meine frage ist|"
+    r"hätte aber halt gerne|hätte aber|lass mal|probiere|probiert|versuche|check mal|wait und|ja wow|hmm aber|"
+    r"wie (?:kann|könnte|geht|ist|wäre|viel)|war das|sind die|ist das|macht das sinn|oh und steht)\b"
+    # Conversational commands & questions (EN)
+    r"|(?:can you|could you|how (?:can|do|to|would)|why (?:is|does|do|won't)|what is the|"
+    r"write (?:a|me|the)|fix |create (?:a|an)|implement |help me|please |instead of |"
+    r"check line|look at|did you|have you|wait and)\b"
+    r")",
     re.I,
 )
+
+BUILD_TEST_RE = re.compile(
+    r"(?:"
+    r"(?:npm|cargo|pytest|pnpm|yarn|mvn|gradle)\s+(?:test|run|build|check|lint)\b"
+    r"|\b(?:unit-?tests?|tests?)\s+(?:erfolgreich|bestanden|passed|failed|running)\b"
+    r"|\b\d+/\d+\s+tests?\s+(?:bestanden|passed)\b"
+    r"|\b\d+\s+passed\b"
+    r"|\b(?:build|typecheck|lint)\s+(?:erfolgreich|fehlerfrei|passed|failed|abgeschlossen)\b"
+    r"|\b0\s+errors?\b"
+    r"|\bexit code \d+\b"
+    r"|\b(?:syntaxerror|typeerror|referenceerror|traceback|stack trace)\b"
+    r")",
+    re.I,
+)
+
+CODE_OR_SQL_RE = re.compile(
+    r"(?:"
+    r"^\s*(?:ALTER\s+TABLE|CREATE\s+TABLE|DROP\s+TABLE|INSERT\s+INTO|UPDATE\s+\w+\s+SET|SELECT\s+.*?\s+FROM)\b"
+    r"|^\s*(?:git\s+(?:commit|push|pull|checkout|status|diff|add|branch|merge|stash))\b"
+    r"|^\s*(?:npm\s+i|pip\s+install|cargo\s+add)\b"
+    r"|^\s*(?:export\s+(?:const|let|var|default|function|class)|import\s+.*?\s+from)\b"
+    r"|^\s*(?:pub\s+fn|pub\s+struct|fn\s+\w+\(|def\s+\w+\(|class\s+\w+[\(:])"
+    r")",
+    re.I,
+)
+
+HEADER_STUB_RE = re.compile(r"^\s*(?:#+\s+.*|\*{2}[^*]+\*{2}:?\s*)$")
+URL_ONLY_RE = re.compile(r"^\s*https?://\S+\s*$", re.I)
+
+CHANGELOG_NOISE_RE = re.compile(
+    r"(?:"
+    r"file:///"
+    r"|\b(?:integriert|ersetzt|angepasst|überarbeitet|implementiert|unterst[üu]tzt jetzt|gerendert|wiederhergestellt|behoben|gefixt)\b"
+    r"|^(?:neue funktion|neuer endpoint|funktion |komponente |crate |suchleiste |toolbar)\b"
+    r"|\b(?:erfolgreich ausgef[üu]hrt|fehlerfrei abgeschlossen)\b"
+    r")",
+    re.I,
+)
+
+BUG_REPORT_RE = re.compile(
+    r"(?:"
+    r"^(?:das (?:problem|asynchronit[äa]tsproblem) (?:besteht|ist)|es gibt ein problem|funktioniert (?:nicht|immer noch nicht)|klappt (?:nicht|0%))\b"
+    r")",
+    re.I,
+)
+
+DURABLE_RULE_KEYWORDS = (
+    "always",
+    "never",
+    "prefer",
+    "standard",
+    "stack",
+    "convention",
+    "rule",
+    "policy",
+    "immer",
+    "nie",
+    "bevorzuge",
+    "standard",
+    "konvention",
+    "regel",
+    "richtlinie",
+    "datenschutz",
+    "privacy",
+)
+
+HOW_TO = CHATTER_RE
+
+
+ARTIFACT_DOC_RE = re.compile(
+    r"@\s*(?:walkthrough|implementation_plan|task|plan|scratch)\.(?:md|json)\b",
+    re.I,
+)
+
+
+def is_ephemeral_noise(text: str) -> tuple[bool, str]:
+    """Classify whether a line is ephemeral noise, chatter, build log, or question."""
+    raw = (text or "").strip()
+    if raw.startswith("- "):
+        raw = raw[2:].strip()
+    if ARTIFACT_DOC_RE.search(raw):
+        return True, "artifact_doc"
+    if raw.strip().lower() in ("(none yet)", "- (none yet)", "(none)"):
+        return True, "placeholder"
+    t = re.sub(r"^\[.*?\]\s*", "", raw).strip()
+    if HEADER_STUB_RE.match(t) or HEADER_STUB_RE.match(raw):
+        return True, "header_stub"
+    t = t.strip("`* ").strip()
+    if not t or len(t) < 8:
+        return True, "too_short"
+    if URL_ONLY_RE.match(t):
+        return True, "url_only"
+    if CHATTER_RE.search(t):
+        return True, "chatter"
+    if BUILD_TEST_RE.search(t):
+        return True, "build_test"
+    if CODE_OR_SQL_RE.search(t):
+        return True, "code_sql"
+    if CHANGELOG_NOISE_RE.search(t):
+        return True, "changelog"
+    if BUG_REPORT_RE.search(t):
+        return True, "bug_report"
+    if ("?" in t or t.endswith("?")) and not any(k in t.lower() for k in DURABLE_RULE_KEYWORDS):
+        return True, "question"
+    return False, ""
+
 PII = re.compile(
     r"("
     r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
@@ -100,7 +220,8 @@ def keep_user_line(title: str, text: str) -> bool:
         return False
     if CODEISH.search(text) and len(text) > 120:
         return False
-    if HOW_TO.search(text):
+    is_noise, _ = is_ephemeral_noise(text)
+    if is_noise:
         return False
     return True
 

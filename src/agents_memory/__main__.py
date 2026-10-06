@@ -22,6 +22,10 @@ Vault CRUD (MCP mirror):
   delete MEMORY_ID          Drop one search hit line (file.md:N)
   related MEMORY_ID         Follow frontmatter refs/supersedes/same_as
 
+Hard rules (rules/HARD.md, projects/<slug>/RULES.md):
+  context [--project SLUG] [--format md|json]  Rendered <memory_rules> block
+  rules show|add|edit|remove|set|check [--project SLUG]  User edits (agents propose via MCP)
+
 Projects / inject:
   sync [--init] [--push]    Rewrite always-on injection
   inventory [...]           Disk vs PROJECTS.md (--register / --ignore / --repair-moved)
@@ -89,12 +93,12 @@ def main(argv: list[str] | None = None) -> int:
 
         return run(rest)
     if cmd == "distill":
-        from .store import auto_distill, get_staging_inbox
+        from .store import auto_distill_noise_pass, get_staging_inbox
 
         if "--auto" in rest or "-a" in rest:
-            res = auto_distill(limit=50, discard_noise=True, auto_sync=True)
+            res = auto_distill_noise_pass(max_rounds=10, batch_size=100, auto_sync=True)
             print(
-                f"Auto-distill result: {res['promoted']} promoted, {res['discarded']} discarded, {res['remaining_staging_count']} remaining."
+                f"Auto-distill result: {res['promoted']} promoted, {res['discarded']} discarded in {res['rounds']} rounds, {res['remaining_staging_count']} remaining."
             )
             if res.get("errors"):
                 for err in res["errors"]:
@@ -243,8 +247,8 @@ def main(argv: list[str] | None = None) -> int:
 
         if not rest:
             print(
-                "usage: python -m agents_memory delete MEMORY_ID  "
-                "(e.g. user/notes/foo.md:3)",
+                "usage: python -m agents_memory delete MEMORY_ID_OR_FILE  "
+                "(e.g. user/notes/foo.md:3 or user/notes/foo.md)",
                 file=sys.stderr,
             )
             return 2
@@ -385,6 +389,14 @@ def main(argv: list[str] | None = None) -> int:
         clear_memory_cache()
         print("Memory state and cache reset successfully.")
         return 0
+    if cmd == "context":
+        from .rules_cli import context_main
+
+        return context_main(rest)
+    if cmd == "rules":
+        from .rules_cli import rules_main
+
+        return rules_main(rest)
     if cmd in ("mcp", "mcp-server", "mcp_server"):
         from .mcp_server import main as run
 

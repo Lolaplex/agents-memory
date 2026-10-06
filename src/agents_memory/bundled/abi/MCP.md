@@ -28,6 +28,10 @@ Read the raw text of any memory or rule file by id (e.g. `user/USER.md`, `rules/
 
 Write/overwrite any memory or rule file and automatically trigger sync to all IDEs/CLIs.
 
+### `propose_rule(rule, project="")`
+
+Append one hard-rule proposal (one imperative line) to `staging/rule-proposals.md` as `[rule @ global]` or `[rule @ project:<slug>]`. It shows up in `get_staging_inbox`; `auto_distill` leaves it alone. The rule files are never written by this tool. The user applies a proposal with `agents-memory rules add` (which also removes the staged bullet).
+
 ### `get_staging_inbox(project="", limit=20)`
 
 Return un-distilled staging bullets **grouped by source file** (ingest id, project staging, or user inbox).
@@ -80,6 +84,17 @@ Rewrite always-on injection (your Agent hosts, `~/.agents/`, registered repo `.a
 ### `get_related(memory_id, limit=5)`
 
 Follow explicit frontmatter relations (`refs`, `supersedes`, `same_as`, `at_project`) from a `search_memory` hit id.
+
+## Hard rules
+
+Source: `rules/HARD.md` in the user store (global) and `projects/<slug>/RULES.md` (overlay). One rule per non-empty line; headings and HTML comments are ignored. Missing files mean no rules.
+
+- **Render**: one function produces `<memory_rules>…</memory_rules>` (global, optional `<project name="slug">` overlay). The same output feeds every surface below, `agents-memory context [--project X] [--format md|json]`, and the synced always-on files (`~/.agents/AGENTS.md`, agent rule; repo `.agents/AGENTS.md` gets the project overlay).
+- **`instructions`**: the server's MCP `initialize` instructions are the global block plus one hint to call `get_project_memories` at session start. Without rules, only the hint.
+- **Piggyback**: the first string result in an MCP session is prefixed with the global block and a blank line. A call with `project=` / `project_slug=` adds that project's overlay once. Blocks are deduplicated per session by content hash, so an edited rule file is delivered again. The rest of the result is unchanged.
+- **Budget**: global 30 rule lines and 2000 characters, project 10 lines (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). A write over budget is rejected with a request to consolidate; a file that is already over budget may only shrink.
+- **Writes**: `write_memory_file`, `add_memory`, and `delete_memory` refuse the rule files. Agents use `propose_rule`; the user edits with `agents-memory rules show|add|edit|remove|set|check`.
+- **Sync**: `rules/HARD.md` syncs as user-store content (only `rules/*.mdc` maps to `~/.agents/rules`). Rule files merge last-write-wins, not as a bullet union.
 
 ## Related surfaces (not this MCP)
 

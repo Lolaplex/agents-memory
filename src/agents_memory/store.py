@@ -276,6 +276,11 @@ def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not content.endswith("\n"):
         content += "\n"
+    try:
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            return
+    except Exception:
+        pass
     # Atomic write via thread-unique temp file + os.replace
     tmp_path = path.with_name(
         f".{path.name}.{os.getpid()}.{threading.get_ident()}.{time.time_ns()}.tmp"
@@ -1162,7 +1167,12 @@ def render_projects_table(projects: Iterable[Project]) -> str:
 
 
 def write_projects(projects: List[Project]) -> None:
-    _write(PROJECTS_MD, render_projects_table(projects))
+    previous = _read(PROJECTS_MD)
+    rendered = render_projects_table(projects)
+    _write(PROJECTS_MD, rendered)
+    from .remote.tombstones import diff_projects_text
+
+    diff_projects_text(USER_MEMORY, previous, rendered)
 
 
 def _looks_like_project(path: Path) -> bool:
@@ -1545,6 +1555,11 @@ def ignore_slug(slug: str) -> None:
         ignored.append(slug)
         cfg["ignore_slugs"] = sorted(ignored)
         save_scan(cfg)
+    key = slug.strip().lower()
+    projects = parse_projects()
+    kept = [p for p in projects if p.slug.lower() != key]
+    if len(kept) != len(projects):
+        write_projects(kept)
 
 
 def is_compact_always_on() -> bool:
@@ -1568,7 +1583,12 @@ def compact_projects_text(projects: List[Project]) -> str:
 
 
 def always_on_body() -> str:
+    from .rules import render_rules
+
     user = _read(USER_MD).strip()
+    rules_block = render_rules()
+    if rules_block:
+        user = f"{rules_block}\n\n{user}" if user else rules_block
     if is_compact_always_on():
         projects = compact_projects_text(parse_projects()).strip()
     else:
@@ -1610,7 +1630,9 @@ def gemini_agents_text() -> str:
 
 
 def project_agents_text(p: Project) -> str:
-    return (
+    from .rules import render_rules
+
+    text = (
         f"# Project: {p.slug}\n\n"
         f"**Path:** `{p.path}`  \n"
         f"**Role:** {p.role}  \n"
@@ -1619,6 +1641,8 @@ def project_agents_text(p: Project) -> str:
         f"Global profile: `~/.agents/AGENTS.md`. "
         f'MCP `search_memory` / `get_project_memories("{p.slug}")` for detail.\n'
     )
+    overlay = render_rules(p.slug, include_global=False)
+    return f"{text}\n{overlay}\n" if overlay else text
 
 
 def purge_legacy_rules(rules_dir: Path) -> List[str]:
@@ -2063,11 +2087,33 @@ def write_memory_file(
 ) -> str:
     """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs."""
     path = resolve_memory_path(file_id_or_path)
+    _refuse_rules_write(path)
+    previous = _read(path) if path.is_file() else ""
     _write(path, content)
+    _note_memory_write(path, previous, content)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
     return file_id(path)
+
+
+def _refuse_rules_write(path: Path) -> None:
+    """Hard-rule files are user-owned (see rules.py); vault CRUD must not edit them."""
+    from .rules import assert_agent_write_allowed
+
+    assert_agent_write_allowed(path)
+
+
+def _note_memory_write(path: Path, previous: str, content: str) -> None:
+    """A direct write is a re-add: it must beat an older tombstone for this path."""
+    key = bundle_key_for_path(path)
+    if not key:
+        return
+    from .remote.tombstones import diff_projects_text, record_explicit_file_write
+
+    record_explicit_file_write(USER_MEMORY, key)
+    if path.resolve() == PROJECTS_MD.resolve() or key == "PROJECTS.md":
+        diff_projects_text(USER_MEMORY, previous, content)
 
 
 def _markdown_under(root: Path) -> List[Path]:
@@ -2109,7 +2155,7 @@ def project_slug_for_cwd(cwd: Optional[Path] = None) -> str:
 
 
 def iter_user_memory_files() -> List[Path]:
-    return _markdown_under(USER_MEMORY)
+    return [p for p in _markdown_under(USER_MEMORY) if "mirror" not in p.parts]
 
 
 def iter_project_memory_files(slug: str = "") -> List[Path]:
@@ -2496,15 +2542,28 @@ def _append_bullet(path: Path, fact: str) -> str:
             else f"# {_heading_from_stem(path.stem)}\n"
         )
         _write(path, f"{header}\n{bullet}\n")
+        _note_bullet_write(path, bullet)
         return file_id(path)
     text = _read(path)
     if _already_has_fact(text, fact):
+        _note_bullet_write(path, bullet)
         return file_id(path)
     body = text.rstrip()
     if body and not body.splitlines()[-1].lstrip().startswith("- "):
         body += "\n"
     _write(path, body + f"\n{bullet}\n")
+    _note_bullet_write(path, bullet)
     return file_id(path)
+
+
+def _note_bullet_write(path: Path, bullet: str) -> None:
+    key = bundle_key_for_path(path)
+    if not key:
+        return
+    from .remote.merge import _normalize_bullet
+    from .remote.tombstones import record_bullet_write
+
+    record_bullet_write(USER_MEMORY, key, _normalize_bullet(bullet))
 
 
 def _append_repo_captured(path: Path, fact: str) -> str:
@@ -2544,6 +2603,7 @@ def add_memory(
     if not fact:
         raise ValueError("empty fact")
     path = memory_file_for(kind=kind, name=name, project=project, collection=collection)
+    _refuse_rules_write(path)
     existed = path.exists()
     k = (kind or "").strip().lower()
     if k in REVISE_IN_PLACE_KINDS and existed:
@@ -2579,6 +2639,94 @@ def get_project_memories(project: str) -> str:
     return "\n".join(parts)
 
 
+def _deleted_log_file() -> Path:
+    return USER_MEMORY / ".deleted.json"
+
+
+def bundle_key_for_path(path: Path) -> str:
+    """Sync-bundle key for a memory or rule file. Empty when the path is outside the store."""
+    try:
+        return path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+    except ValueError:
+        pass
+    for proj in parse_projects():
+        try:
+            rel_p = path.resolve().relative_to(proj.memory_dir.resolve()).as_posix()
+        except ValueError:
+            continue
+        return f"mirror/projects/{proj.slug}/{rel_p}"
+    try:
+        rel = path.resolve().relative_to(AGENTS_RULES.resolve()).as_posix()
+    except ValueError:
+        return ""
+    return f"rules/{rel}"
+
+
+def record_local_deletion(rel_path: str) -> None:
+    """Record a deleted file path to propagate on remote sync."""
+    from .remote.tombstones import record_file
+
+    record_file(USER_MEMORY, rel_path)
+
+
+def load_local_deletions() -> list[str]:
+    """Retrieve list of locally tracked deleted files."""
+    log_file = _deleted_log_file()
+    if not log_file.is_file():
+        return []
+    try:
+        data = json.loads(log_file.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def clear_acknowledged_deletions(acknowledged: list[str]) -> None:
+    """Clear specific acknowledged deletions from .deleted.json."""
+    log_file = _deleted_log_file()
+    if not log_file.is_file():
+        return
+    try:
+        data = json.loads(log_file.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            rem = [p for p in data if p not in acknowledged]
+            if rem:
+                log_file.write_text(json.dumps(rem, indent=2), encoding="utf-8")
+            else:
+                log_file.unlink(missing_ok=True)
+    except Exception:
+        log_file.unlink(missing_ok=True)
+
+
+def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
+    """Delete a memory or rule file and sync injection."""
+    path = resolve_memory_path(file_id_or_path)
+    _refuse_rules_write(path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
+
+    # Track relative path for remote synchronization
+    try:
+        rel = path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+        record_local_deletion(rel)
+    except ValueError:
+        for p in parse_projects():
+            try:
+                rel_p = path.resolve().relative_to(p.memory_dir.resolve()).as_posix()
+                record_local_deletion(f"mirror/projects/{p.slug}/{rel_p}")
+                break
+            except ValueError:
+                pass
+
+    path.unlink()
+    clear_memory_cache()
+    if auto_sync:
+        _finish_store_write()
+    return True
+
+
 def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     clean_id = memory_id.strip()
     if clean_id.startswith("memory:"):
@@ -2590,9 +2738,17 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
         hash_anchor = hash_anchor.strip().lower()
 
     if ":" not in clean_id and not hash_anchor:
+        try:
+            path = resolve_memory_path(clean_id)
+            if path.is_file():
+                delete_memory_file(clean_id, auto_sync=auto_sync)
+                return f"[file deleted] {clean_id}"
+        except Exception:
+            pass
         raise ValueError(
             "id must look like 'user/notes/programming/chat-stores.md:12#a1b2c3d4' "
-            "or 'project/slug/staging/captured.md:8' or 'user/notes/foo.md#a1b2c3d4'"
+            "or 'project/slug/staging/captured.md:8' or 'user/notes/foo.md#a1b2c3d4' "
+            "or a memory file path to delete the entire file."
         )
 
     if ":" in clean_id:
@@ -2608,6 +2764,7 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
     path = resolve_memory_path(rel)
     if not path.exists():
         raise FileNotFoundError(rel)
+    _refuse_rules_write(path)
 
     lines = _read(path).splitlines()
     if not lines:
@@ -2639,10 +2796,28 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
 
     removed = lines.pop(target_idx)
     _write(path, "\n".join(lines))
+    _note_removed_line(path, removed)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
     return removed
+
+
+def _note_removed_line(path: Path, line: str) -> None:
+    key = bundle_key_for_path(path)
+    if not key:
+        return
+    from .remote.tombstones import record_bullet, record_row
+
+    if path.resolve() == PROJECTS_MD.resolve() or key == "PROJECTS.md":
+        match = ROW_RE.match(line.strip())
+        if match:
+            record_row(USER_MEMORY, "PROJECTS.md", match.group("slug"))
+            return
+    if re.match(r"^\s*[-*+\d]\s*", line):
+        from .remote.merge import _normalize_bullet
+
+        record_bullet(USER_MEMORY, key, _normalize_bullet(line))
 
 
 def remove_staging_bullet(
@@ -2782,6 +2957,8 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
         )
         if (USER_MEMORY / "staging").is_dir():
             for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
+                if f.name.startswith("sync-"):
+                    continue
                 if f not in candidate_paths:
                     candidate_paths.append(f)
         for p in parse_projects():
@@ -2789,6 +2966,8 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
                 p_staging = p.memory_dir / "staging"
                 if p_staging.is_dir():
                     for f in sorted(p_staging.rglob("*.md")):
+                        if f.name.startswith("sync-"):
+                            continue
                         if f not in candidate_paths:
                             candidate_paths.append(f)
     return candidate_paths
@@ -2990,29 +3169,62 @@ _NOISE_LINE_PATTERNS = (
 )
 
 
+def is_rule_proposals_file(file_id_or_path: str) -> bool:
+    from .rules import is_proposals_file
+
+    return is_proposals_file(file_id_or_path)
+
+
 def auto_distill(
     limit: int = 50, discard_noise: bool = True, auto_sync: bool = True
 ) -> dict:
     """Automatically classify and distill staging inbox bullets into memory or discard noise."""
+    from .ingest_common import is_ephemeral_noise
+
     inbox = get_staging_inbox(limit=limit)
     items_to_distill = []
+    unclassified_candidates = []
     noise_re = [re.compile(pat, re.IGNORECASE) for pat in _NOISE_LINE_PATTERNS]
 
     for group in inbox.get("groups", []):
+        if is_rule_proposals_file(group.get("file") or ""):
+            continue  # Rule proposals wait for the user (agents-memory rules add).
         for item in group.get("bullets", []):
             raw_text = item.get("text") or item.get("bullet") or ""
             bullet_text = item.get("bullet") or raw_text
             src_path = item.get("source_path") or item.get("file") or ""
             proj = item.get("project") or ""
 
-            # Check noise
-            is_noise = False
-            for r in noise_re:
-                if r.search(raw_text.strip()):
-                    is_noise = True
-                    break
+            # Epoch questions hold local bytes the new epoch must not auto-publish
+            # or discard. The agent re-adds them with add/write.
+            src_norm = str(src_path).replace("\\", "/")
+            if src_norm.endswith("/epoch-questions.md") or src_norm.endswith("epoch-questions.md"):
+                unclassified_candidates.append(
+                    {
+                        "bullet": bullet_text,
+                        "source_path": src_path,
+                        "project": proj,
+                        "suggested_kind": "note",
+                        "suggested_name": "facts" if proj else "preferences",
+                    }
+                )
+                continue
 
-            if len(raw_text.strip()) < 8:
+            # Check noise using origin, bullet text, and comprehensive bilingual heuristics
+            is_noise = False
+            origin_lower = str(item.get("origin") or "").lower()
+            if any(x in origin_lower for x in ("walkthrough", "implementation_plan", "task", "plan", "scratch")):
+                is_noise = True
+            if not is_noise:
+                is_noise, _ = is_ephemeral_noise(bullet_text)
+            if not is_noise:
+                is_noise, _ = is_ephemeral_noise(raw_text)
+            if not is_noise:
+                for r in noise_re:
+                    if r.search(raw_text.strip()) or r.search(bullet_text.strip()):
+                        is_noise = True
+                        break
+            if len(raw_text.strip()) < 8 and len(bullet_text.strip()) < 8:
                 is_noise = True
 
             if is_noise:
@@ -3040,6 +3252,8 @@ def auto_distill(
                     "bevorzuge ",
                     "stack:",
                     "stack defaults",
+                    "datenschutz",
+                    "privacy",
                 )
             ):
                 items_to_distill.append(
@@ -3062,6 +3276,16 @@ def auto_distill(
                         "source_path": src_path,
                     }
                 )
+            else:
+                unclassified_candidates.append(
+                    {
+                        "bullet": bullet_text,
+                        "source_path": src_path,
+                        "project": proj,
+                        "suggested_kind": "note",
+                        "suggested_name": "facts" if proj else "preferences",
+                    }
+                )
 
     if not items_to_distill:
         remaining = count_staging_bullets()
@@ -3069,18 +3293,18 @@ def auto_distill(
             "promoted": 0,
             "discarded": 0,
             "remaining_staging_count": remaining,
+            "candidates": unclassified_candidates[:20],
             "errors": [],
             "message": (
-                "No obvious rules or noise auto-classified. "
-                f"{remaining} bullets remain — you MUST now process them manually: "
-                "get_staging_inbox(limit=100), then distill_batch with explicit "
-                "promote or discard decisions for EVERY bullet until the inbox is empty."
-            )
-            if remaining
-            else "Staging inbox empty.",
+                f"{len(unclassified_candidates)} staging bullets remain for agent decision: "
+                "call distill_batch with your promote/discard decisions."
+                if unclassified_candidates
+                else "Staging inbox empty."
+            ),
         }
 
     res = distill_batch(items_to_distill, auto_sync=auto_sync)
+    res["candidates"] = unclassified_candidates[:20]
     return res
 
 

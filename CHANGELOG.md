@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-06
+
+### Added
+- Vault epoch (`.epoch`). `remote bump-epoch` and `remote push --replace` increment it. A push from an older epoch is HTTP 409. A 1.2 client replace-pulls and parks baseline-diverged edits in `staging/epoch-questions.md` instead of pushing them; it does not retry the push. `sync_mcp` does this on startup pull and on push.
+- Minimum client version (`AGENTS_MEMORY_MIN_CLIENT_VERSION` / `remote serve --min-client-version`). Writers without `X-Agents-Memory-Version`, or below the minimum, get HTTP 426 with an update command (`AGENTS_MEMORY_UPDATE_HINT`). Reads stay open. A 1.2 client shows the sentence on MCP results and stops pushing until updated.
+- `agents-memory remote pull --replace` and `remote connect --replace`: back up the local store, then make synced files match the remote snapshot exactly (no table union). Keeps machine-local files (`remote_config.json`, `.index/`, host paths).
+- Deletion tombstones (`.tombstones.json`): whole-file deletes, `PROJECTS.md` slug removals, project-tree prefixes, and deleted bullets survive merge. A newer re-add wins. Tombstones expire after 90 days. A 1.1 client that pushes stale content does not resurrect them on a new server.
+- Remote sync deletion propagation: deletions tracked in `.deleted.json`, sent to server in merge payload, unlinked, and recorded as server tombstones (`.tombstones.json`), preventing zombie file resurrection on subsequent pulls.
+- Atomic REST endpoint `DELETE /api/v1/file?path=...` in remote server and `remote_delete_file()` in client.
+- Direct file deletion via `delete_memory_file` and CLI `delete <file_id>` allowing entire memory or rule files to be cleanly removed and synced.
+- Hard rules from the vault: `rules/HARD.md` plus an optional `projects/<slug>/RULES.md` overlay, rendered by one function into a `<memory_rules>` block. It feeds the MCP `instructions` (with a hint to load project memories), the first tool result of each MCP session (a project's overlay once on its first project-scoped call, deduplicated by content hash), `agents-memory context [--project X] [--format md|json]`, and the synced `AGENTS.md` / agent rule.
+- Rule budget: 30 lines and 2000 characters globally, 10 lines per project (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). Over-budget writes are rejected with a request to consolidate.
+- MCP `propose_rule` stages rule proposals in `staging/rule-proposals.md`; `auto_distill` leaves them alone. `agents-memory rules show|add|edit|remove|set|check` is the only write path to the rule files; vault write/add/delete refuse them.
+- CLI (and MCP, when present) check PyPI at most once per day for a newer release and print one stderr / tool-response line (`uv tool upgrade …`). Disabled with `AGENTS_NO_UPDATE_CHECK=1` or when `CI` is set; offline/timeout stays silent.
+
+### Changed
+- Remote merge semantics: singleton documents (`USER.md`, `CLAUDE.md`, `AGENTS.md`, and `user-rules.mdc`) use Last-Write-Wins (LWW) document overwrite instead of bullet-union merging to avoid bloated repeated headers across syncs.
+- The default update hint for too-old clients installs from PyPI (`uv tool install --upgrade agents-memory`, or `pip install --upgrade agents-memory`). The memory-sync skill heading and inventory help text are in English.
+
+### Fixed
+- Stale clients after `remote push --replace` or `remote bump-epoch` no longer resurrect files the cleanup removed. HTTP 409 (and a pull that sees a newer epoch) replace-pulls, then writes each locally changed or added file into `staging/epoch-questions.md` for `get_staging_inbox`. Those bytes are not pushed. Deletions since `.sync-baseline.json` are not tombstoned on the new epoch. Re-add with add/write, which pushes on the new epoch. Same-epoch merge is unchanged. The 409 body no longer says to retry the write.
+- Adopting a snapshot (`pull --replace`, or the automatic epoch replace) dropped unsent `.deleted.json` entries. The next push was turning those old deletions into tombstones and deleting files the snapshot had just restored.
+- `remote connect` rewrote `remote_config.json` without the vault epoch the sync just stored, so the next push was stale again. Connect now saves that epoch, and a later save for the same URL keeps epoch, `last_sync`, and `upgrade_required`.
+- Remote sync reporting in `agents-memory remote pull`, `push`, and `connect`: summary metrics now aggregate user, rules, and repository mirrors rather than querying a non-existent flat report structure.
+- `Last Sync` tracking in `agents-memory remote status`: `remote_config.json`'s `last_sync` and `updated_at` timestamps now refresh on every successful snapshot pull and push merge.
+- The sync bundle routed every user-store file under `rules/` (such as `rules/HARD.md`) to `~/.agents/rules`, so it never reached other devices and a replace-pull deleted it. Only `rules/*.mdc` maps to agent rules now. Rule files merge last-write-wins.
+
 ## [1.1.1] - 2026-09-26
 
 ### Added
@@ -105,7 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of local markdown memory and FastMCP server.
 
-[Unreleased]: https://github.com/Lolaplex/agents-memory/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Lolaplex/agents-memory/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Lolaplex/agents-memory/compare/v1.1.1...v1.2.0
+[1.1.1]: https://github.com/Lolaplex/agents-memory/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Lolaplex/agents-memory/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Lolaplex/agents-memory/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Lolaplex/agents-memory/compare/v1.0.0...v1.0.1

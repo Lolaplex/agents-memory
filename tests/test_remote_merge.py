@@ -107,11 +107,25 @@ class TestRemoteMerge(unittest.TestCase):
             self.assertIn("- Fact 1", facts_content)
             self.assertIn("- Fact 2", facts_content)
 
-            new_proj_content = (root / "projects/new_proj.md").read_text(encoding="utf-8")
-            self.assertIn("Role: Dev", new_proj_content)
+    def test_merge_singleton_documents_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            user_md = root / "USER.md"
+            user_md.write_text("# Old User Profile\n- Old fact\n", encoding="utf-8")
 
+            incoming = {
+                "USER.md": "# New User Profile\n- Completely new fact\n",
+                "rules/user-rules.mdc": "# New Rule\nAlways be concise\n",
+            }
 
-class TestBoardAttachPaths(unittest.TestCase):
+            report = merge_file_trees(root, incoming)
+            self.assertIn("USER.md", report["merged"])
+            self.assertIn("rules/user-rules.mdc", report["added"])
+
+            content = user_md.read_text(encoding="utf-8")
+            self.assertEqual(content, "# New User Profile\n- Completely new fact\n")
+            self.assertNotIn("Old fact", content)
+
     def test_personal_files_rejected(self):
         from agents_memory.remote.client import board_memory_path_ok
 

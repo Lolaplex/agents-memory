@@ -1,10 +1,12 @@
 """Local markdown memory MCP — reference implementation of abi/MCP.md."""
 from __future__ import annotations
 
+import functools
 import json
 import sys
 from mcp.server.fastmcp import FastMCP
 
+from . import rules as rules_mod
 from .store import (
     add_memory as store_add,
     auto_distill as store_auto_distill,
@@ -26,7 +28,52 @@ from .store import (
 
 ensure_memory_layout()
 
-mcp = FastMCP("agents-memory")
+mcp = FastMCP("agents-memory", instructions=rules_mod.render_instructions())
+
+
+def _with_upgrade_notice(text: str) -> str:
+    """Prepend remote-upgrade and/or PyPI update notices for the calling agent."""
+    notices: list[str] = []
+    try:
+        from .remote.sync_hooks import upgrade_notice
+
+        remote = upgrade_notice()
+        if remote:
+            notices.append(remote)
+    except Exception:
+        pass
+    try:
+        from . import __version__
+        from .updates import mcp_update_notice
+
+        pypi = mcp_update_notice("agents-memory", __version__)
+        if pypi:
+            notices.append(pypi)
+    except Exception:
+        pass
+    if not notices:
+        return text
+    prefix = "\n\n".join(notices)
+    if any(text.startswith(n) for n in notices):
+        return text
+    return f"{prefix}\n\n{text}"
+
+
+_original_add_tool = mcp.add_tool
+
+
+def _add_tool(fn, *args, **kwargs):
+    @functools.wraps(fn)
+    def wrapped(*a, **kw):
+        result = fn(*a, **kw)
+        if isinstance(result, str):
+            return _with_upgrade_notice(rules_mod.deliver_for_call(mcp, fn, a, kw, result))
+        return result
+
+    return _original_add_tool(wrapped, *args, **kwargs)
+
+
+mcp.add_tool = _add_tool  # type: ignore[method-assign]
 
 
 @mcp.tool()
@@ -103,6 +150,27 @@ def write_memory_file(file_id: str, content: str) -> str:
         return f"Saved and synced {loc}"
     except Exception as e:
         return f"Error writing memory file '{file_id}': {e}"
+
+
+@mcp.tool()
+def propose_rule(rule: str, project: str = "") -> str:
+    """Propose one hard rule (one imperative line) for the user to approve.
+
+    Lands in the user staging inbox (staging/rule-proposals.md). Never edits the
+    rule files; the user applies it with `agents-memory rules add`. Use only when the
+    user states a durable, always-on rule. Ordinary facts go to add_memory.
+    """
+    try:
+        res = rules_mod.propose_rule(rule, project=project or None)
+        usage = res["usage"]
+        scope = f"project '{res['project']}'" if res["project"] else "global"
+        return (
+            f"Proposed {scope} rule in {res['staged']} for user review "
+            f"(current rules: {usage['lines']}/{usage['max_lines']} lines). "
+            "The user applies it with `agents-memory rules add`."
+        )
+    except Exception as e:
+        return f"Error proposing rule: {e}"
 
 
 @mcp.tool()
@@ -191,7 +259,7 @@ def list_projects() -> str:
 
 @mcp.tool()
 def inventory_projects() -> str:
-    """Bestandaufnahme: compare scan.json roots to PROJECTS.md. Returns unknown and missing folders."""
+    """Inventory: compare scan.json roots to PROJECTS.md. Returns unknown and missing folders."""
     try:
         return json.dumps(inventory_report(), indent=2, ensure_ascii=False)
     except Exception as e:
@@ -293,6 +361,7 @@ def main() -> int:
         rebuild_index()
     except Exception:
         pass
+    rules_mod.refresh_instructions(mcp)
     mcp.run()
     return 0
 

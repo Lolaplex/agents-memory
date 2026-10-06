@@ -16,7 +16,7 @@ from .store import (
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Bestandaufnahme: disk vs local agent memory",
+        description="Inventory: disk vs local agent memory",
         epilog="Machine-readable: python -m agents_memory inventory --help-json. Full spec: python -m agents_memory --help-json.",
     )
     parser.add_argument("--json", action="store_true", help="machine-readable report")

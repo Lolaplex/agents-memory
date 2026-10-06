@@ -21,7 +21,7 @@ from . import frontmatter as fm_schema
 from . import store
 from .index import parse_frontmatter_and_content
 
-SKIP_PARTS = frozenset({".index", "export", "staging", "orphans"})
+SKIP_PARTS = frozenset({".index", "export", "staging", "orphans", "mirror"})
 
 
 def _iter_notes() -> list[Path]:
@@ -46,7 +46,12 @@ def check_staging() -> dict:
     for p in paths:
         if p.exists():
             text = p.read_text(encoding="utf-8", errors="replace")
-            bullets += sum(1 for l in text.splitlines() if l.strip().startswith("- "))
+            bullets += sum(
+                1
+                for l in text.splitlines()
+                if l.strip().startswith("- ")
+                and l.strip() not in ("- (none yet)", "- (none)")
+            )
     return {
         "check": "staging-leftovers",
         "ok": bullets == 0,

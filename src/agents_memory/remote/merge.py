@@ -110,6 +110,43 @@ def merge_bullet_markdown(base_text: str, incoming_text: str) -> str:
     return "\n".join(out_lines).strip() + "\n"
 
 
+def _without_pks(text: str, drop: set[str], pk_col_index: int = 0) -> str:
+    """Remove tombstoned primary-key rows from one markdown table document."""
+    if not drop or not text.strip():
+        return text
+    kept: list[str] = []
+    for line in text.splitlines():
+        sline = line.strip()
+        if sline.startswith("|") and sline.endswith("|") and not re.match(
+            r"^\|(?:\s*[-:]+\s*\|)+$", sline
+        ):
+            cells = [c.strip() for c in sline[1:-1].split("|")]
+            if (
+                cells
+                and len(cells) > pk_col_index
+                and cells[0].lower() not in {"slug", "------"}
+                and not cells[0].startswith("-")
+                and cells[pk_col_index].lower() in drop
+            ):
+                continue
+        kept.append(line)
+    result = "\n".join(kept).strip()
+    return (result + "\n") if result else ""
+
+
+def strip_bullet_lines(text: str, drop_norms: set[str]) -> str:
+    """Drop bullet lines whose normalized text is tombstoned."""
+    if not drop_norms or not text:
+        return text
+    kept: list[str] = []
+    for line in text.splitlines():
+        if re.match(r"^\s*[-*+\d]\s*", line) and _normalize_bullet(line) in drop_norms:
+            continue
+        kept.append(line)
+    result = "\n".join(kept).strip()
+    return (result + "\n") if result else ""
+
+
 def merge_table_markdown(base_text: str, incoming_text: str, pk_col_index: int = 0) -> str:
     """Merge two markdown tables (e.g. in PROJECTS.md) by primary key column (slug)."""
     merged, _ = merge_table_markdown_with_conflicts(base_text, incoming_text, pk_col_index)
@@ -117,14 +154,22 @@ def merge_table_markdown(base_text: str, incoming_text: str, pk_col_index: int =
 
 
 def merge_table_markdown_with_conflicts(
-    base_text: str, incoming_text: str, pk_col_index: int = 0
+    base_text: str,
+    incoming_text: str,
+    pk_col_index: int = 0,
+    drop_pks: set[str] | None = None,
 ) -> tuple[str, list[dict[str, str]]]:
-    """Merge PROJECTS-style tables; incoming wins on row edits; log conflicts."""
+    """Merge PROJECTS-style tables; incoming wins on row edits; log conflicts.
+
+    ``drop_pks`` are tombstoned slugs. They are removed from the union so a
+    deleted row is not resurrected by the other side.
+    """
     conflicts: list[dict[str, str]] = []
+    drop = {p.strip().lower() for p in drop_pks} if drop_pks else set()
     if not base_text.strip():
-        return incoming_text, conflicts
+        return _without_pks(incoming_text, drop, pk_col_index), conflicts
     if not incoming_text.strip():
-        return base_text, conflicts
+        return _without_pks(base_text, drop, pk_col_index), conflicts
 
     def extract_rows(text: str) -> tuple[list[str], dict[str, str], list[str]]:
         header_lines: list[str] = []
@@ -162,7 +207,8 @@ def merge_table_markdown_with_conflicts(
     inc_headers, inc_rows, inc_footers = extract_rows(incoming_text)
 
     if not base_rows and not inc_rows:
-        return merge_bullet_markdown(base_text, incoming_text), conflicts
+        merged_bullets = merge_bullet_markdown(base_text, incoming_text)
+        return _without_pks(merged_bullets, drop, pk_col_index), conflicts
 
     merged_rows = dict(base_rows)
     for pk, row_line in inc_rows.items():
@@ -231,6 +277,9 @@ def merge_table_markdown_with_conflicts(
             )
             merged_rows[pk] = row_line
 
+    if drop:
+        merged_rows = {pk: line for pk, line in merged_rows.items() if pk not in drop}
+
     out_lines: list[str] = []
     headers = base_headers if base_headers else inc_headers
     out_lines.extend(headers)
@@ -297,14 +346,32 @@ def merge_markdown_files(base_path: Path, incoming_content: str) -> tuple[str, b
         return merged, (merged.strip() != base_content.strip())
 
     name_lower = base_path.name.lower()
+    path_str_lower = str(base_path).replace("\\", "/").lower()
+    # Singleton profile documents, editor rules, and staging inboxes: Incoming Wins (Last-Write-Wins), not bullet sets!
+    singleton_names = {"user.md", "claude.md", "agents.md", "user-rules.mdc"}
+    if (
+        name_lower in singleton_names
+        or base_path.suffix.lower() == ".mdc"
+        or "staging/" in path_str_lower
+        or _is_budgeted_rules_file(path_str_lower)
+    ):
+        return incoming_content, True
+
     if name_lower == "projects.md":
         merged = merge_table_markdown(base_content, incoming_content)
-    elif "staging" in str(base_path).lower() or name_lower == "captured.md":
-        merged = merge_staging_markdown(base_content, incoming_content)
     else:
         merged = merge_bullet_markdown(base_content, incoming_content)
 
     return merged, (merged.strip() != base_content.strip())
+
+
+def _is_budgeted_rules_file(path_lower: str) -> bool:
+    """Hard-rule files have a line budget; a bullet union could silently exceed it."""
+    if path_lower.endswith("/rules/hard.md") or path_lower == "rules/hard.md":
+        return True
+    if "mirror/projects/" in path_lower:
+        return False
+    return re.search(r"(?:^|/)projects/[^/]+/rules\.md$", path_lower) is not None
 
 
 def merge_file_trees(

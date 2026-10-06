@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.1.1-blue.svg?style=flat-square" alt="Version 1.1.1"></a>
+  <a href="https://github.com/Lolaplex/agents-memory/releases"><img src="https://img.shields.io/badge/version-1.2.0-blue.svg?style=flat-square" alt="Version 1.2.0"></a>
   <a href="https://modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP-Standard-orange.svg?style=flat-square" alt="MCP"></a>
   <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"></a>
   <a href="https://pypi.org/project/agents-memory/"><img src="https://img.shields.io/pypi/v/agents-memory.svg?style=flat-square" alt="PyPI"></a>
@@ -92,6 +92,7 @@ agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
 - Project trees sync as `mirror/projects/<slug>/` in the bundle, then merge back into registered clones.
 - Ingest still reads **local** chat folders, then pushes the distilled markdown.
 - `agents-memory disconnect` pulls a last snapshot and restores stdio MCP.
+- After a cleanup, `remote push --replace` (or `remote bump-epoch`) bumps the vault epoch. Older clients replace-pull on the next sync. Local edits since the last baseline land in `staging/epoch-questions.md` (`get_staging_inbox`) and are not pushed back. Set `AGENTS_MEMORY_MIN_CLIENT_VERSION=1.2.0` on the server so 1.1.x writers get HTTP 426.
 
 Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 
@@ -112,8 +113,13 @@ Primary surface. Agents talk to the vault here — not via scraping CLI help.
 | `get_staging_inbox` / `distill_batch` / `auto_distill` | Staging → typed memory |
 | `delete_memory` | Drop a search hit by id |
 | `sync_local_agents_md` | Rewrite always-on inject |
+| `propose_rule` | Propose a hard rule into staging (the user applies it) |
 
-Fifteen tools. Full contract: [`abi/MCP.md`](abi/MCP.md). Session snap/grep/tail live on **agents-traces**.
+Sixteen tools. Full contract: [`abi/MCP.md`](abi/MCP.md). Session snap/grep/tail live on **agents-traces**.
+
+### Hard rules
+
+Always-on rules live in `~/.agents/memory/rules/HARD.md`, one imperative rule per line. A project can add `projects/<slug>/RULES.md`. One renderer builds a `<memory_rules>` block for the MCP `instructions`, the first tool result of each session (plus a project's rules on its first project-scoped call), `agents-memory context`, and the synced `AGENTS.md` / agent rule. Budget: 30 lines and 2000 characters globally, 10 lines per project (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). Agents only `propose_rule` into `staging/rule-proposals.md`; the user edits with `agents-memory rules`.
 
 ---
 
@@ -128,9 +134,11 @@ Ops / install / batch. Humans and agents rarely need the vault CRUD verbs — th
 | `agents-memory search` / `add` / `read` / `write` / `delete` / `related` | MCP vault mirrors (scripts / no-MCP hosts) |
 | `agents-memory ingest catalog\|extract\|status` | Chat catalog and staging extract |
 | `agents-memory distill [--auto]` | Staging inbox / noise pass |
+| `agents-memory context [--project X] [--format md\|json]` | Rendered hard rules |
+| `agents-memory rules show\|add\|edit\|remove\|set\|check` | Edit hard rules (budgeted) |
 | `agents-memory check` | Mechanical store health (no LLM) |
 | `agents-memory rebuild-index` | Rebuild disposable FTS5 cache (MCP start already rebuilds) |
-| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases) |
+| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases). `remote pull --replace` matches this machine to the snapshot. `remote push --replace` and `remote bump-epoch` publish a cleaned vault |
 | `agents-memory serve` / `web` | Local viewer / static HTML export |
 | `agents-memory reset --yes` | Clear local caches / temp state |
 | `agents-memory mcp` | stdio MCP clerk |

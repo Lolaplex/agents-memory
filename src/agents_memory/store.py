@@ -650,11 +650,17 @@ def ensure_memory_layout() -> None:
         (EXAMPLES / "PROJECTS.example.md", PROJECTS_MD),
         (EXAMPLES / "scan.example.json", SCAN_JSON),
         (EXAMPLES / "ingest.example.json", INGEST_JSON),
+        (EXAMPLES / "active_skills.example.json", USER_MEMORY / "active_skills.json"),
     )
     for src, dst in pairs:
         if dst.exists() or not src.exists():
             continue
         _write(dst, _read(src))
+    active_skills_file = USER_MEMORY / "active_skills.json"
+    if not active_skills_file.exists():
+        from .skills import load_active_skills_config
+
+        load_active_skills_config()
 
 
 def load_scan() -> dict[str, Any]:
@@ -1587,8 +1593,25 @@ def always_on_body() -> str:
 
     user = _read(USER_MD).strip()
     rules_block = render_rules()
+    skills_note = ""
+    try:
+        from .skills import load_active_skills_config, SKILLS_NOTE
+
+        cfg = load_active_skills_config()
+        if cfg.get("active_skills"):
+            skills_note = SKILLS_NOTE
+    except Exception:
+        skills_note = ""
+
+    header_parts = []
     if rules_block:
-        user = f"{rules_block}\n\n{user}" if user else rules_block
+        header_parts.append(rules_block)
+    if skills_note and skills_note not in user:
+        header_parts.append(skills_note)
+
+    if header_parts:
+        header_block = "\n\n".join(header_parts)
+        user = f"{header_block}\n\n{user}" if user else header_block
     if is_compact_always_on():
         projects = compact_projects_text(parse_projects()).strip()
     else:
@@ -2048,6 +2071,10 @@ def resolve_memory_path(rel: str) -> Path:
         return SCAN_JSON
     if rel in ("user/ingest.json", "ingest.json"):
         return INGEST_JSON
+    if rel in ("user/active_skills.json", "active_skills.json"):
+        from .skills import active_skills_path
+
+        return active_skills_path()
     if rel.startswith("rules/"):
         return (AGENTS_RULES / rel[len("rules/") :]).resolve()
     if rel.startswith("user/"):

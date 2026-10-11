@@ -26,6 +26,9 @@ Hard rules (rules/HARD.md, projects/<slug>/RULES.md):
   context [--project SLUG] [--format md|json]  Rendered <memory_rules> block
   rules show|add|edit|remove|set|check [--project SLUG]  User edits (agents propose via MCP)
 
+Always-on skills (~/.agents/skills/, active_skills.json):
+  skills list|enable|disable   Manage always-on skills
+
 Projects / inject:
   sync [--init] [--push]    Rewrite always-on injection
   inventory [...]           Disk vs PROJECTS.md (--register / --ignore / --repair-moved)
@@ -397,6 +400,10 @@ def main(argv: list[str] | None = None) -> int:
         from .rules_cli import rules_main
 
         return rules_main(rest)
+    if cmd == "skills":
+        from .skills import skills_main
+
+        return skills_main(rest)
     if cmd in ("mcp", "mcp-server", "mcp_server"):
         from .mcp_server import main as run
 

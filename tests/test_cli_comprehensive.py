@@ -29,6 +29,7 @@ class CLIComprehensiveTests(unittest.TestCase):
         )
         self.env = dict(os.environ)
         self.env["PYTHONPATH"] = str(ROOT / "src")
+        self.env["AGENTS_MEMORY_DIR"] = str(self.user)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -39,6 +40,8 @@ class CLIComprehensiveTests(unittest.TestCase):
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=check,
             env=self.env,
         )

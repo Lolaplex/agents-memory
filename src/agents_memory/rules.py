@@ -264,10 +264,19 @@ def render_rules(project: Optional[str] = None, include_global: bool = True) -> 
         slug = ""
     global_rules = load_rules() if include_global else []
     overlay = load_rules(slug) if slug else []
-    if not global_rules and not overlay:
+    skill_rules: List[str] = []
+    if include_global:
+        try:
+            from .skills import get_active_skills_rules
+
+            skill_rules = get_active_skills_rules()
+        except Exception:
+            skill_rules = []
+    if not global_rules and not overlay and not skill_rules:
         return ""
     if include_global:
         lines = [f"<{BLOCK_TAG}>"]
+        lines.extend(f"- {r}" for r in skill_rules)
         lines.extend(f"- {r}" for r in global_rules)
         if overlay:
             lines.append(f'<project name="{slug}">')
@@ -286,9 +295,16 @@ def render_rules_data(project: Optional[str] = None) -> Dict[str, Any]:
     slug = normalize_project(project)
     global_rules = load_rules()
     overlay = load_rules(slug) if slug else []
+    try:
+        from .skills import get_active_skills_rules
+
+        skill_rules = get_active_skills_rules()
+    except Exception:
+        skill_rules = []
     return {
         "project": slug or None,
         "rules": global_rules,
+        "skill_rules": skill_rules,
         "project_rules": overlay,
         "block": render_rules(slug or None),
         "usage": {

@@ -16,8 +16,6 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 from agents_memory import mcp_server, rules, store
-from agents_memory.remote import sync_bundle
-from agents_memory.remote.merge import merge_markdown_files
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -390,31 +388,6 @@ class GeneratorTests(RulesStoreCase):
         text = store.project_agents_text(demo)
         self.assertIn(rules.render_rules("demo", include_global=False), text)
         self.assertNotIn("- Rule one.", text)
-
-
-class SyncTests(RulesStoreCase):
-    def test_vault_rules_file_is_user_content_in_bundle(self) -> None:
-        self.assertTrue(sync_bundle.is_agent_rule_key("rules/user-rules.mdc"))
-        self.assertFalse(sync_bundle.is_agent_rule_key("rules/HARD.md"))
-        self.assertFalse(sync_bundle.is_agent_rule_key("rules/sub/x.mdc"))
-        user, agent_rules, _ = sync_bundle._split_bundle(
-            {"rules/HARD.md": "- a\n", "rules/user-rules.mdc": "x", "USER.md": "u"}
-        )
-        self.assertIn("rules/HARD.md", user)
-        self.assertEqual(list(agent_rules), ["rules/user-rules.mdc"])
-        self.write_global("Rule one.")
-        with patch.object(sync_bundle, "_rules_dir", return_value=self.root / "no-rules"):
-            bundle = sync_bundle.collect_sync_bundle(include_projects=False, memory_root=self.user)
-        self.assertIn("rules/HARD.md", bundle)
-
-    def test_rule_files_merge_last_write_wins(self) -> None:
-        hard = self.write_global("A.", "B.")
-        merged, changed = merge_markdown_files(hard, "# Hard rules\n\n- A.\n- C.\n")
-        self.assertTrue(changed)
-        self.assertEqual(merged, "# Hard rules\n\n- A.\n- C.\n")
-        overlay = self.write_overlay("demo", "X.")
-        merged, _ = merge_markdown_files(overlay, "- Y.\n")
-        self.assertEqual(merged, "- Y.\n")
 
 
 class CliTests(unittest.TestCase):

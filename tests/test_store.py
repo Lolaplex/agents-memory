@@ -256,11 +256,10 @@ class AddMemoryTests(unittest.TestCase):
         staging.mkdir(parents=True, exist_ok=True)
         (staging / "captured.md").write_text("# Staging\n\n- keep me\n- throw me away\n", encoding="utf-8")
 
-        with patch("agents_memory.remote.sync_hooks.push_if_connected", return_value=None):
-            res = store.distill_batch([
-                {"bullet": "keep me", "kind": "concept", "name": "kept"},
-                {"bullet": "throw me away", "discard": True},
-            ])
+        res = store.distill_batch([
+            {"bullet": "keep me", "kind": "concept", "name": "kept"},
+            {"bullet": "throw me away", "discard": True},
+        ])
         self.assertEqual(res["promoted"], 1)
         self.assertEqual(res["discarded"], 1)
         self.assertEqual(res["remaining_staging_count"], 0)

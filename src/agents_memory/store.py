@@ -740,19 +740,10 @@ def scan_roots() -> List[str]:
 
 
 def mcp_entry() -> dict[str, Any]:
-    from .remote.client import get_remote_config
-
-    cfg = get_remote_config()
-    if cfg and cfg.get("url"):
-        entry: dict[str, Any] = {
-            "command": sys.executable,
-            "args": ["-m", "agents_memory.remote.sync_mcp"],
-        }
-    else:
-        entry = {
-            "command": sys.executable,
-            "args": ["-m", "agents_memory.mcp_server"],
-        }
+    entry: dict[str, Any] = {
+        "command": sys.executable,
+        "args": ["-m", "agents_memory.mcp_server"],
+    }
     src_dir = ROOT / "src"
     if src_dir.is_dir():
         entry["env"] = {"PYTHONPATH": str(src_dir.resolve())}
@@ -1173,12 +1164,8 @@ def render_projects_table(projects: Iterable[Project]) -> str:
 
 
 def write_projects(projects: List[Project]) -> None:
-    previous = _read(PROJECTS_MD)
     rendered = render_projects_table(projects)
     _write(PROJECTS_MD, rendered)
-    from .remote.tombstones import diff_projects_text
-
-    diff_projects_text(USER_MEMORY, previous, rendered)
 
 
 def _looks_like_project(path: Path) -> bool:
@@ -2132,15 +2119,8 @@ def _refuse_rules_write(path: Path) -> None:
 
 
 def _note_memory_write(path: Path, previous: str, content: str) -> None:
-    """A direct write is a re-add: it must beat an older tombstone for this path."""
-    key = bundle_key_for_path(path)
-    if not key:
-        return
-    from .remote.tombstones import diff_projects_text, record_explicit_file_write
-
-    record_explicit_file_write(USER_MEMORY, key)
-    if path.resolve() == PROJECTS_MD.resolve() or key == "PROJECTS.md":
-        diff_projects_text(USER_MEMORY, previous, content)
+    """No-op hook retained for local rules/store compatibility."""
+    return
 
 
 def _markdown_under(root: Path) -> List[Path]:
@@ -2233,15 +2213,9 @@ def clear_memory_cache() -> None:
 
 
 def _finish_store_write() -> None:
-    """Rewrite IDE injection and push mirror bundle to remote when connected."""
+    """Rewrite IDE injection after store mutations."""
     try:
         sync_injection(include_repos=True)
-    except Exception:
-        pass
-    try:
-        from .remote.sync_hooks import after_memory_mutation
-
-        after_memory_mutation()
     except Exception:
         pass
 
@@ -2584,13 +2558,7 @@ def _append_bullet(path: Path, fact: str) -> str:
 
 
 def _note_bullet_write(path: Path, bullet: str) -> None:
-    key = bundle_key_for_path(path)
-    if not key:
-        return
-    from .remote.merge import _normalize_bullet
-    from .remote.tombstones import record_bullet_write
-
-    record_bullet_write(USER_MEMORY, key, _normalize_bullet(bullet))
+    return
 
 
 def _append_repo_captured(path: Path, fact: str) -> str:
@@ -2670,6 +2638,16 @@ def _deleted_log_file() -> Path:
     return USER_MEMORY / ".deleted.json"
 
 
+def _sync_tombstone_file() -> Path:
+    return AGENTS_HOME / ".tombstones.json"
+
+
+def _now_utc_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def bundle_key_for_path(path: Path) -> str:
     """Sync-bundle key for a memory or rule file. Empty when the path is outside the store."""
     try:
@@ -2690,10 +2668,30 @@ def bundle_key_for_path(path: Path) -> str:
 
 
 def record_local_deletion(rel_path: str) -> None:
-    """Record a deleted file path to propagate on remote sync."""
-    from .remote.tombstones import record_file
-
-    record_file(USER_MEMORY, rel_path)
+    """Record a deleted file path in .deleted.json and ~/.agents/.tombstones.json."""
+    clean = str(rel_path).replace("\\", "/").strip().lstrip("/")
+    if not clean:
+        return
+    log_file = _deleted_log_file()
+    existing = load_local_deletions()
+    if clean not in existing:
+        existing.append(clean)
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        log_file.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    try:
+        t_path = _sync_tombstone_file()
+        data: dict[str, Any] = {"version": 1, "files": {}, "prefixes": {}, "bullets": {}}
+        if t_path.is_file():
+            loaded = json.loads(t_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data.update(loaded)
+        files = data.setdefault("files", {})
+        wire_key = clean if clean.startswith("memory/") else f"memory/{clean}"
+        files[wire_key] = _now_utc_iso()
+        t_path.parent.mkdir(parents=True, exist_ok=True)
+        t_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
 def load_local_deletions() -> list[str]:
@@ -2734,7 +2732,7 @@ def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
     if not path.is_file():
         raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
 
-    # Track relative path for remote synchronization
+    # Track relative path for synchronization tombstones
     try:
         rel = path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
         record_local_deletion(rel)
@@ -2832,19 +2830,23 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
 
 def _note_removed_line(path: Path, line: str) -> None:
     key = bundle_key_for_path(path)
-    if not key:
+    if not key or not re.match(r"^\s*[-*+\d]\s*", line):
         return
-    from .remote.tombstones import record_bullet, record_row
-
-    if path.resolve() == PROJECTS_MD.resolve() or key == "PROJECTS.md":
-        match = ROW_RE.match(line.strip())
-        if match:
-            record_row(USER_MEMORY, "PROJECTS.md", match.group("slug"))
-            return
-    if re.match(r"^\s*[-*+\d]\s*", line):
-        from .remote.merge import _normalize_bullet
-
-        record_bullet(USER_MEMORY, key, _normalize_bullet(line))
+    try:
+        t_path = _sync_tombstone_file()
+        data: dict[str, Any] = {"version": 1, "files": {}, "prefixes": {}, "bullets": {}}
+        if t_path.is_file():
+            loaded = json.loads(t_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data.update(loaded)
+        bullets = data.setdefault("bullets", {})
+        wire_key = key if key.startswith("memory/") else f"memory/{key}"
+        norm = re.sub(r"\s+", " ", line.strip())
+        bullets.setdefault(wire_key, {})[norm] = _now_utc_iso()
+        t_path.parent.mkdir(parents=True, exist_ok=True)
+        t_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
 def remove_staging_bullet(

@@ -1,9 +1,11 @@
-# Quotient Tower — Design Spec (v0.1.2)
+# Quotient Tower — Design Spec (v0.1.3)
 
 **Working name:** quotient-tower
 **Home:** `Lolaplex/agents-memory` (new backend module) — fleet component of the agents-* org
 **Status:** DRAFT — for deconstruction into lolaplex-board tasks
 **Intent:** any local agent (or human) can pick a task and burn tokens toward convergence without needing this conversation's context.
+
+**Changelog:** v0.1.3 — L3 grounded on `Lolaplex/agents-store` (minted ULID + `datom` log); tower as projection; typed decision records replace `DECISIONS.md`; Q1/Q6 resolved per agents-store and Koru lineage discipline.
 
 ---
 
@@ -24,6 +26,7 @@ re-specialization — depends on that axiom.
 
 | Concern | Repository | Org | Notes |
 |---|---|---|---|
+| Ground-truth substrate | `agents-store` | Lolaplex | Minted ULID identity (`ids.mint()`); append-only `datom` log enforced by triggers; as-of-transaction reads (`Store.view(..., tx=)` / `v_current`); single deny-by-default write path via `Store.transact()` with every refusal logged in `refusal`; PROV `lineage` edges; adapters register through `Registry` / entry-point groups with `mediator` rows stamped `exact` or `contained`. |
 | Tower home | `agents-memory` | Lolaplex | Exists: local markdown memory & cross-agent context engine (MCP, Python). Tower = new backend module, not a new repo. |
 | Task board | `lolaplex-board` | Lolaplex | Private. Agent-centric project board (PHP, htmx, SQLite, DID). Spec deconstructs into tasks here. |
 | Trace query source | `agents-traces` | Lolaplex | JSONL observability/tracing (MCP + CLI). E0 query set is extracted from this. |
@@ -33,7 +36,7 @@ re-specialization — depends on that axiom.
 | Merge-kernel expression (cipher / cypher-lang) | TBD — confirm repo location | — | Compression-as-normalization rewrite rules. Location not asserted in this spec revision. |
 | Merge-kernel proofs | `isar-proofs` | Cypoe (personal) | Lean 4. Invariant Layer = operational quotient, terminal object in the category of closed computational dialects. Confluence + unique normal forms live here. |
 | Merge-kernel evidence | `koru` | korulang (CROSS-ORG) | "The event continuation language" (Zig). Proof-carrying obligations/receipts are a korulang deliverable consumed here as an external dependency — NOT a Lolaplex fleet component. |
-| Lineage-discipline precedent | `koru-membrane` | korulang (CROSS-ORG) | Shared memory corpus — OKF concept store with git-log lineage discipline. Direct precedent for A1's append-only lineage. Coordination point, not a dependency yet. |
+| Lineage-discipline precedent | `koru-membrane` | korulang (CROSS-ORG) | Shared memory corpus — OKF concept store. Coordination point for shared corpus, not the lineage-discipline reference (see Q6: Koru commit gates + typed verbs). |
 
 **Cross-org rule:** Lolaplex fleet tasks may *consume* korulang/Cypoe artifacts but must not
 *modify* them in fleet tasks; upstream changes are separate tasks in their home repos.
@@ -60,7 +63,7 @@ re-specialization — depends on that axiom.
 
 ## 2. Glossary (pin these; agents must not rename)
 
-- **Log (L3):** append-only raw record of sessions/traces on disk. Unbounded. Never edited.
+- **Log (L3):** `agents-store` append-only `datom` fact log (ground truth). Unbounded. Never edited in place; tower and markdown are projections.
 - **Tower (L2):** fixed-budget hierarchical index over the log. Levels are quotient maps
   π_n : L_{n-1} -> L_n. Coarse at the root, raw-pointing at the leaves.
 - **Context window (L1):** backbone working set. What the model "sees" this step.
@@ -99,8 +102,15 @@ re-specialization — depends on that axiom.
 
 Components to build:
 
-- **C1 log-store:** append-only, content-addressed or position-addressed records. OptMem-style
-  position-as-identity (records need no index; stable under append).
+- **C1 log-store (not built anew):** L3 is `agents-store`'s `datom` log, consumed through its
+  registration contract (`Registry.register_wrapper` / `register_capability`, entry-point groups
+  `agents_store.wrappers` and `agents_store.capabilities`). The tower lives in `agents-memory` as
+  a **projection** over that substrate — not a second log. Rationale: a second log would duplicate
+  the artifact; MORe forbids duplication. **T0.1 prerequisites** (gaps to close in `agents-store`
+  before the tower can bind L3): (1) every table append-only, not only `datom`; (2) `certificate`
+  and `provenance` rows pinned to the repro-script commit hash and the enclosing `tx`; (3) typed
+  move/retire events (not ad-hoc attrs); (4) a separate `severs` lineage kind distinct from
+  `evolve` / `wasRevisionOf`.
 - **C2 tower-store:** persistent hierarchical index; each node = summary payload (text or
   latent) + child pointers. Fixed budget enforced at insertion.
 - **C3 reader:** ANN (FAISS/HNSW) or product-key lookup over multiscale node embeddings.
@@ -237,7 +247,10 @@ E7: drift seen?   yes ──▶ trigger-based nap ────────┤
 ## 7. Task decomposition (board-ready — Lolaplex/lolaplex-board)
 
 **P0 — Infrastructure (blocking, ~1 week)**
-- T0.1 log-store (C1): append, position-id, integrity check. DoD: 10k appends, rebuild deterministic.
+- T0.1 L3 bind (C1): wire tower ingest to `agents-store` `datom` via the registration contract;
+  do **not** implement a parallel log. DoD: 10k `transact` appends through a registered wrapper,
+  as-of reads match `v_current`, tower rebuild from log is deterministic. Blocked until agents-store
+  T0.1 prerequisites (C1 list) land.
 - T0.2 trace query set: extract declarative queries from agents-traces; `<think />` filtered;
   train/holdout split frozen with a hash. DoD: 1k queries, schema validated.
 - T0.3 teacher runner: full-log retrieval through pinned backbone. DoD: batch, reproducible, cached.
@@ -245,11 +258,13 @@ E7: drift seen?   yes ──▶ trigger-based nap ────────┤
 
 **P1 — Oracles (E0, ~3 days)**
 - T1.1 flat ANN baseline at budget B. DoD: distortion numbers + repro script.
-- T1.2 G0 report: go/no-go with numbers. DoD: decision recorded in repo (DECISIONS.md).
+- T1.2 G0 report: go/no-go with numbers. DoD: `decision` record in `agents-store` (see §8).
 
 **P2 — Experiments (E1–E7, each board-tracked)**
-- One task per experiment: implementation, run, report. DoD: numbers + repro script + branch
-  decision recorded. No experiment ships conclusions without its repro script committed.
+- One task per experiment: implementation, run, report. DoD: numbers + repro script + typed
+  `decision` record (and `verification` when applicable) in `agents-store`. No experiment ships
+  conclusions without its repro script committed. Legacy ADR/fragment markdown decision files are
+  flimsy — migrate into store records; any surviving markdown is a generated view only.
 
 **P3 — Integration (after branch map resolves, ~2 weeks)**
 - T3.1 nap daemon per E4/E7 branch.
@@ -261,11 +276,17 @@ E7: drift seen?   yes ──▶ trigger-based nap ────────┤
 
 ## 8. Agent execution protocol (how to burn tokens toward convergence)
 
-- **Definition of done for every task:** code + repro script + numbers + decision record.
-  Evidence, not narrative.
-- **Convergence criterion (global):** at fixed budget B, tower retrieval matches teacher
-  answers on >= 90% of hold-out trace queries using <= 25% of the teacher's token spend.
-  Numbers to be re-calibrated after E0.
+- **Definition of done for every task:** code + repro script + numbers + typed decision record in
+  `agents-store`. Evidence, not narrative.
+- **Decision records (replace `DECISIONS.md`):** store kinds `decision`, `verification`,
+  `inclusion`, `supersession`, `overrule`, `move` — each minted entity with its own ID, author,
+  timestamp, version pin to the repro-script commit hash, and supersession link when revised. Any
+  markdown summary is a generated projection, never authoritative. A single unnumbered markdown
+  document rots as it grows; that rot is exactly the problem the tower addresses.
+- **Convergence criterion (global, board gate):** at fixed budget B, tower retrieval matches teacher
+  answers on >= 90% of hold-out trace queries using <= 25% of the teacher's token spend (re-calibrated
+  after E0). Shipping requires a passing `verification` record on the board — not a line in
+  `DECISIONS.md`.
 - **Anti-drift:** no agent renames glossary terms; no task touches L3 semantics (append-only);
   ABI bumps are a single designated task type; cross-org repos are read-only from fleet tasks.
 - **Isolation:** every experiment runs against the same frozen query set and teacher cache;
@@ -287,7 +308,8 @@ E7: drift seen?   yes ──▶ trigger-based nap ────────┤
 
 ## 10. Open questions register
 
-- Q1: Is position-as-identity (OptMem-style) sufficient, or do content hashes buy dedup worth having?
+- Q1: **Closed (v0.1.3).** `agents-store` minted ULIDs (`ids.mint()`) are the record identity;
+  position-as-identity (OptMem-style) is not needed for L3.
 - Q2: Should the tower span multiple agents (shared) before single-agent convergence is proven? (Default: no.)
 - Q3: Does the gate need a "don't retrieve" mode (skip tower entirely) to avoid reader dilution in L1?
 - Q4 (merge-kernel layer mapping — three distinct roles, do not conflate):
@@ -305,9 +327,10 @@ E7: drift seen?   yes ──▶ trigger-based nap ────────┤
   with E5: chunk payloads make merges cipher-native but cost an encoding bridge at the ABI
   boundary; plain text keeps the bridge trivial but merges lose the chunk algebra.
 - Q5: Minimum viable nap: what fraction of levels need re-quotient on drift, empirically?
-- Q6: Lineage discipline — adopt koru-membrane's git-log lineage discipline (OKF concept store)
-  for L3, or keep OptMem position-as-identity? The two mechanisms are related but not identical;
-  decide at T0.1.
+- Q6: **Closed (v0.1.3).** Adopt **Koru** lineage discipline (commit gates, typed lineage verbs) for
+  tower maintenance and board workflow — not `koru-membrane` as the reference: membrane hook copies
+  have drifted from canonical `koru/hooks`, and only `koru-libs` is drift-checked. L3 lineage
+  remains `agents-store` PROV edges + future `severs` kind; Koru governs how fleet tasks commit.
 
 ## 11. References
 
@@ -318,7 +341,8 @@ E7: drift seen?   yes ──▶ trigger-based nap ────────┤
 - Qwen3 Technical Report / Qwen3-Next blog: dense ladder, GQA anatomy, GDN+attention 3:1 hybrid.
 - LMCache hybrid-model docs: recurrent-state serialization as opaque pages.
 - How Linear Attention Remembers (arXiv 2609.33093): delta-state entanglement, lossy non-inspectable writes.
-- Internal: Lolaplex/agents-memory (MCP markdown memory), agents-traces (JSONL), agents-docs
-  (BM25 RAG), agents-harness, lolaplex-board; Cypoe/isar-proofs (Lean 4, Invariant Layer);
+- Internal: Lolaplex/agents-memory (MCP markdown memory), agents-store (minted ID + datom log),
+  agents-traces (JSONL), agents-docs (BM25 RAG), agents-harness, lolaplex-board;
+  Cypoe/isar-proofs (Lean 4, Invariant Layer);
   korulang/koru (event continuation language), koru-membrane (OKF concept store, git-log
   lineage), kopium (type-system safety boundary); cipher (cypher-lang, compression-as-normalization).

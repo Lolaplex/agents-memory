@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `remote serve` no longer accepts the bearer token on the command line (`--token`). Set `AGENTS_MEMORY_TOKEN` in the environment. The Docker entrypoint does not copy that value into process arguments.
+
 ## [1.2.0] - 2026-10-06
 
 ### Added

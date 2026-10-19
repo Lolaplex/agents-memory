@@ -86,7 +86,6 @@ def build_remote_parser() -> argparse.ArgumentParser:
     serve_p = subparsers.add_parser("serve", help="Start remote memory server")
     serve_p.add_argument("--host", default="0.0.0.0", help="Host address (default: 0.0.0.0)")
     serve_p.add_argument("--port", "-p", type=int, default=8443, help="Port (default: 8443)")
-    serve_p.add_argument("--token", "-t", default="", help="Bearer token secret (or AGENTS_MEMORY_TOKEN env)")
     serve_p.add_argument("--log-level", default="info", help="Log level (debug, info, warning)")
     serve_p.add_argument(
         "--min-client-version",
@@ -198,7 +197,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_server(
             host=args.host,
             port=args.port,
-            token=args.token,
             log_level=args.log_level,
         )
         return 0

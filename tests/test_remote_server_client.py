@@ -1,4 +1,5 @@
 """Tests for remote server, client config, and sync endpoints (isolated)."""
+import os
 import unittest
 import tempfile
 from pathlib import Path
@@ -57,6 +58,19 @@ class TestRemoteServerClient(unittest.TestCase):
         # Valid token query param -> 200
         resp = client.get("/health?token=supersecret123")
         self.assertEqual(resp.status_code, 200)
+
+    def test_serve_token_from_env_not_argv(self):
+        from agents_memory.remote.cli import build_remote_parser
+
+        with self.assertRaises(SystemExit):
+            build_remote_parser().parse_args(["serve", "--token", "secret"])
+
+        with patch.dict(os.environ, {"AGENTS_MEMORY_TOKEN": "env-token"}, clear=False):
+            app = create_remote_app(token="")
+        client = TestClient(app)
+        self.assertEqual(client.get("/health").status_code, 401)
+        ok = client.get("/health", headers={"Authorization": "Bearer env-token"})
+        self.assertEqual(ok.status_code, 200)
 
     def test_server_endpoints(self):
         app = create_remote_app(token="testtoken")

@@ -27,4 +27,4 @@ EXPOSE 8443
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
   CMD python -c "import httpx, os; token=os.environ.get('AGENTS_MEMORY_TOKEN',''); port=os.environ.get('AGENTS_MEMORY_PORT','8443'); headers={'Authorization': f'Bearer {token}'} if token else {}; r=httpx.get(f'http://127.0.0.1:{port}/health', headers=headers); exit(0 if r.status_code==200 else 1)"
 
-ENTRYPOINT ["sh", "-c", "exec agents-memory remote serve --host ${AGENTS_MEMORY_HOST} --port ${AGENTS_MEMORY_PORT} --token \"${AGENTS_MEMORY_TOKEN}\""]
+ENTRYPOINT ["sh", "-c", "exec agents-memory remote serve --host ${AGENTS_MEMORY_HOST} --port ${AGENTS_MEMORY_PORT}"]

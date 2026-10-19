@@ -79,7 +79,8 @@ Mirror the personal store across laptops, a VPS, and other workstations. Each de
 **1. Host** (VPS / always-on box):
 
 ```bash
-agents-memory remote serve --port 8443 --token <YOUR_SECRET_TOKEN>
+# Token is AGENTS_MEMORY_TOKEN in the environment, not a command-line flag.
+agents-memory remote serve --port 8443
 ```
 
 **2. Clients** (laptops / workstations):

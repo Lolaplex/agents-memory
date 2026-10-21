@@ -80,10 +80,11 @@ def injection_spec() -> dict[str, Any]:
                 "path": "~/.agents/AGENTS.md",
                 "from": [
                     "~/.agents/memory/rules/HARD.md",
+                    "~/.agents/memory/active_skills.json",
                     "~/.agents/memory/USER.md",
                     "~/.agents/memory/PROJECTS.md",
                 ],
-                "edit": "Edit USER.md / PROJECTS.md (hard rules: agents-memory rules), then re-run python -m agents_memory sync",
+                "edit": "Edit USER.md / PROJECTS.md (hard rules: agents-memory rules, active skills: agents-memory skills), then re-run python -m agents_memory sync",
             },
             {
                 "path": "~/.agents/CLAUDE.md",
@@ -183,6 +184,10 @@ def full_spec() -> dict[str, Any]:
             "description": "User-intent edits of hard rules (rules/HARD.md, projects/<slug>/RULES.md) with a line/char budget. Agents propose via MCP propose_rule.",
             "usage": "python -m agents_memory rules {show,add,edit,remove,set,check} [--project SLUG]",
         },
+        "skills": {
+            "description": "Manage active always-on agent skills (list, enable, disable).",
+            "usage": "python -m agents_memory skills {list,enable,disable}",
+        },
         "distill": {
             "description": "Peek staging inbox, or auto_distill with --auto.",
             "usage": "python -m agents_memory distill [--auto]",
@@ -212,11 +217,6 @@ def full_spec() -> dict[str, Any]:
         "web": {
             "description": "Export static HTML website of the vault.",
             "usage": "python -m agents_memory web [DIR]",
-        },
-        "remote": {
-            "description": "Cloud mirror: serve/connect/disconnect/status/push/pull/bump-epoch/client/attach. pull/connect --replace matches the local store to the snapshot. push --replace publishes this machine and bumps the vault epoch.",
-            "usage": "python -m agents_memory remote {serve,connect,disconnect,status,push,pull,bump-epoch,client,attach}",
-            "aliases": ["cloud", "connect", "disconnect"],
         },
         "reset": {
             "description": "Clear local memory caches and temporary state (requires --yes).",
@@ -257,18 +257,6 @@ def full_spec() -> dict[str, Any]:
         },
     }
 
-    from .remote.cli import build_remote_parser
-
-    remote_subs: dict[str, Any] = {}
-    remote_parser = build_remote_parser()
-    for action in remote_parser._actions:
-        if isinstance(action, argparse._SubParsersAction):
-            for sub_name, sub in action.choices.items():
-                remote_subs[sub_name] = cli_spec(
-                    sub, name=f"remote {sub_name}", description=sub.description or ""
-                )
-    commands["remote"]["subcommands"] = remote_subs
-
     from .rules_cli import build_context_parser, build_rules_parser
 
     commands["context"].update(
@@ -282,6 +270,17 @@ def full_spec() -> dict[str, Any]:
                     sub, name=f"rules {sub_name}", description=sub.description or ""
                 )
     commands["rules"]["subcommands"] = rules_subs
+
+    from .skills import build_skills_parser
+
+    skills_subs: dict[str, Any] = {}
+    for action in build_skills_parser()._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for sub_name, sub in action.choices.items():
+                skills_subs[sub_name] = cli_spec(
+                    sub, name=f"skills {sub_name}", description=sub.description or ""
+                )
+    commands["skills"]["subcommands"] = skills_subs
 
     # Back-compat keys (older agents/skills scrape these).
     scripts_no_flags = {

@@ -26,8 +26,11 @@ Hard rules (rules/HARD.md, projects/<slug>/RULES.md):
   context [--project SLUG] [--format md|json]  Rendered <memory_rules> block
   rules show|add|edit|remove|set|check [--project SLUG]  User edits (agents propose via MCP)
 
+Always-on skills (~/.agents/skills/, active_skills.json):
+  skills list|enable|disable   Manage always-on skills
+
 Projects / inject:
-  sync [--init] [--push]    Rewrite always-on injection
+  sync [--init]             Rewrite always-on injection
   inventory [...]           Disk vs PROJECTS.md (--register / --ignore / --repair-moved)
   projects [SLUG]           List projects, or dump one project's memory
 
@@ -41,14 +44,12 @@ Ops:
   rebuild-index             Rebuild disposable FTS5 cache
   serve [PORT]              Local memory browser (default 8765)
   web [DIR]                 Static HTML export
-  remote ...                Cloud mirror (serve/connect/disconnect/push/pull/attach)
   reset --yes               Clear local memory caches / temp state
   mcp                       stdio MCP clerk (always local markdown)
   help-json                 Machine-readable CLI + injection spec
 
-Aliases: init→sync --init | connect|disconnect→remote … | cat|get→read |
-  save→add | put→write | list-projects→projects | ingest-chats→ingest catalog |
-  index→rebuild-index | clean→reset | cloud→remote
+Aliases: init→sync --init | cat|get→read | save→add | put→write |
+  list-projects→projects | ingest-chats→ingest catalog | index→rebuild-index | clean→reset
 Deprecated: extract-openai → use ingest extract (openai-export source)
 """
 
@@ -160,18 +161,6 @@ def main(argv: list[str] | None = None) -> int:
             f"Exported static memory website: {res['files']} files to {res['export_dir']}"
         )
         return 0
-    if cmd in ("remote", "cloud"):
-        from .remote.cli import main as run_remote
-
-        return run_remote(rest)
-    if cmd == "connect":
-        from .remote.cli import main as run_remote
-
-        return run_remote(["connect", *rest])
-    if cmd == "disconnect":
-        from .remote.cli import main as run_remote
-
-        return run_remote(["disconnect", *rest])
     if cmd in ("rebuild-index", "rebuild_index", "index"):
         from .index import rebuild_index
 
@@ -397,6 +386,10 @@ def main(argv: list[str] | None = None) -> int:
         from .rules_cli import rules_main
 
         return rules_main(rest)
+    if cmd == "skills":
+        from .skills import skills_main
+
+        return skills_main(rest)
     if cmd in ("mcp", "mcp-server", "mcp_server"):
         from .mcp_server import main as run
 

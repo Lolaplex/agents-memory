@@ -22,6 +22,45 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
+class ActiveSkillsConfigError(ValueError):
+    """active_skills.json exists but is not a usable JSON object."""
+
+
+def _empty_config() -> Dict[str, Any]:
+    return {
+        "active_skills": list(DEFAULT_CONFIG["active_skills"]),
+        "intensity": dict(DEFAULT_CONFIG["intensity"]),
+    }
+
+
+def _normalize_active_skills(data: Dict[str, Any]) -> Dict[str, Any]:
+    if "active_skills" not in data or not isinstance(data["active_skills"], list):
+        data["active_skills"] = list(DEFAULT_CONFIG["active_skills"])
+    if "intensity" not in data or not isinstance(data["intensity"], dict):
+        data["intensity"] = dict(DEFAULT_CONFIG["intensity"])
+    return data
+
+
+def _read_active_skills(path: Path) -> Dict[str, Any]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ActiveSkillsConfigError(str(exc)) from exc
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ActiveSkillsConfigError(str(exc)) from exc
+    if not isinstance(data, dict):
+        raise ActiveSkillsConfigError("active_skills.json must be a JSON object")
+    return _normalize_active_skills(data)
+
+
+def _corrupt_update_error(path: Path, exc: Exception) -> ActiveSkillsConfigError:
+    return ActiveSkillsConfigError(
+        f"Refusing to update {path}: file is corrupt ({exc}). Fix or delete the file."
+    )
+
+
 def active_skills_path() -> Path:
     return store.USER_MEMORY / ACTIVE_SKILLS_REL
 
@@ -43,32 +82,37 @@ def skills_dir() -> Path:
 def load_active_skills_config() -> Dict[str, Any]:
     path = active_skills_path()
     if not path.is_file():
-        cfg = {
-            "active_skills": list(DEFAULT_CONFIG["active_skills"]),
-            "intensity": dict(DEFAULT_CONFIG["intensity"]),
-        }
+        cfg = _empty_config()
         save_active_skills_config(cfg)
         return cfg
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("active_skills.json must be a JSON object")
-        if "active_skills" not in data or not isinstance(data["active_skills"], list):
-            data["active_skills"] = list(DEFAULT_CONFIG["active_skills"])
-        if "intensity" not in data or not isinstance(data["intensity"], dict):
-            data["intensity"] = dict(DEFAULT_CONFIG["intensity"])
-        return data
-    except Exception:
-        cfg = {
-            "active_skills": list(DEFAULT_CONFIG["active_skills"]),
-            "intensity": dict(DEFAULT_CONFIG["intensity"]),
-        }
-        save_active_skills_config(cfg)
-        return cfg
+        return _read_active_skills(path)
+    except ActiveSkillsConfigError as exc:
+        print(
+            f"Warning: {path} is invalid ({exc}); left unchanged, using default config.",
+            file=sys.stderr,
+        )
+        return _empty_config()
+
+
+def _config_for_update() -> Dict[str, Any]:
+    """Load config for a write. Refuse when the on-disk file is corrupt."""
+    path = active_skills_path()
+    if not path.is_file():
+        return _empty_config()
+    try:
+        return _read_active_skills(path)
+    except ActiveSkillsConfigError as exc:
+        raise _corrupt_update_error(path, exc) from exc
 
 
 def save_active_skills_config(cfg: Dict[str, Any]) -> None:
     path = active_skills_path()
+    if path.is_file():
+        try:
+            _read_active_skills(path)
+        except ActiveSkillsConfigError as exc:
+            raise _corrupt_update_error(path, exc) from exc
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
     path.write_text(text, encoding="utf-8")
@@ -220,7 +264,7 @@ def enable_skill(name: str, intensity: Optional[str] = None) -> Dict[str, Any]:
     name = (name or "").strip()
     if not name:
         raise ValueError("Skill name cannot be empty")
-    cfg = load_active_skills_config()
+    cfg = _config_for_update()
     active = cfg.setdefault("active_skills", [])
     intensities = cfg.setdefault("intensity", {})
     if name not in active:
@@ -237,7 +281,7 @@ def disable_skill(name: str) -> Dict[str, Any]:
     name = (name or "").strip()
     if not name:
         raise ValueError("Skill name cannot be empty")
-    cfg = load_active_skills_config()
+    cfg = _config_for_update()
     active = cfg.setdefault("active_skills", [])
     if name in active:
         active.remove(name)
@@ -301,7 +345,11 @@ def skills_enable_cmd(name: str, intensity: str = "") -> int:
     if not name:
         print("Error: skill name required", file=sys.stderr)
         return 2
-    cfg = enable_skill(name, intensity=intensity if intensity else None)
+    try:
+        cfg = enable_skill(name, intensity=intensity if intensity else None)
+    except ActiveSkillsConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     level = cfg.get("intensity", {}).get(name, "full")
     sdir = skills_dir()
     if not (sdir / name / "SKILL.md").is_file():
@@ -316,7 +364,11 @@ def skills_disable_cmd(name: str) -> int:
     if not name:
         print("Error: skill name required", file=sys.stderr)
         return 2
-    disable_skill(name)
+    try:
+        disable_skill(name)
+    except ActiveSkillsConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     print(f"Disabled skill '{name}'")
     return 0
 

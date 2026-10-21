@@ -1,6 +1,8 @@
 """Unit tests for always-on skills management: configuration, extraction, CLI, and rule injection."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -46,6 +48,120 @@ class SkillsTestCase(unittest.TestCase):
         self.assertEqual(cfg["active_skills"], [])
         self.assertEqual(cfg["intensity"], {})
         self.assertTrue(skills.active_skills_path().is_file())
+
+    def test_missing_file_creates_default(self) -> None:
+        path = skills.active_skills_path()
+        self.assertFalse(path.exists())
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            cfg = skills.load_active_skills_config()
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(cfg["active_skills"], [])
+        self.assertEqual(cfg["intensity"], {})
+        self.assertEqual(
+            json.loads(path.read_text(encoding="utf-8")),
+            {"active_skills": [], "intensity": {}},
+        )
+
+    def test_corrupt_file_is_not_modified_and_warns(self) -> None:
+        path = skills.active_skills_path()
+        original = b"{not json\n"
+        path.write_bytes(original)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            cfg = skills.load_active_skills_config()
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(cfg["active_skills"], [])
+        self.assertEqual(cfg["intensity"], {})
+        self.assertEqual(stdout.getvalue(), "")
+        err = stderr.getvalue()
+        self.assertEqual(err.count("\n"), 1)
+        self.assertTrue(err.startswith("Warning: "))
+        self.assertIn(str(path), err)
+        self.assertIn("Expecting property name enclosed in double quotes", err)
+        self.assertIn("left unchanged", err)
+
+    def test_non_object_file_is_not_modified_and_warns(self) -> None:
+        path = skills.active_skills_path()
+        original = b"[1, 2]\n"
+        path.write_bytes(original)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            cfg = skills.load_active_skills_config()
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(cfg["active_skills"], [])
+        self.assertEqual(cfg["intensity"], {})
+        self.assertEqual(stdout.getvalue(), "")
+        err = stderr.getvalue()
+        self.assertEqual(err.count("\n"), 1)
+        self.assertTrue(err.startswith("Warning: "))
+        self.assertIn(str(path), err)
+        self.assertIn("active_skills.json must be a JSON object", err)
+
+    def test_missing_keys_still_normalized_in_memory(self) -> None:
+        path = skills.active_skills_path()
+        original = '{"extra": true, "active_skills": "nope"}\n'
+        path.write_text(original, encoding="utf-8")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            cfg = skills.load_active_skills_config()
+        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(path.read_text(encoding="utf-8"), original)
+        self.assertEqual(cfg["active_skills"], [])
+        self.assertEqual(cfg["intensity"], {})
+        self.assertIs(cfg["extra"], True)
+
+    def test_enable_disable_on_corrupt_file_do_not_modify_it(self) -> None:
+        path = skills.active_skills_path()
+        original = b"{not json\n"
+        path.write_bytes(original)
+
+        with self.assertRaises(skills.ActiveSkillsConfigError) as raised:
+            skills.enable_skill("custom-one", intensity="lite")
+        message = str(raised.exception)
+        self.assertIn(str(path), message)
+        self.assertIn("Fix or delete the file", message)
+        self.assertIn("Expecting property name enclosed in double quotes", message)
+        self.assertEqual(path.read_bytes(), original)
+
+        with self.assertRaises(skills.ActiveSkillsConfigError) as raised_disable:
+            skills.disable_skill("custom-one")
+        self.assertIn("Fix or delete the file", str(raised_disable.exception))
+        self.assertIn(str(path), str(raised_disable.exception))
+        self.assertEqual(path.read_bytes(), original)
+
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+        with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
+            code = skills.skills_main(["enable", "custom-one"])
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("Error:", stderr.getvalue())
+        self.assertIn("Fix or delete the file", stderr.getvalue())
+        self.assertEqual(path.read_bytes(), original)
+
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+        with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):
+            code = skills.skills_main(["disable", "custom-one"])
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("Fix or delete the file", stderr.getvalue())
+        self.assertEqual(path.read_bytes(), original)
+
+        path.write_text("null\n", encoding="utf-8")
+        before = path.read_bytes()
+        with self.assertRaises(skills.ActiveSkillsConfigError) as raised_null:
+            skills.enable_skill("custom-one")
+        self.assertIn("JSON object", str(raised_null.exception))
+        self.assertEqual(path.read_bytes(), before)
+        with self.assertRaises(skills.ActiveSkillsConfigError):
+            skills.disable_skill("custom-one")
+        self.assertEqual(path.read_bytes(), before)
 
     def test_extract_skill_rules_intensity_dict(self) -> None:
         skill_dir = self.skills_dir / "tester"

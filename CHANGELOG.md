@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A corrupt `~/.agents/memory/active_skills.json` is no longer overwritten with an empty config. `load_active_skills_config()` leaves the file untouched, returns the in-memory default, and prints one stderr warning with the path and parse error. `skills enable` and `skills disable` refuse to update a corrupt file until it is fixed or deleted.
+
 ## [1.3.0] - 2026-10-21
 
 ### Changed

@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-21
+
+### Changed
+- Decoupled multi-device cloud synchronization into the dedicated [`agents-sync`](https://github.com/Lolaplex/agents-sync) package. Legacy `remote` subcommands have been removed in favor of stack-wide synchronization (memory, skills, docs, rules, traces, identity). `agents-sync` is required for multi-device sync and cloud/VPS agent systems.
+
+### Added
+- Manage active always-on skills and inject hard rules from `rules/HARD.md`.
+
 ### Security
-- `remote serve` no longer accepts the bearer token on the command line (`--token`). Set `AGENTS_MEMORY_TOKEN` in the environment. The Docker entrypoint does not copy that value into process arguments.
+- Bearer tokens in legacy remote CLI hidden before module extraction.
 
 ## [1.2.0] - 2026-10-06
 

@@ -47,7 +47,7 @@ Vendors keep chat in product graves (Cursor jsonl, Claude sessions, Antigravity 
 
 **IDE injection.** One `sync` splices always-on context into hosts it knows (`AGENTS.md` / rules) and merges MCP where a config file already lives. Text outside `<!-- agents-memory-sync -->` stays. Details: [Where it runs](#where-it-runs).
 
-**Cloud sync (new in 1.1.0).** Several machines, one vault — see below.
+**Multi-device sync.** Unified across all stack domains via [`agents-sync`](https://github.com/Lolaplex/agents-sync).
 
 ---
 
@@ -72,30 +72,21 @@ Deeper support is layered — `sync --init` autowires what it finds on disk; ing
 
 ---
 
-## Cloud sync
+## Cloud sync (`agents-sync`)
 
-Mirror the personal store across laptops, a VPS, and other workstations. Each device keeps **local files** as the working copy. The server holds a merged bundle. MCP tools still run locally; push/pull keeps devices aligned.
+Cloud and multi-device synchronization for `~/.agents/memory/` (and the entire `~/.agents` stack: skills, docs, rules, traces, identity) has been decoupled into the dedicated package: [**`agents-sync`**](https://github.com/Lolaplex/agents-sync).
 
-**1. Host** (VPS / always-on box):
-
-```bash
-# Token is AGENTS_MEMORY_TOKEN in the environment, not a command-line flag.
-agents-memory remote serve --port 8443
-```
-
-**2. Clients** (laptops / workstations):
+`agents-sync` coordinates state across local workstations, laptops, and remote VPS agent servers:
 
 ```bash
-agents-memory connect https://memory.your-domain.com --token <YOUR_SECRET_TOKEN>
+pip install agents-sync
+
+# Connect this node to your cloud vault
+agents-sync connect https://vps.example.com:8765 --token YOUR_TOKEN
+
+# 2-way sync across all stack domains (memory, skills, docs, rules, traces, identity)
+agents-sync sync
 ```
-
-- New slugs append. Same-slug edits: incoming wins. Conflicts land in `staging/sync-conflicts.md`.
-- Project trees sync as `mirror/projects/<slug>/` in the bundle, then merge back into registered clones.
-- Ingest still reads **local** chat folders, then pushes the distilled markdown.
-- `agents-memory disconnect` pulls a last snapshot and restores stdio MCP.
-- After a cleanup, `remote push --replace` (or `remote bump-epoch`) bumps the vault epoch. Older clients replace-pull on the next sync. Local edits since the last baseline land in `staging/epoch-questions.md` (`get_staging_inbox`) and are not pushed back. Set `AGENTS_MEMORY_MIN_CLIENT_VERSION=1.2.0` on the server so 1.1.x writers get HTTP 426.
-
-Layout and merge rules: [`abi/REMOTE.md`](abi/REMOTE.md).
 
 ---
 
@@ -139,7 +130,6 @@ Ops / install / batch. Humans and agents rarely need the vault CRUD verbs — th
 | `agents-memory rules show\|add\|edit\|remove\|set\|check` | Edit hard rules (budgeted) |
 | `agents-memory check` | Mechanical store health (no LLM) |
 | `agents-memory rebuild-index` | Rebuild disposable FTS5 cache (MCP start already rebuilds) |
-| `agents-memory remote …` / `connect` / `disconnect` | Cloud mirror (`connect`/`disconnect` = aliases). `remote pull --replace` matches this machine to the snapshot. `remote push --replace` and `remote bump-epoch` publish a cleaned vault |
 | `agents-memory serve` / `web` | Local viewer / static HTML export |
 | `agents-memory reset --yes` | Clear local caches / temp state |
 | `agents-memory mcp` | stdio MCP clerk |
@@ -159,7 +149,6 @@ Implementation-agnostic layout in [`abi/`](abi/):
 - [`MCP.md`](abi/MCP.md) — tool surface
 - [`INGEST.md`](abi/INGEST.md) — catalog → extract → distill
 - [`INJECTION.md`](abi/INJECTION.md) — host inject
-- [`REMOTE.md`](abi/REMOTE.md) — mirror bundle (and extra project roots)
 
 ---
 

@@ -7,6 +7,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from . import rules as rules_mod
+from .receipt import MemoryReceipt, render_mcp_receipt
 from .store import (
     add_memory as store_add,
     auto_distill as store_auto_distill,
@@ -111,6 +112,11 @@ def add_memory(
     Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
     Revise-in-place kinds (research, decision, adr, implemented) can be initialized with add_memory,
     but subsequent edits to an existing file MUST use write_memory_file.
+
+    Success is the line `Saved to <id>` plus a JSON write receipt (id, path, sha256,
+    bytes, written_at, verified, message) of the bytes read back from disk.
+    A missing file, partial write, or readback mismatch is `Error saving memory: ...`
+    and is not a save.
     """
     try:
         loc = store_add(
@@ -120,7 +126,9 @@ def add_memory(
             project=project,
             collection=collection,
         )
-        return f"Saved to {loc}"
+        if not isinstance(loc, MemoryReceipt):
+            raise RuntimeError("add_memory returned no verified receipt")
+        return render_mcp_receipt(loc, f"Saved to {loc}")
     except Exception as e:
         return f"Error saving memory: {e}"
 
@@ -136,10 +144,17 @@ def read_memory_file(file_id: str) -> str:
 
 @mcp.tool()
 def write_memory_file(file_id: str, content: str) -> str:
-    """Write/overwrite any memory file or rule (e.g. 'user/USER.md', 'rules/user-rules.mdc', 'user/notes/preferences/note.md') and auto-sync immediately across all IDEs and CLIs."""
+    """Write/overwrite any memory file or rule (e.g. 'user/USER.md', 'rules/user-rules.mdc', 'user/notes/preferences/note.md') and auto-sync immediately across all IDEs and CLIs.
+
+    Success is the line `Saved and synced <id>` plus a JSON write receipt of the
+    bytes read back from disk. A missing file, partial write, or readback
+    mismatch is an error, not a save.
+    """
     try:
         loc = store_write_file(file_id, content, auto_sync=True)
-        return f"Saved and synced {loc}"
+        if not isinstance(loc, MemoryReceipt):
+            raise RuntimeError("write_memory_file returned no verified receipt")
+        return render_mcp_receipt(loc, f"Saved and synced {loc}")
     except Exception as e:
         return f"Error writing memory file '{file_id}': {e}"
 

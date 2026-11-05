@@ -152,7 +152,7 @@ def full_spec() -> dict[str, Any]:
             "usage": "python -m agents_memory search QUERY [--project SLUG | --all]",
         },
         "add": {
-            "description": "File a durable fact/note (MCP add_memory mirror).",
+            "description": "File a durable fact/note (MCP add_memory mirror). Prints a verified write receipt.",
             "usage": "python -m agents_memory add TEXT [--kind KIND] [--name STEM] [--project SLUG] [--collection NAME]",
             "aliases": ["save"],
         },
@@ -162,7 +162,7 @@ def full_spec() -> dict[str, Any]:
             "aliases": ["cat", "get"],
         },
         "write": {
-            "description": "Overwrite a memory/rule file (MCP write_memory_file mirror).",
+            "description": "Overwrite a memory/rule file (MCP write_memory_file mirror). Prints a verified write receipt.",
             "usage": "python -m agents_memory write FILE_ID [--file PATH | TEXT...]",
             "aliases": ["put"],
         },

@@ -7,8 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `add_memory` and `write_memory_file` (Python, MCP, and CLI) return a verified write receipt after reading the persisted file back: stable id and path, SHA-256 of the raw bytes, byte count, and a UTC timestamp. The Python value is still the memory id string. MCP and CLI keep the `Saved to` / `Saved and synced` / `Wrote` line and add the receipt JSON.
+
 ### Fixed
 - A corrupt `~/.agents/memory/active_skills.json` is no longer overwritten with an empty config. `load_active_skills_config()` leaves the file untouched, returns the in-memory default, and prints one stderr warning with the path and parse error. `skills enable` and `skills disable` refuse to update a corrupt file until it is fixed or deleted.
+- A memory add, overwrite, append, line delete, or staging removal that does not leave the full text on disk raises `MemoryWriteVerificationError`. MCP and CLI report that as an error and do not print a success line.
 
 ## [1.3.0] - 2026-10-21
 

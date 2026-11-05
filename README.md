@@ -98,8 +98,8 @@ Primary surface. Agents talk to the vault here — not via scraping CLI help.
 | :--- | :--- |
 | `search_memory` | Exact substring, then FTS5 fill. Not chat graves. Known slug → `get_project_memories`. |
 | `get_related` | Follow frontmatter `refs` / `supersedes` / `same_as` from a hit id |
-| `add_memory` | File a typed fact; auto-syncs inject |
-| `read_memory_file` / `write_memory_file` | Raw file by id (`user/USER.md`, `project/<slug>/…`) |
+| `add_memory` | File a typed fact; verified write receipt; auto-syncs inject |
+| `read_memory_file` / `write_memory_file` | Raw file by id (`user/USER.md`, `project/<slug>/…`). Writes return a verified receipt |
 | `get_project_memories` | One slug’s in-tree memory (call when opening a repo) |
 | `list_projects` / `inventory_projects` / `register_project` / `ignore_project` | Project map |
 | `get_staging_inbox` / `distill_batch` / `auto_distill` | Staging → typed memory |

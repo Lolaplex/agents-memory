@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import PACKAGE_DIR, ROOT
+from .receipt import MemoryReceipt, MemoryWriteVerificationError, verify_memory_write
 
 
 def is_engine_repo(repo: Path) -> bool:
@@ -301,6 +302,18 @@ def _write(path: Path, content: str) -> None:
                 tmp_path.unlink()
             except OSError:
                 pass
+
+
+def _expected_persisted_text(content: str) -> str:
+    """Text ``_write`` leaves on disk, before platform newline translation."""
+    return content if content.endswith("\n") else content + "\n"
+
+
+def _persist_memory_file(path: Path, content: str) -> MemoryReceipt:
+    """Write ``content``, read it back, and return a receipt only on a match."""
+    expected = _expected_persisted_text(content)
+    _write(path, content)
+    return verify_memory_write(path, expected, file_id=file_id(path))
 
 
 def splice_region(existing: str, begin: str, end: str, inner: str) -> str:
@@ -2098,17 +2111,22 @@ def read_memory_file(file_id_or_path: str) -> str:
 
 def write_memory_file(
     file_id_or_path: str, content: str, auto_sync: bool = True
-) -> str:
-    """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs."""
+) -> MemoryReceipt:
+    """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs.
+
+    Returns a ``MemoryReceipt`` (a ``str`` of the stable id) only after the
+    persisted bytes are read back and match. A missing, partial, or mismatched
+    write raises ``MemoryWriteVerificationError`` instead of a success value.
+    """
     path = resolve_memory_path(file_id_or_path)
     _refuse_rules_write(path)
     previous = _read(path) if path.is_file() else ""
-    _write(path, content)
+    receipt = _persist_memory_file(path, content)
     _note_memory_write(path, previous, content)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
-    return file_id(path)
+    return receipt
 
 
 def _refuse_rules_write(path: Path) -> None:
@@ -2534,7 +2552,7 @@ def _already_has_fact(text: str, fact: str) -> bool:
     return False
 
 
-def _append_bullet(path: Path, fact: str) -> str:
+def _append_bullet(path: Path, fact: str) -> MemoryReceipt:
     bullet = fact if fact.lstrip().startswith("- ") else f"- {fact}"
     if not path.exists():
         header = (
@@ -2542,29 +2560,30 @@ def _append_bullet(path: Path, fact: str) -> str:
             if path.parent.name == "staging"
             else f"# {_heading_from_stem(path.stem)}\n"
         )
-        _write(path, f"{header}\n{bullet}\n")
+        receipt = _persist_memory_file(path, f"{header}\n{bullet}\n")
         _note_bullet_write(path, bullet)
-        return file_id(path)
+        return receipt
     text = _read(path)
     if _already_has_fact(text, fact):
+        receipt = verify_memory_write(path, text, file_id=file_id(path))
         _note_bullet_write(path, bullet)
-        return file_id(path)
+        return receipt
     body = text.rstrip()
     if body and not body.splitlines()[-1].lstrip().startswith("- "):
         body += "\n"
-    _write(path, body + f"\n{bullet}\n")
+    receipt = _persist_memory_file(path, body + f"\n{bullet}\n")
     _note_bullet_write(path, bullet)
-    return file_id(path)
+    return receipt
 
 
 def _note_bullet_write(path: Path, bullet: str) -> None:
     return
 
 
-def _append_repo_captured(path: Path, fact: str) -> str:
-    text = _read(path)
-    if _already_has_fact(text, fact):
-        return file_id(path)
+def _append_repo_captured(path: Path, fact: str) -> MemoryReceipt:
+    text = _read(path) if path.is_file() else ""
+    if path.is_file() and _already_has_fact(text, fact):
+        return verify_memory_write(path, text, file_id=file_id(path))
     if "## Captured" not in text:
         text = text.rstrip() + "\n\n## Captured\n\n"
     lines = [ln for ln in text.splitlines() if ln.strip() != "- (none yet)"]
@@ -2579,8 +2598,7 @@ def _append_repo_captured(path: Path, fact: str) -> str:
             inserted = True
     if not inserted:
         out.append(f"- {fact}")
-    _write(path, "\n".join(out))
-    return file_id(path)
+    return _persist_memory_file(path, "\n".join(out))
 
 
 def add_memory(
@@ -2590,8 +2608,13 @@ def add_memory(
     project: str = "",
     collection: str = "",
     auto_sync: bool = True,
-) -> str:
-    """File a durable fact. kind+name → taxonomy; project= alone → facts.md (direct fact)."""
+) -> MemoryReceipt:
+    """File a durable fact. kind+name → taxonomy; project= alone → facts.md (direct fact).
+
+    The return value compares equal to the stable memory id. Receipt fields
+    (``sha256``, ``bytes``, ``written_at``, ``verified``) describe the bytes
+    read back after the write. Verification failure raises and does not return.
+    """
     from .ingest_common import scrub
 
     fact = scrub(fact.strip())
@@ -2820,7 +2843,7 @@ def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
         target_idx = line_no - 1
 
     removed = lines.pop(target_idx)
-    _write(path, "\n".join(lines))
+    _persist_memory_file(path, "\n".join(lines))
     _note_removed_line(path, removed)
     clear_memory_cache()
     if auto_sync:
@@ -2912,7 +2935,7 @@ def remove_staging_bullet(
                 continue
             new_lines.append(line)
         if file_modified:
-            _write(path, "\n".join(new_lines))
+            _persist_memory_file(path, "\n".join(new_lines))
             _MEMORY_FILE_CACHE.pop(str(path.resolve()), None)
             return True
     return False
@@ -2926,10 +2949,11 @@ def promote_bullet(
     collection: str = "",
     source_path: str = "",
     auto_sync: bool = True,
-) -> Tuple[str, bool]:
+) -> Tuple[MemoryReceipt, bool]:
     """Promote a staging bullet into a typed memory file and remove it from staging.
 
-    Returns (saved_location, removed_from_staging).
+    Returns ``(saved_location, removed_from_staging)``. ``saved_location`` is a
+    ``MemoryReceipt`` and still compares equal to the stable memory id.
     """
     clean_bullet = bullet.strip().lstrip("-").strip()
     if not clean_bullet:

@@ -222,11 +222,18 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(write_usage, file=sys.stderr)
             return 2
+        from .receipt import MemoryReceipt, render_mcp_receipt
         from .store import write_memory_file
 
         try:
             loc = write_memory_file(ns.file_id.strip(), content)
-            print(f"Wrote {loc}")
+            if not isinstance(loc, MemoryReceipt):
+                print(
+                    f"Error writing memory file '{ns.file_id}': no verified receipt",
+                    file=sys.stderr,
+                )
+                return 1
+            print(render_mcp_receipt(loc, f"Wrote {loc}"))
             return 0
         except Exception as e:
             print(f"Error writing memory file '{ns.file_id}': {e}", file=sys.stderr)
@@ -320,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             ns = parser.parse_args(rest)
         except SystemExit:
             return 2
+        from .receipt import MemoryReceipt, render_mcp_receipt
         from .store import add_memory
 
         try:
@@ -330,7 +338,10 @@ def main(argv: list[str] | None = None) -> int:
                 project=ns.project,
                 collection=ns.collection,
             )
-            print(f"Saved to {loc}")
+            if not isinstance(loc, MemoryReceipt):
+                print("Error saving memory: no verified receipt", file=sys.stderr)
+                return 1
+            print(render_mcp_receipt(loc, f"Saved to {loc}"))
             return 0
         except Exception as e:
             print(f"Error saving memory: {e}", file=sys.stderr)

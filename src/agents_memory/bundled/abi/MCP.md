@@ -18,7 +18,9 @@ Appends staging overflow notice if staging depth >= threshold.
 
 ### `add_memory(fact_or_message, kind="", name="", project="", collection="")`
 
-File a durable fact. See [`KINDS.md`](KINDS.md). Returns the relative path written and auto-syncs across all IDEs/CLIs. For revise-in-place kinds (`research`, `decision`, `adr`, `implemented`), `add_memory` initializes a new file, but rejects appending to an already existing file (`write_memory_file` must be used).
+File a durable fact. See [`KINDS.md`](KINDS.md). Auto-syncs across all IDEs/CLIs. For revise-in-place kinds (`research`, `decision`, `adr`, `implemented`), `add_memory` initializes a new file, but rejects appending to an already existing file (`write_memory_file` must be used).
+
+Success is a verified write receipt ([below](#write-receipts)). The first line stays `Saved to <id>`. The Python return value is still that stable id.
 
 ### `read_memory_file(file_id)`
 
@@ -26,7 +28,27 @@ Read the raw text of any memory or rule file by id (e.g. `user/USER.md`, `rules/
 
 ### `write_memory_file(file_id, content)`
 
-Write/overwrite any memory or rule file and automatically trigger sync to all IDEs/CLIs.
+Write or overwrite any memory or rule file and automatically trigger sync to all IDEs/CLIs.
+
+Success is a verified write receipt ([below](#write-receipts)). The first line stays `Saved and synced <id>`. The Python return value is still that stable id.
+
+### Write receipts
+
+`add_memory` and `write_memory_file` (and the CLI `add` / `write` mirrors) read the file back after the write. They return a receipt only when those bytes match the text that was written. A missing file, a partial write, or a read-back mismatch is an error. The tool result then starts with `Error saving memory:` or `Error writing memory file` and does not include a success line.
+
+The Python object is a `str` of the stable memory id, so existing comparisons and `Saved to {loc}` formatting keep working. Structured fields are attributes and `as_dict()`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema` | string | `agents_memory.write_receipt.v1` |
+| `id` | string | Stable memory id (`user/...`, `project/<slug>/...`, `rules/...`) |
+| `path` | string | Same stable id, not a host filesystem path |
+| `sha256` | string | Lowercase hex SHA-256 of the raw persisted bytes |
+| `bytes` | int | Length of those raw bytes |
+| `written_at` | string | UTC time the read-back succeeded, `YYYY-MM-DDTHH:MM:SSZ` |
+| `verified` | bool | Always `true` on a returned receipt |
+
+MCP and CLI print the legacy line, then one JSON object with those fields plus `message` (the same legacy line). Content is compared exactly, or after normalizing `CR`/`CRLF` to `LF` when that is the only difference. `sha256` and `bytes` always describe the raw file. A line delete and a staging-bullet removal use the same read-back check and raise on mismatch; their existing return text is unchanged.
 
 ### `propose_rule(rule, project="")`
 

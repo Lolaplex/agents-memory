@@ -13,14 +13,14 @@ jobs:
     steps:
       - name: Post feature merge to product webhook
         env:
-          WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_USER: ${{ github.event.pull_request.user.login }}
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
-            echo "::warning::RELEASE_WEBHOOK_URL unset; skip notification"
+            echo "::warning::DISCORD_WEBHOOK_URL unset; skip notification"
             exit 0
           fi
           python3 -c "

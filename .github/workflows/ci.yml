@@ -52,20 +52,5 @@ jobs:
             echo "::warning::CI_WEBHOOK_URL unset; skip notification"
             exit 0
           fi
-          python3 -c "
-          import os, json, urllib.request
-          ref = os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME')
-          run_url = f\"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}\"
-          payload = {
-              'embeds': [{
-                  'title': f\"🔴 CI Failure: {os.environ['GITHUB_REPOSITORY']}\",
-                  'description': f\"Workflow **{os.environ['GITHUB_WORKFLOW']}** failed on \`{ref}\`\",
-                  'url': run_url,
-                  'color': 15158332
-              }]
-          }
-          req = urllib.request.Request(os.environ['WEBHOOK_URL'], 
-                                       data=json.dumps(payload).encode(), 
-                                       headers={'Content-Type': 'application/json', 'User-Agent': 'GitHub-Actions'})
-          urllib.request.urlopen(req)
-          "
+          PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; server=os.environ['GITHUB_SERVER_URL']; repo_url=f'{server}/{repo}'; ref=os.environ.get('GITHUB_HEAD_REF') or os.environ.get('GITHUB_REF_NAME'); run_url=f'{server}/{repo}/actions/runs/{os.environ[\"GITHUB_RUN_ID\"]}'; print(json.dumps({'embeds':[{'title':f'🔴 CI Failure: {repo}','url':run_url,'description':f\"Workflow **{os.environ['GITHUB_WORKFLOW']}** failed on \`{ref}\`\\n[View run]({run_url}) · [Repository]({repo_url})\",'color':15158332}]}))")
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$WEBHOOK_URL"

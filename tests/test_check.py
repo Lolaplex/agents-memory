@@ -4,19 +4,23 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from agents_workspace import Workspace
+
 from agents_memory import check, frontmatter, store
 
 
 class EnvPathTests(unittest.TestCase):
-    def test_env_path_overrides_default(self):
+    def test_memory_path_follows_workspace(self):
         raw = Path(tempfile.mkdtemp())
-        default = Path.home() / ".agents" / "memory"
-        with patch.dict(os.environ, {"AGENTS_MEMORY_PATH": ""}, clear=False):
-            self.assertEqual(store._env_path("AGENTS_MEMORY_PATH", default), default)
-        with patch.dict(os.environ, {"AGENTS_MEMORY_PATH": str(raw)}):
-            self.assertEqual(
-                store._env_path("AGENTS_MEMORY_PATH", default), raw.resolve()
-            )
+        ws = Workspace.from_env({"AGENTS_WORKSPACE_ROOT": str(raw)})
+        self.assertEqual(ws.memory, raw.resolve() / "memory")
+
+    def test_memory_path_env_override(self):
+        raw = Path(tempfile.mkdtemp())
+        ws = Workspace.from_env(
+            {"AGENTS_WORKSPACE_ROOT": str(raw), "AGENTS_MEMORY_PATH": str(raw / "facts")}
+        )
+        self.assertEqual(ws.memory, (raw / "facts").resolve())
 
 
 class FrontmatterSchemaTests(unittest.TestCase):

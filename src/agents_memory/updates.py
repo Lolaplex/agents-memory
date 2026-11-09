@@ -9,6 +9,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+from agents_workspace import Workspace
+
 _TRUTHY = ("1", "true", "yes", "on")
 _CI_KEYS = (
     "CI",
@@ -43,9 +45,9 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 
 def _cache_file(package_name: str) -> Path:
-    override = os.environ.get("AGENTS_HOME")
-    if override:
-        base = Path(override).expanduser().resolve() / "cache"
+    ws = Workspace.from_env()
+    if ws.explicit_root:
+        base = ws.root / "cache"
     else:
         xdg = os.environ.get("XDG_CACHE_HOME")
         base = (

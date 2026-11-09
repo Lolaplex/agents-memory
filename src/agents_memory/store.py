@@ -31,6 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from agents_workspace import Workspace
+
 from . import PACKAGE_DIR, ROOT
 from .receipt import MemoryReceipt, MemoryWriteVerificationError, verify_memory_write
 
@@ -54,14 +56,11 @@ CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
 
 
-def _env_path(name: str, default: Path) -> Path:
-    raw = os.environ.get(name, "").strip()
-    return Path(raw).expanduser().resolve() if raw else default
+_WS = Workspace.from_env()
 
-
-AGENTS_HOME = _env_path("AGENTS_HOME", Path.home() / ".agents")
-AGENTS_RULES = AGENTS_HOME / "rules"
-USER_MEMORY = _env_path("AGENTS_MEMORY_PATH", AGENTS_HOME / "memory")
+AGENTS_HOME = _WS.root
+AGENTS_RULES = _WS.rules
+USER_MEMORY = _WS.memory
 MEMORY = USER_MEMORY
 ORPHANS = USER_MEMORY / "orphans"
 USER_MD = USER_MEMORY / "USER.md"
@@ -75,11 +74,7 @@ LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
 PROJECTS_DIR = USER_MEMORY / "projects"
 EVENTS_DIR = USER_MEMORY / "events"
 CHRONICLE_DIR = EVENTS_DIR / "chronicle"
-CLAUDE_HOME = (
-    AGENTS_HOME / "claude"
-    if os.environ.get("AGENTS_HOME", "").strip()
-    else Path.home() / ".claude"
-)
+CLAUDE_HOME = _WS.claude
 HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
 HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
 

@@ -1993,6 +1993,21 @@ def install_skills() -> List[str]:
         for path in d_targets:
             _write(path, d_text)
             written.append(str(path))
+
+    remote_src = (
+        (ROOT / "skills" / "memory-remote" / "SKILL.md")
+        if (ROOT / "skills" / "memory-remote" / "SKILL.md").is_file()
+        else (PACKAGE_DIR / "bundled" / "skills" / "memory-remote" / "SKILL.md")
+    )
+    if remote_src.is_file():
+        r_text = _read(remote_src)
+        for path in [
+            Path.home() / ".cursor" / "skills" / "memory-remote" / "SKILL.md",
+            Path.home() / ".agents" / "skills" / "memory-remote" / "SKILL.md",
+            Path.home() / ".gemini" / "config" / "skills" / "memory-remote" / "SKILL.md",
+        ]:
+            _write(path, r_text)
+            written.append(str(path))
     return written
 
 

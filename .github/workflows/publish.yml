@@ -65,7 +65,7 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: |
           python - <<'PY'
-          import json, sys, urllib.request
+          import json, subprocess, sys
           try:
               import tomllib
           except ModuleNotFoundError:  # Python 3.10
@@ -89,8 +89,11 @@ jobs:
                   problems.append(f"{spec}: direct URL reference in published metadata")
                   continue
               try:
-                  with urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=20) as response:
-                      have = [Version(v) for v in json.load(response)["releases"]]
+                  body = subprocess.check_output(
+                      ["curl", "-fsS", f"https://pypi.org/pypi/{name}/json"],
+                      timeout=25,
+                  )
+                  have = [Version(v) for v in json.loads(body)["releases"]]
               except Exception:
                   problems.append(f"{spec}: {req.name} is not on PyPI")
                   continue
@@ -136,24 +139,14 @@ jobs:
           WEBHOOK_URL: ${{ secrets.RELEASE_WEBHOOK_URL }}
           PKG: ${{ steps.meta.outputs.name }}
           VER: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           if [ -z "$WEBHOOK_URL" ]; then
             echo "::warning::RELEASE_WEBHOOK_URL unset; skip notification"
             exit 0
           fi
-          python3 - <<'PY'
-          import json, os, urllib.request
-          pkg, ver = os.environ["PKG"], os.environ["VER"]
-          repo = os.environ["GITHUB_REPOSITORY"]
-          payload = {"embeds": [{
-              "title": f"🚀 {pkg} {ver} released",
-              "description": f"[PyPI](https://pypi.org/project/{pkg}/{ver}/) · [GitHub](https://github.com/{repo}/releases/tag/v{ver})",
-              "color": 5763719,
-          }]}
-          req = urllib.request.Request(os.environ["WEBHOOK_URL"], data=json.dumps(payload).encode(),
-                                       headers={"Content-Type": "application/json", "User-Agent": "GitHub-Actions"})
-          urllib.request.urlopen(req)
-          PY
+          PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; server=os.environ['GITHUB_SERVER_URL']; repo_url=f'{server}/{repo}'; tag=os.environ['TAG']; ver=os.environ['VER']; pkg=os.environ['PKG']; run_url=f'{server}/{repo}/actions/runs/{os.environ[\"GITHUB_RUN_ID\"]}'; release_url=f'{server}/{repo}/releases/tag/{tag}'; pypi_url=f'https://pypi.org/project/{pkg}/{ver}/'; print(json.dumps({'embeds':[{'title':f'🚀 Release {tag} Published! — {repo}','url':release_url,'description':f'**{pkg}** `{ver}`\\n[View run]({run_url}) · [Repository]({repo_url}) · [Release]({release_url}) · [PyPI]({pypi_url})','color':5763719}]}))")
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$WEBHOOK_URL"
 
       - name: Notify failure
         if: failure()
@@ -165,15 +158,5 @@ jobs:
             echo "::warning::CI_WEBHOOK_URL unset; skip notification"
             exit 0
           fi
-          python3 - <<'PY'
-          import json, os, urllib.request
-          run_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
-          payload = {"embeds": [{
-              "title": f"❌ Release failed: {os.environ['GITHUB_REPOSITORY']}",
-              "description": f"[View run]({run_url})",
-              "color": 15158332,
-          }]}
-          req = urllib.request.Request(os.environ["WEBHOOK_URL"], data=json.dumps(payload).encode(),
-                                       headers={"Content-Type": "application/json", "User-Agent": "GitHub-Actions"})
-          urllib.request.urlopen(req)
-          PY
+          PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; server=os.environ['GITHUB_SERVER_URL']; repo_url=f'{server}/{repo}'; run_url=f'{server}/{repo}/actions/runs/{os.environ[\"GITHUB_RUN_ID\"]}'; print(json.dumps({'embeds':[{'title':f'🔴 Publish Failure: {repo}','url':run_url,'description':f'Workflow **{os.environ[\"GITHUB_WORKFLOW\"]}** failed\\n[View run]({run_url}) · [Repository]({repo_url})','color':15158332}]}))")
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$WEBHOOK_URL"

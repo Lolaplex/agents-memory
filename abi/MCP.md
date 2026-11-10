@@ -124,7 +124,7 @@ Source: `rules/HARD.md` in the user store (global) and `projects/<slug>/RULES.md
 - **Ingest** (`catalog` / `extract` / `status`): CLI `python -m agents_memory ingest`. Chat graves stay on the workstation.
 - **Index rebuild**: CLI `python -m agents_memory rebuild-index` (MCP start already rebuilds).
 - **Session reads** (`session_snap` / `session_grep` / `session_tail`): [agents-traces](https://github.com/Lolaplex/agents-traces).
-- **Cloud mirror**: CLI `remote serve` / `connect` / `disconnect`. MCP tools still read and write **local** markdown; the bundle is push/pull only. See [`REMOTE.md`](REMOTE.md).
+- **Cloud mirror**: moved to the `agents-sync` package (`connect` / `status` / `sync` / `push` / `pull` / `serve`). MCP tools still read and write **local** markdown; the bundle is push/pull only.
 
 ## Non-goals
 

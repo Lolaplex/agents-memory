@@ -16,7 +16,7 @@ Run both catalog and extract: `python -m agents_memory ingest run`. Status: `pyt
 
 Distill is intentional human/agent work — no auto-promotion to memory. Use `get_staging_inbox` (grouped by source) then `distill_batch` with `source_path` on each item.
 
-**Remote mode:** catalog + extract run on the workstation (chat graves are local); writes auto-push the mirror bundle. Distill runs locally. A noise pass may discard obvious staging noise after extract; leftover bullets still need `distill_batch`. See [`REMOTE.md`](REMOTE.md).
+**Remote mode:** catalog + extract run on the workstation (chat graves are local); writes auto-push the mirror bundle. Distill runs locally. A noise pass may discard obvious staging noise after extract; leftover bullets still need `distill_batch`. Multi-device sync is `agents-sync`.
 
 ## Division of labor
 

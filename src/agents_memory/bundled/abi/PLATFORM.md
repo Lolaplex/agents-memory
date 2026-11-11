@@ -17,7 +17,7 @@ Binding order: **symlink → hardlink → copy**. Copy is last resort and can dr
 
 ## Paths (not Windows-only)
 
-- Live store: `~/.agents/memory` via `Path.home()` — works everywhere.
+- Live store: `<ws>/memory` via `Path.home()` — works everywhere.
 - Zed config: `%APPDATA%/Zed` on Windows, `$XDG_CONFIG_HOME/zed` or `~/.config/zed` elsewhere.
 - VS Code Copilot chats: `%APPDATA%/Code/...` on Windows, `~/.config/Code/...` on Linux.
 - Antigravity brains (under `~/.gemini/`, not `%APPDATA%/Antigravity`): `antigravity/brain/`, `antigravity-ide/brain/`, and/or `antigravity-cli/brain/` — list every root that exists on that machine.

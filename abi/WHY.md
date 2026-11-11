@@ -22,7 +22,7 @@ It is **not**:
 
 The ABI says it plainly: **no embedding database as source of truth, no LLM on write, markdown wins**; optional indexes must be rebuildable from files ([`MCP.md`](MCP.md)). That is the opposite of most RAG stacks and the opposite of “AI organize my vault.”
 
-RAG and full-text search **compose** with this layout: retrieval over `~/.agents/memory` is a **vehicle through the MCP door** — enrichment for delivery, not ownership of truth. The files on disk remain authoritative; the index is disposable.
+RAG and full-text search **compose** with this layout: retrieval over `<ws>/memory` is a **vehicle through the MCP door** — enrichment for delivery, not ownership of truth. The files on disk remain authoritative; the index is disposable.
 
 ## The pipeline is the opposite of a warehouse
 

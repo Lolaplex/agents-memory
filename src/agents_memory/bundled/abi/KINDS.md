@@ -7,19 +7,19 @@ Bare facts with no `kind`/`name` and no `project=` are rejected.
 
 | kind | Path | Notes |
 |------|------|-------|
-| `concept` | `~/.agents/memory/concepts/<name>.md` | Reusable ideas |
-| `entity` | `~/.agents/memory/entities/<name>.md` | Named people, orgs, products |
-| `workflow` | `~/.agents/memory/workflows/<name>.md` | Procedures |
-| `project` | `~/.agents/memory/projects/<slug>/README.md` | Project link card (usually via `register_project`) |
-| `note` | `~/.agents/memory/notes/<collection>/<name>.md` | `collection=` required (guide folders or new folder) |
-| `scratch` | `~/.agents/memory/notes/scratch/<name>.md` | Inbox; distill or delete |
+| `concept` | `<ws>/memory/concepts/<name>.md` | Reusable ideas |
+| `entity` | `<ws>/memory/entities/<name>.md` | Named people, orgs, products |
+| `workflow` | `<ws>/memory/workflows/<name>.md` | Procedures |
+| `project` | `<ws>/memory/projects/<slug>/README.md` | Project link card (usually via `register_project`) |
+| `note` | `<ws>/memory/notes/<collection>/<name>.md` | `collection=` required (guide folders or new folder) |
+| `scratch` | `<ws>/memory/notes/scratch/<name>.md` | Inbox; distill or delete |
 
 ### Temporal kinds (user store)
 
 | kind | Path | Notes |
 |------|------|-------|
-| `chronicle` | `~/.agents/memory/events/chronicle/<name>.md` | Append-only beats — ordered record of what happened |
-| `event` | `~/.agents/memory/events/<name>.md` | Generic append-only event log (optional; chronicle is the primary temporal kind) |
+| `chronicle` | `<ws>/memory/events/chronicle/<name>.md` | Append-only beats — ordered record of what happened |
+| `event` | `<ws>/memory/events/<name>.md` | Generic append-only event log (optional; chronicle is the primary temporal kind) |
 
 ## Project store kinds (`project=` required)
 

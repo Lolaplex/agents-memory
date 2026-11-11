@@ -2,7 +2,7 @@
 
 Version: see [`VERSION`](VERSION)
 
-Chat and brain stores stay on disk in product folders. Ingest turns them into **searchable references** and optional **staging bullets** for distillation into typed memory under `~/.agents/memory`.
+Chat and brain stores stay on disk in product folders. Ingest turns them into **searchable references** and optional **staging bullets** for distillation into typed memory under `<ws>/memory`.
 
 ## Phases (serial)
 
@@ -33,7 +33,7 @@ Source **`id`** is product-specific (`cursor`, `vscode-copilot`, `openai-export`
 
 Same rules for **every** configured path in `ingest.json` — Cursor transcripts, Open AI surfaces, Copilot, Claude Code, Antigravity brains, Pi, Windsurf, Cline, etc. No provider gets wholesale import.
 
-| Phase | What lands in `~/.agents/memory` | What stays on disk |
+| Phase | What lands in `<ws>/memory` | What stays on disk |
 |-------|----------------------------------|--------------------|
 | **Catalog** | `chats-index.md` rows + `entities/chat-source-<id>.md` — **title hints and paths only** | Full jsonl, export shards, brain folders, message sidecars |
 | **Extract** | Filtered **bullets** in `staging/ingest/<id>/captured.md` (revertible inbox, capped per run) | Everything else in the product store |
@@ -43,13 +43,13 @@ Same rules for **every** configured path in `ingest.json` — Cursor transcripts
 
 - Copy transcript bodies, export JSON, or brain jsonl into typed memory or always-on inject
 - Auto-promote staging → memory without explicit distill
-- Index product graves in `search_memory` — it unions markdown under `~/.agents/memory` and registered repos only. Use catalog paths to open the real file on disk
+- Index product graves in `search_memory` — it unions markdown under `<ws>/memory` and registered repos only. Use catalog paths to open the real file on disk
 
 Per source, set `"catalog": false` or `"extract": false` to skip a phase. Extract always uses shared filters (PII, how-tos, code dumps, length, dedupe) — see [Filters](#filters-extract).
 
 ## Config
 
-`~/.agents/memory/ingest.json` (seed from `examples/ingest.example.json`):
+`<ws>/memory/ingest.json` (seed from `examples/ingest.example.json`):
 
 ```json
 {
@@ -107,7 +107,7 @@ Open AI ships **several** local/cloud stores. Only **`openai-export`** (GDPR/dat
 | **GDPR / data export** | `~/Downloads/…` zip or folder with `conversations-*.json` | `kind: openai-export` | One-time export from ChatGPT settings — not live chat |
 | **Codex CLI sessions** | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (`.zst` when cold) | not yet | Live Codex rollouts; internal schema — catalog + user-line extract when added |
 | **ChatGPT desktop app** | `%LOCALAPPDATA%/Packages/OpenAI.ChatGPT-Desktop_*/LocalCache/Roaming/ChatGPT/` (LevelDB / IndexedDB) | not yet | Live app cache — not the GDPR export |
-| **Open AI memory** (`/memory`) | Codex: `~/.codex/memories/`; ChatGPT: product cloud + app (`/memories`, Settings → Personalization) | not ingest | **Their** durable memory layer, not chat logs. Do not wholesale-import. Distill chosen facts into `~/.agents/memory/` (`entities/`, `notes/`) for cross-agent use |
+| **Open AI memory** (`/memory`) | Codex: `~/.codex/memories/`; ChatGPT: product cloud + app (`/memories`, Settings → Personalization) | not ingest | **Their** durable memory layer, not chat logs. Do not wholesale-import. Distill chosen facts into `<ws>/memory/` (`entities/`, `notes/`) for cross-agent use |
 
 `id` / `kind` stay `openai-export` for the GDPR export source (stable staging path). **Label** should read **Open AI — GDPR export**, not “ChatGPT” or generic “OpenAI”.
 
@@ -154,7 +154,7 @@ Per-source `"extract_max_bullets"` overrides the global cap.
 ## Layout
 
 ```
-~/.agents/memory/
+<ws>/memory/
   ingest.json
   ingest/state.json          # last run per source
   chats-index.md             # catalog (references only)

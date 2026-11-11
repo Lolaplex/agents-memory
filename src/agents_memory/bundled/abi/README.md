@@ -41,7 +41,7 @@ Markdown on disk is the **source of truth**. Tools sit above it; they must not b
 
 
 
-Installed copies: `ensure_memory_layout()` writes `abi/LAYOUT.md` → `~/.agents/memory/LAYOUT.md` (copied, not codegen).
+Installed copies: `ensure_memory_layout()` writes `abi/LAYOUT.md` → `<ws>/memory/LAYOUT.md` (copied, not codegen).
 
 
 
@@ -55,7 +55,7 @@ Installed copies: `ensure_memory_layout()` writes `abi/LAYOUT.md` → `~/.agents
 
 | **Shipped in repo** | `abi/*.md`, `skills/memory-sync/SKILL.md` template |
 
-| **Copied on sync** | `~/.agents/memory/LAYOUT.md` ← `abi/LAYOUT.md` |
+| **Copied on sync** | `<ws>/memory/LAYOUT.md` ← `abi/LAYOUT.md` |
 
 | **Generated on sync** | `~/.agents/AGENTS.md`, host always-on rules, per-repo `.agents` inject, skills |
 
@@ -91,7 +91,7 @@ Implementations in other languages should treat `abi/` as normative. Bump [`VERS
 
 ```
 
-~/.agents/memory/          ← identity, project map, cross-cutting notes
+<ws>/memory/          ← identity, project map, cross-cutting notes
 
 <repo>/.agents/memory/     ← that repo's staging, research, plans, decisions (files on write)
 

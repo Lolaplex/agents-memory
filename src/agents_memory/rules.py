@@ -1,6 +1,6 @@
 """Hard rules: one vault file, one renderer, budgeted user-owned writes.
 
-Global rules live in ``<user store>/rules/HARD.md``. A project may add an
+Global rules live in ``<ws>/rules/HARD.md`` (legacy ``<user store>/rules/HARD.md`` read for one release). A project may add an
 overlay in ``<user store>/projects/<slug>/RULES.md``. One rule per line.
 
 Everything that shows rules to an agent (MCP ``instructions``, the first tool
@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import store
 
-RULES_REL = "rules/HARD.md"
+RULES_REL = "rules/HARD.md"  # legacy location inside the memory store (one release)
 PROJECT_RULES_NAME = "RULES.md"
 PROPOSALS_REL = "staging/rule-proposals.md"
 
@@ -107,7 +107,30 @@ def normalize_project(project: Optional[str]) -> str:
 
 
 def global_rules_path() -> Path:
+    """Canonical hard-rules file: ``<ws>/rules/HARD.md`` (with the *.mdc files)."""
+    return store._attr("AGENTS_RULES") / "HARD.md"
+
+
+def _legacy_global_rules_path() -> Path:
     return store.USER_MEMORY / RULES_REL
+
+
+def _rules_read_path(project: Optional[str] = None) -> Path:
+    """Read path honoring the one-release legacy location for the global file."""
+    path = rules_path(project)
+    if project:
+        return path
+    if not path.is_file():
+        legacy = _legacy_global_rules_path()
+        if legacy.is_file():
+            import warnings
+            warnings.warn(
+                f"{legacy} is deprecated; move to {path} (alias removed after one release)",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            return legacy
+    return path
 
 
 def project_rules_path(project: str) -> Path:
@@ -137,7 +160,7 @@ def _norm(path: Path) -> str:
 def is_rules_path(path: Path) -> bool:
     """True for the global rule file or any project overlay in the user store."""
     target = _norm(path)
-    if target == _norm(global_rules_path()):
+    if target in (_norm(global_rules_path()), _norm(_legacy_global_rules_path())):
         return True
     projects_dir = _norm(store.USER_MEMORY / "projects")
     parent = os.path.dirname(target)
@@ -184,7 +207,7 @@ def _rule_line_indexes(lines: List[str]) -> List[int]:
 def load_rules(project: Optional[str] = None) -> List[str]:
     """Rules from the global file, or from one project overlay. Missing file -> []."""
     try:
-        path = rules_path(project)
+        path = _rules_read_path(project)
     except RulesError:
         return []
     if not path.is_file():

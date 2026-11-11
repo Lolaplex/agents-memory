@@ -79,7 +79,7 @@ def injection_spec() -> dict[str, Any]:
             {
                 "path": "~/.agents/AGENTS.md",
                 "from": [
-                    "~/.agents/memory/rules/HARD.md",
+                    "<ws>/rules/HARD.md",
                     "~/.agents/memory/active_skills.json",
                     "~/.agents/memory/USER.md",
                     "~/.agents/memory/PROJECTS.md",

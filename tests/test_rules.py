@@ -44,6 +44,7 @@ class RulesStoreCase(unittest.TestCase):
             patch.object(store, "USER_MD", self.user / "USER.md"),
             patch.object(store, "PROJECTS_MD", self.projects_md),
             patch.object(store, "SCAN_JSON", self.user / "scan.json"),
+            patch.object(store, "AGENTS_RULES", self.user / "rules"),
             patch.object(store, "ORPHANS", self.user / "orphans"),
             patch.object(store, "_finish_store_write", lambda: None),
             patch.dict(
@@ -472,7 +473,7 @@ class CliTests(unittest.TestCase):
         res = self.cli("rules", "set", stdin=over)
         self.assertEqual(res.returncode, 1)
         self.assertIn("Consolidate", res.stderr)
-        self.assertEqual((self.mem / "rules" / "HARD.md").read_text(encoding="utf-8").count("- "), 1)
+        self.assertEqual((self.agents / "rules" / "HARD.md").read_text(encoding="utf-8").count("- "), 1)
 
     def test_help_json_lists_rule_commands(self) -> None:
         spec = json.loads(self.cli("--help-json").stdout)

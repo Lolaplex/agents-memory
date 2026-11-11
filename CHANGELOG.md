@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Hard rules merged into `<ws>/rules/HARD.md` next to the always-on `*.mdc` files; `memory/` is knowledge only. Legacy `<user store>/rules/HARD.md` is still read for one release (DeprecationWarning). `<repo>/.agents` project store stays.
 - Skills and host infra paths resolve via the workspace contract: `skills_dir()` returns `ws.skills` only (no host-wide skills, no `~/.agents/skills`); `mirror_skills_to_zed` copies editor skills into the workspace skills dir; `host_paths.json` lives at `<host>/host_paths.json`; canonical `AGENTS.md`/`CLAUDE.md` inject targets anchor at `<host>/` while editor targets stay in user home. Update-check cache lives at `<host>/cache/updates/`.
 - Memory paths (`USER_MEMORY`, `AGENTS_HOME`, `AGENTS_RULES`, `INDEX_DIR`, `FTS_DB`, and the other store path globals) are no longer frozen at import time. `store`, `index`, `viewer`, and the ingest modules now resolve the workspace per call through `agents_workspace.Workspace.from_env()`, so two workspaces in one process write separate memory trees and separate `.index` databases. The module-level names remain as compatibility attributes (per-workspace values via module `__getattr__`); setting or patching them still overrides the dynamic value.
 

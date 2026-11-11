@@ -56,27 +56,149 @@ CLONE_LEAK_DIRS = (ROOT / "memory", ROOT / "examples")
 LEGACY_MEMORY = ROOT / "memory"
 
 
-_WS = Workspace.from_env()
+class MemoryStore:
+    """Every memory path for one workspace. Paths resolve from the object,
+    never from import-time state, so two workspaces in one process stay apart."""
 
-AGENTS_HOME = _WS.root
-AGENTS_RULES = _WS.rules
-USER_MEMORY = _WS.memory
-MEMORY = USER_MEMORY
-ORPHANS = USER_MEMORY / "orphans"
-USER_MD = USER_MEMORY / "USER.md"
-PROJECTS_MD = USER_MEMORY / "PROJECTS.md"
-SCAN_JSON = USER_MEMORY / "scan.json"
-HOST_PATHS_JSON = USER_MEMORY / "host_paths.json"
-INGEST_JSON = USER_MEMORY / "ingest.json"
-FACTS_MD = USER_MEMORY / "facts.md"
-CHATS_INDEX = USER_MEMORY / "chats-index.md"
-LAYOUT_MD = USER_MEMORY / "LAYOUT.md"
-PROJECTS_DIR = USER_MEMORY / "projects"
-EVENTS_DIR = USER_MEMORY / "events"
-CHRONICLE_DIR = EVENTS_DIR / "chronicle"
-CLAUDE_HOME = _WS.claude
-HOME_AGENTS = AGENTS_HOME / "AGENTS.md"
-HOME_CLAUDE = AGENTS_HOME / "CLAUDE.md"
+    __slots__ = ("ws",)
+
+    def __init__(self, workspace: "Workspace | None" = None) -> None:
+        self.ws = workspace or Workspace.from_env()
+
+    @property
+    def home(self) -> Path:
+        return self.ws.dir
+
+    @property
+    def rules(self) -> Path:
+        return self.ws.rules
+
+    @property
+    def memory(self) -> Path:
+        return self.ws.memory
+
+    @property
+    def index_dir(self) -> Path:
+        return self.ws.memory / ".index"
+
+    @property
+    def fts_db(self) -> Path:
+        return self.index_dir / "fts.sqlite"
+
+    @property
+    def embeddings_db(self) -> Path:
+        return self.index_dir / "embeddings.sqlite"
+
+    @property
+    def orphans(self) -> Path:
+        return self.memory / "orphans"
+
+    @property
+    def user_md(self) -> Path:
+        return self.memory / "USER.md"
+
+    @property
+    def projects_md(self) -> Path:
+        return self.memory / "PROJECTS.md"
+
+    @property
+    def scan_json(self) -> Path:
+        return self.memory / "scan.json"
+
+    @property
+    def host_paths_json(self) -> Path:
+        return self.memory / "host_paths.json"
+
+    @property
+    def ingest_json(self) -> Path:
+        return self.memory / "ingest.json"
+
+    @property
+    def facts_md(self) -> Path:
+        return self.memory / "facts.md"
+
+    @property
+    def chats_index(self) -> Path:
+        return self.memory / "chats-index.md"
+
+    @property
+    def layout_md(self) -> Path:
+        return self.memory / "LAYOUT.md"
+
+    @property
+    def projects_dir(self) -> Path:
+        return self.memory / "projects"
+
+    @property
+    def events_dir(self) -> Path:
+        return self.memory / "events"
+
+    @property
+    def chronicle_dir(self) -> Path:
+        return self.events_dir / "chronicle"
+
+    @property
+    def claude_home(self) -> Path:
+        return self.ws.claude
+
+    @property
+    def home_agents(self) -> Path:
+        return self.home / "AGENTS.md"
+
+    @property
+    def home_claude(self) -> Path:
+        return self.home / "CLAUDE.md"
+
+
+_STORES: dict[str, MemoryStore] = {}
+
+
+def memory_store(workspace: "Workspace | None" = None) -> MemoryStore:
+    """The store for ``workspace`` (env-selected when None), cached per dir."""
+    ws = workspace or Workspace.from_env()
+    key = str(ws.dir.resolve() if ws.dir.exists() else ws.dir)
+    cached = _STORES.get(key)
+    if cached is None or cached.ws is not ws:
+        cached = MemoryStore(ws)
+        _STORES[key] = cached
+    return cached
+
+
+# Deprecated import-time constants. Accessed through module __getattr__ so each
+# read resolves the current env workspace instead of freezing one at import.
+_STORE_ATTRS = {
+    "AGENTS_HOME": "home",
+    "AGENTS_RULES": "rules",
+    "USER_MEMORY": "memory",
+    "MEMORY": "memory",
+    "ORPHANS": "orphans",
+    "USER_MD": "user_md",
+    "PROJECTS_MD": "projects_md",
+    "SCAN_JSON": "scan_json",
+    "HOST_PATHS_JSON": "host_paths_json",
+    "INGEST_JSON": "ingest_json",
+    "FACTS_MD": "facts_md",
+    "CHATS_INDEX": "chats_index",
+    "LAYOUT_MD": "layout_md",
+    "PROJECTS_DIR": "projects_dir",
+    "EVENTS_DIR": "events_dir",
+    "CHRONICLE_DIR": "chronicle_dir",
+    "CLAUDE_HOME": "claude_home",
+    "HOME_AGENTS": "home_agents",
+    "HOME_CLAUDE": "home_claude",
+}
+
+
+def __getattr__(name: str):
+    attr = _STORE_ATTRS.get(name)
+    if attr is not None:
+        return getattr(memory_store(), attr)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _attr(name: str) -> Any:
+    """Module-level path value: a set/patched attr wins, else env resolution."""
+    return getattr(sys.modules[__name__], name)
 
 NOTE_COLLECTIONS = (
     "projects",
@@ -183,10 +305,10 @@ ROW_RE = re.compile(
 
 
 def load_host_paths() -> dict[str, str]:
-    if not HOST_PATHS_JSON.exists():
+    if not _attr("HOST_PATHS_JSON").exists():
         return {}
     try:
-        data = json.loads(_read(HOST_PATHS_JSON))
+        data = json.loads(_read(_attr("HOST_PATHS_JSON")))
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}
@@ -195,7 +317,7 @@ def load_host_paths() -> dict[str, str]:
 def save_host_path(slug: str, path: str) -> None:
     data = load_host_paths()
     data[slug] = str(Path(path).expanduser().resolve())
-    _write(HOST_PATHS_JSON, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    _write(_attr("HOST_PATHS_JSON"), json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 @dataclass
@@ -247,7 +369,7 @@ class Project:
         repo = self.path_obj
         if repo.is_dir():
             return repo / ".agents" / "memory"
-        return ORPHANS / self.slug
+        return _attr("ORPHANS") / self.slug
 
     @property
     def detail_path(self) -> Path:
@@ -255,7 +377,7 @@ class Project:
 
     @property
     def user_link_dir(self) -> Path:
-        return USER_MEMORY / "projects" / self.slug
+        return _attr("USER_MEMORY") / "projects" / self.slug
 
     @property
     def user_link_path(self) -> Path:
@@ -440,7 +562,7 @@ def _is_scaffold_file(path: Path) -> bool:
 def consolidate_repo_leaks() -> List[str]:
     """Move live markdown from the engine clone into ~/.agents/memory; delete clone copies."""
     moved: List[str] = []
-    orphans_doc = ORPHANS / "README.md"
+    orphans_doc = _attr("ORPHANS") / "README.md"
     if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
         _write(orphans_doc, _read(EXAMPLES / "orphans.example.md"))
 
@@ -449,7 +571,7 @@ def consolidate_repo_leaks() -> List[str]:
             return
         if dest.exists() and dest.stat().st_size > 0:
             if src.resolve() != dest.resolve():
-                orphan = ORPHANS / src.name
+                orphan = _attr("ORPHANS") / src.name
                 orphan.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, orphan)
                 moved.append(f"orphan copy {src} -> {orphan}")
@@ -463,14 +585,14 @@ def consolidate_repo_leaks() -> List[str]:
     for clone_root in CLONE_LEAK_DIRS:
         if not clone_root.is_dir():
             continue
-        relocate(clone_root / "USER.md", USER_MD)
-        relocate(clone_root / "PROJECTS.md", PROJECTS_MD)
-        relocate(clone_root / "scan.json", SCAN_JSON)
-        relocate(clone_root / "chats-index.md", CHATS_INDEX)
-        relocate(clone_root / "ingest.json", INGEST_JSON)
+        relocate(clone_root / "USER.md", _attr("USER_MD"))
+        relocate(clone_root / "PROJECTS.md", _attr("PROJECTS_MD"))
+        relocate(clone_root / "scan.json", _attr("SCAN_JSON"))
+        relocate(clone_root / "chats-index.md", _attr("CHATS_INDEX"))
+        relocate(clone_root / "ingest.json", _attr("INGEST_JSON"))
         facts = clone_root / "facts.md"
         if facts.is_file() and not _is_scaffold_file(facts):
-            dest = ORPHANS / "facts.md"
+            dest = _attr("ORPHANS") / "facts.md"
             if dest.exists():
                 for line in _read(facts).splitlines():
                     stripped = line.strip()
@@ -485,7 +607,7 @@ def consolidate_repo_leaks() -> List[str]:
         if projects.is_dir():
             for src in sorted(projects.glob("*.md")):
                 slug = src.stem
-                dest = USER_MEMORY / "projects" / slug / "README.md"
+                dest = _attr("USER_MEMORY") / "projects" / slug / "README.md"
                 relocate(src, dest)
         for child in sorted(clone_root.rglob("*"), reverse=True):
             if child.is_dir() and not any(child.iterdir()):
@@ -509,7 +631,7 @@ def _relocate_engine_staging(captured: Path) -> None:
     ]
     if not bullets:
         return
-    dest = USER_MEMORY / "staging" / "captured.md"
+    dest = _attr("USER_MEMORY") / "staging" / "captured.md"
     dest.parent.mkdir(parents=True, exist_ok=True)
     if not dest.exists():
         _write(dest, STAGING_HEADER + "\n")
@@ -585,14 +707,14 @@ def _merge_relocate(src: Path, dest: Path) -> None:
 
 def migrate_taxonomy() -> None:
     """Folders instead of dump files. Safe to re-run."""
-    projects_root = USER_MEMORY / "projects"
+    projects_root = _attr("USER_MEMORY") / "projects"
     if projects_root.is_dir():
         for src in list(projects_root.glob("*.md")):
             if src.name.lower() == "readme.md":
                 continue
             _relocate(src, projects_root / src.stem / "README.md")
-    notes_root = USER_MEMORY / "notes"
-    known = {p.slug for p in parse_projects()} if PROJECTS_MD.exists() else set()
+    notes_root = _attr("USER_MEMORY") / "notes"
+    known = {p.slug for p in parse_projects()} if _attr("PROJECTS_MD").exists() else set()
     if projects_root.is_dir():
         for child in projects_root.iterdir():
             if child.is_dir():
@@ -606,10 +728,10 @@ def migrate_taxonomy() -> None:
                 _relocate(child, notes_root / "projects" / child.name)
             if child.is_dir() and child.exists() and not any(child.iterdir()):
                 child.rmdir()
-    if FACTS_MD.exists():
+    if _attr("FACTS_MD").exists():
         dest = notes_root / "programming" / "chat-stores.md"
-        if _relocate(FACTS_MD, dest) is False and dest.exists():
-            FACTS_MD.unlink()
+        if _relocate(_attr("FACTS_MD"), dest) is False and dest.exists():
+            _attr("FACTS_MD").unlink()
     for p in parse_projects():
         if is_engine_repo(p.path_obj):
             if not p.user_link_path.exists():
@@ -633,13 +755,13 @@ def migrate_taxonomy() -> None:
 
 def ensure_memory_layout() -> None:
     """Create ~/.agents/memory and copy example scaffolding if missing."""
-    USER_MEMORY.mkdir(parents=True, exist_ok=True)
-    CHRONICLE_DIR.mkdir(parents=True, exist_ok=True)
-    _write(LAYOUT_MD, shipped_layout_text())
-    orphans_doc = ORPHANS / "README.md"
+    _attr("USER_MEMORY").mkdir(parents=True, exist_ok=True)
+    _attr("CHRONICLE_DIR").mkdir(parents=True, exist_ok=True)
+    _write(_attr("LAYOUT_MD"), shipped_layout_text())
+    orphans_doc = _attr("ORPHANS") / "README.md"
     if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
         _write(orphans_doc, _read(EXAMPLES / "orphans.example.md"))
-    notes_readme = USER_MEMORY / "notes" / "README.md"
+    notes_readme = _attr("USER_MEMORY") / "notes" / "README.md"
     if not notes_readme.exists():
         _write(
             notes_readme,
@@ -654,17 +776,17 @@ def ensure_memory_layout() -> None:
             "`<repo>/.agents/memory/`. `staging/` there is an inbox, not memory.\n",
         )
     pairs = (
-        (EXAMPLES / "USER.example.md", USER_MD),
-        (EXAMPLES / "PROJECTS.example.md", PROJECTS_MD),
-        (EXAMPLES / "scan.example.json", SCAN_JSON),
-        (EXAMPLES / "ingest.example.json", INGEST_JSON),
-        (EXAMPLES / "active_skills.example.json", USER_MEMORY / "active_skills.json"),
+        (EXAMPLES / "USER.example.md", _attr("USER_MD")),
+        (EXAMPLES / "PROJECTS.example.md", _attr("PROJECTS_MD")),
+        (EXAMPLES / "scan.example.json", _attr("SCAN_JSON")),
+        (EXAMPLES / "ingest.example.json", _attr("INGEST_JSON")),
+        (EXAMPLES / "active_skills.example.json", _attr("USER_MEMORY") / "active_skills.json"),
     )
     for src, dst in pairs:
         if dst.exists() or not src.exists():
             continue
         _write(dst, _read(src))
-    active_skills_file = USER_MEMORY / "active_skills.json"
+    active_skills_file = _attr("USER_MEMORY") / "active_skills.json"
     if not active_skills_file.exists():
         from .skills import load_active_skills_config
 
@@ -673,11 +795,11 @@ def ensure_memory_layout() -> None:
 
 def load_scan() -> dict[str, Any]:
     ensure_memory_layout()
-    if not SCAN_JSON.exists():
+    if not _attr("SCAN_JSON").exists():
         cfg = default_scan()
         save_scan(cfg)
         return cfg
-    cfg = json.loads(_read(SCAN_JSON))
+    cfg = json.loads(_read(_attr("SCAN_JSON")))
     if not cfg.get("agent_rule_name"):
         cfg["agent_rule_name"] = cfg.get("cursor_rule_name") or DEFAULT_RULE_NAME
     if not cfg.get("roots"):
@@ -702,7 +824,7 @@ def agent_rule_name() -> str:
 
 
 def canonical_agent_rule() -> Path:
-    return AGENTS_RULES / agent_rule_name()
+    return _attr("AGENTS_RULES") / agent_rule_name()
 
 
 def injection_agent_rule() -> Path:
@@ -721,8 +843,8 @@ def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
     """Bind every ``~/.agents/rules/*.mdc`` into host rule slots (e.g. ``~/.cursor/rules/``)."""
     written: List[str] = []
     warnings: List[str] = []
-    AGENTS_RULES.mkdir(parents=True, exist_ok=True)
-    sources = sorted(AGENTS_RULES.glob("*.mdc"), key=lambda p: p.name.lower())
+    _attr("AGENTS_RULES").mkdir(parents=True, exist_ok=True)
+    sources = sorted(_attr("AGENTS_RULES").glob("*.mdc"), key=lambda p: p.name.lower())
     if canonical.exists() and canonical not in sources:
         sources.insert(0, canonical)
     for rules_dir in HOST_RULE_DIRS:
@@ -737,7 +859,7 @@ def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
 
 
 def profile_title() -> str:
-    for line in _read(USER_MD).splitlines():
+    for line in _read(_attr("USER_MD")).splitlines():
         if line.startswith("# "):
             return line[2:].strip()
     return "agent memory"
@@ -858,7 +980,7 @@ def known_host_mcp_paths() -> List[Path]:
 
 
 def user_profile_looks_blank() -> bool:
-    return bool(re.search(r"^- Name:\s*$", _read(USER_MD), re.M))
+    return bool(re.search(r"^- Name:\s*$", _read(_attr("USER_MD")), re.M))
 
 
 def _merge_mcp_server_into_file(path: Path) -> str:
@@ -1128,11 +1250,11 @@ def mirror_skills_to_zed() -> List[str]:
 
 
 def save_scan(cfg: dict[str, Any]) -> None:
-    _write(SCAN_JSON, json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
+    _write(_attr("SCAN_JSON"), json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
 
 
 def parse_projects(md: Optional[str] = None) -> List[Project]:
-    text = md if md is not None else _read(PROJECTS_MD)
+    text = md if md is not None else _read(_attr("PROJECTS_MD"))
     out: List[Project] = []
     for line in text.splitlines():
         m = ROW_RE.match(line.strip())
@@ -1173,7 +1295,7 @@ def render_projects_table(projects: Iterable[Project]) -> str:
 
 def write_projects(projects: List[Project]) -> None:
     rendered = render_projects_table(projects)
-    _write(PROJECTS_MD, rendered)
+    _write(_attr("PROJECTS_MD"), rendered)
 
 
 def _looks_like_project(path: Path) -> bool:
@@ -1586,7 +1708,7 @@ def compact_projects_text(projects: List[Project]) -> str:
 def always_on_body() -> str:
     from .rules import render_rules
 
-    user = _read(USER_MD).strip()
+    user = _read(_attr("USER_MD")).strip()
     rules_block = render_rules()
     skills_note = ""
     try:
@@ -1610,7 +1732,7 @@ def always_on_body() -> str:
     if is_compact_always_on():
         projects = compact_projects_text(parse_projects()).strip()
     else:
-        projects = _read(PROJECTS_MD).strip()
+        projects = _read(_attr("PROJECTS_MD")).strip()
     summary = staging_status_summary()
     nag = summary.get("nag")
     alert_section = ""
@@ -1700,7 +1822,7 @@ def iter_rules_dirs() -> List[Path]:
         seen.add(key)
         out.append(path)
 
-    add(AGENTS_RULES)
+    add(_attr("AGENTS_RULES"))
     for rules_dir in HOST_RULE_DIRS:
         add(rules_dir)
     return out
@@ -1851,13 +1973,13 @@ def bind_dir_to_canonical(
 
 def bind_claude_home(canonical: Path) -> Tuple[List[str], List[str]]:
     """Splice memory into ~/.claude/AGENTS.md. Do not replace a foreign CLAUDE.md."""
-    CLAUDE_HOME.mkdir(parents=True, exist_ok=True)
+    _attr("CLAUDE_HOME").mkdir(parents=True, exist_ok=True)
     written: List[str] = []
     warnings: List[str] = []
     inner = always_on_body()
-    agents = CLAUDE_HOME / "AGENTS.md"
+    agents = _attr("CLAUDE_HOME") / "AGENTS.md"
     written.append(write_agents_file(agents, inner, canonical=canonical))
-    claude = CLAUDE_HOME / "CLAUDE.md"
+    claude = _attr("CLAUDE_HOME") / "CLAUDE.md"
     claude_text = _read(claude) if claude.exists() and not _is_git_symlink_stub(claude) else ""
     if claude_text and has_text_outside_memory_block(claude_text):
         written.append(write_agents_file(claude, inner))
@@ -1927,9 +2049,9 @@ def _machine_paths_block() -> str:
     roots = ", ".join(f"`{r}`" for r in scan_roots()) or "`scan.json` roots"
     return (
         f"Install (engine): `{ROOT}`  \n"
-        f"User memory: `{USER_MEMORY}`  \n"
+        f"User memory: `{_attr('USER_MEMORY')}`  \n"
         f"Project memory: `<repo>/.agents/memory`  \n"
-        f"Agent rule: `{AGENTS_RULES / agent_rule_name()}`  \n"
+        f"Agent rule: `{_attr('AGENTS_RULES') / agent_rule_name()}`  \n"
         f"Scan roots: {roots}\n\n"
         "Scripts (any workspace, after `pip install -e` this clone):\n\n"
         "```powershell\n"
@@ -1996,15 +2118,15 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     written: List[str] = []
     warnings: List[str] = []
     inner = always_on_body()
-    AGENTS_HOME.mkdir(parents=True, exist_ok=True)
-    written.append(write_agents_file(HOME_AGENTS, inner))
-    written.extend(repair_instruction_stub(AGENTS_HOME))
+    _attr("AGENTS_HOME").mkdir(parents=True, exist_ok=True)
+    written.append(write_agents_file(_attr("HOME_AGENTS"), inner))
+    written.extend(repair_instruction_stub(_attr("AGENTS_HOME")))
     for host_agents in (INJECTION_GEMINI, zed_config_dir() / "AGENTS.md"):
-        written.append(write_agents_file(host_agents, inner, canonical=HOME_AGENTS))
-    claude_written, claude_warn = bind_claude_home(HOME_AGENTS)
+        written.append(write_agents_file(host_agents, inner, canonical=_attr("HOME_AGENTS")))
+    claude_written, claude_warn = bind_claude_home(_attr("HOME_AGENTS"))
     written.extend(claude_written)
     warnings.extend(claude_warn)
-    AGENTS_RULES.mkdir(parents=True, exist_ok=True)
+    _attr("AGENTS_RULES").mkdir(parents=True, exist_ok=True)
     rule = canonical_agent_rule()
     _write(rule, agent_rule_text())
     written.append(str(rule))
@@ -2032,12 +2154,12 @@ def line_content_hash(text: str) -> str:
 def file_id(path: Path) -> str:
     path = path.resolve()
     try:
-        rel = path.relative_to(USER_MEMORY.resolve())
+        rel = path.relative_to(_attr("USER_MEMORY").resolve())
         return f"user/{rel.as_posix()}"
     except ValueError:
         pass
     try:
-        rel = path.relative_to(AGENTS_RULES.resolve())
+        rel = path.relative_to(_attr("AGENTS_RULES").resolve())
         return f"rules/{rel.as_posix()}"
     except ValueError:
         pass
@@ -2059,21 +2181,21 @@ def resolve_memory_path(rel: str) -> Path:
         rel = rel[len("memory:"):].strip()
     rel = rel.replace("\\", "/").lstrip("/")
     if rel in ("user/USER.md", "USER.md", "user.md"):
-        return USER_MD
+        return _attr("USER_MD")
     if rel in ("user/PROJECTS.md", "PROJECTS.md", "projects.md"):
-        return PROJECTS_MD
+        return _attr("PROJECTS_MD")
     if rel in ("user/scan.json", "scan.json"):
-        return SCAN_JSON
+        return _attr("SCAN_JSON")
     if rel in ("user/ingest.json", "ingest.json"):
-        return INGEST_JSON
+        return _attr("INGEST_JSON")
     if rel in ("user/active_skills.json", "active_skills.json"):
         from .skills import active_skills_path
 
         return active_skills_path()
     if rel.startswith("rules/"):
-        return (AGENTS_RULES / rel[len("rules/") :]).resolve()
+        return (_attr("AGENTS_RULES") / rel[len("rules/") :]).resolve()
     if rel.startswith("user/"):
-        return (USER_MEMORY / rel[len("user/") :]).resolve()
+        return (_attr("USER_MEMORY") / rel[len("user/") :]).resolve()
     if rel.startswith("project/"):
         rest = rel[len("project/") :]
         slug, _, inner = rest.partition("/")
@@ -2083,7 +2205,7 @@ def resolve_memory_path(rel: str) -> Path:
         if not inner:
             return p.detail_path
         return (p.memory_dir / inner).resolve()
-    legacy = USER_MEMORY / rel
+    legacy = _attr("USER_MEMORY") / rel
     if legacy.exists():
         return legacy
     if rel.startswith("projects/"):
@@ -2092,7 +2214,7 @@ def resolve_memory_path(rel: str) -> Path:
         if p:
             return p.detail_path
     if "/" in rel or "." in rel:
-        return (USER_MEMORY / rel).resolve()
+        return (_attr("USER_MEMORY") / rel).resolve()
     raise FileNotFoundError(rel)
 
 
@@ -2175,7 +2297,7 @@ def project_slug_for_cwd(cwd: Optional[Path] = None) -> str:
 
 
 def iter_user_memory_files() -> List[Path]:
-    return [p for p in _markdown_under(USER_MEMORY) if "mirror" not in p.parts]
+    return [p for p in _markdown_under(_attr("USER_MEMORY")) if "mirror" not in p.parts]
 
 
 def iter_project_memory_files(slug: str = "") -> List[Path]:
@@ -2311,7 +2433,7 @@ def search_memory(query: str, project: str = "", limit: int = 20) -> List[dict]:
     hits: List[dict[str, Any]] = list(first_by_file)
     seen_files = set(seen_first)
 
-    idx = USER_MEMORY / ".index" / "fts.sqlite"
+    idx = _attr("USER_MEMORY") / ".index" / "fts.sqlite"
     if idx.is_file() and len(hits) < limit:
         try:
             from .index import search_hybrid
@@ -2421,16 +2543,16 @@ def memory_file_for(
                 if p.path_obj.is_dir():
                     p.memory_dir.mkdir(parents=True, exist_ok=True)
                     return p.memory_dir / "facts.md"
-                return USER_MEMORY / "notes" / "projects" / slugify_name(slug) / "facts.md"
-        return USER_MEMORY / f"{slugify_name(name or 'facts')}.md"
+                return _attr("USER_MEMORY") / "notes" / "projects" / slugify_name(slug) / "facts.md"
+        return _attr("USER_MEMORY") / f"{slugify_name(name or 'facts')}.md"
 
     if kind == "scratch" or collection == "scratch":
         return (
-            USER_MEMORY / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
+            _attr("USER_MEMORY") / "notes" / "scratch" / f"{slugify_name(name or 'captured')}.md"
         )
 
     if kind in {"staging", "captured"} and not project:
-        return USER_MEMORY / "staging" / f"{slugify_name(name or 'captured')}.md"
+        return _attr("USER_MEMORY") / "staging" / f"{slugify_name(name or 'captured')}.md"
 
     if kind in NOTE_LIFECYCLES:
         if not project:
@@ -2471,22 +2593,22 @@ def memory_file_for(
             coll = collection.strip()
             if coll in registered:
                 return (
-                    USER_MEMORY
+                    _attr("USER_MEMORY")
                     / "notes"
                     / "projects"
                     / slugify_name(coll)
                     / f"{stem}.md"
                 )
-            return USER_MEMORY / "notes" / slugify_name(coll) / f"{stem}.md"
+            return _attr("USER_MEMORY") / "notes" / slugify_name(coll) / f"{stem}.md"
         if project:
             return (
-                USER_MEMORY
+                _attr("USER_MEMORY")
                 / "notes"
                 / "projects"
                 / slugify_name(project)
                 / f"{stem}.md"
             )
-        return USER_MEMORY / "notes" / "scratch" / f"{stem}.md"
+        return _attr("USER_MEMORY") / "notes" / "scratch" / f"{stem}.md"
 
     if kind in {"preference", "preferences"}:
         stem = slugify_name(name or "preferences")
@@ -2494,7 +2616,7 @@ def memory_file_for(
             p = projects_by_slug().get(project)
             if p:
                 return p.memory_dir / "notes" / "preferences" / f"{stem}.md"
-        return USER_MEMORY / "notes" / "preferences" / f"{stem}.md"
+        return _attr("USER_MEMORY") / "notes" / "preferences" / f"{stem}.md"
 
     if kind in {"rule", "rules"}:
         stem = slugify_name(name or "rules")
@@ -2502,7 +2624,7 @@ def memory_file_for(
             p = projects_by_slug().get(project)
             if p:
                 return p.memory_dir / "notes" / "rules" / f"{stem}.md"
-        return AGENTS_RULES / f"{stem}.mdc"
+        return _attr("AGENTS_RULES") / f"{stem}.mdc"
 
     if kind in {"convention", "conventions"}:
         stem = slugify_name(name or "conventions")
@@ -2510,7 +2632,7 @@ def memory_file_for(
             p = projects_by_slug().get(project)
             if p:
                 return p.memory_dir / "notes" / "conventions" / f"{stem}.md"
-        return USER_MEMORY / "notes" / "conventions" / f"{stem}.md"
+        return _attr("USER_MEMORY") / "notes" / "conventions" / f"{stem}.md"
 
     if kind in {"project", "projects"}:
         slug = slugify_name(name or project)
@@ -2518,11 +2640,11 @@ def memory_file_for(
         if p:
             ensure_project_file(p)
             return p.user_link_path
-        return USER_MEMORY / "projects" / slug / "README.md"
+        return _attr("USER_MEMORY") / "projects" / slug / "README.md"
 
     if kind in KIND_FOLDERS:
         stem = slugify_name(name or project)
-        return USER_MEMORY / KIND_FOLDERS[kind] / f"{stem}.md"
+        return _attr("USER_MEMORY") / KIND_FOLDERS[kind] / f"{stem}.md"
 
     if project:
         p = projects_by_slug().get(project)
@@ -2532,7 +2654,7 @@ def memory_file_for(
         if p.path_obj.is_dir():
             p.memory_dir.mkdir(parents=True, exist_ok=True)
             return p.memory_dir / "facts.md"
-        return USER_MEMORY / "notes" / "projects" / slugify_name(project) / "facts.md"
+        return _attr("USER_MEMORY") / "notes" / "projects" / slugify_name(project) / "facts.md"
 
     raise ValueError(KIND_HELP)
 
@@ -2653,11 +2775,11 @@ def get_project_memories(project: str) -> str:
 
 
 def _deleted_log_file() -> Path:
-    return USER_MEMORY / ".deleted.json"
+    return _attr("USER_MEMORY") / ".deleted.json"
 
 
 def _sync_tombstone_file() -> Path:
-    return AGENTS_HOME / ".tombstones.json"
+    return _attr("AGENTS_HOME") / ".tombstones.json"
 
 
 def _now_utc_iso() -> str:
@@ -2669,7 +2791,7 @@ def _now_utc_iso() -> str:
 def bundle_key_for_path(path: Path) -> str:
     """Sync-bundle key for a memory or rule file. Empty when the path is outside the store."""
     try:
-        return path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+        return path.resolve().relative_to(_attr("USER_MEMORY").resolve()).as_posix()
     except ValueError:
         pass
     for proj in parse_projects():
@@ -2679,7 +2801,7 @@ def bundle_key_for_path(path: Path) -> str:
             continue
         return f"mirror/projects/{proj.slug}/{rel_p}"
     try:
-        rel = path.resolve().relative_to(AGENTS_RULES.resolve()).as_posix()
+        rel = path.resolve().relative_to(_attr("AGENTS_RULES").resolve()).as_posix()
     except ValueError:
         return ""
     return f"rules/{rel}"
@@ -2752,7 +2874,7 @@ def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
 
     # Track relative path for synchronization tombstones
     try:
-        rel = path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+        rel = path.resolve().relative_to(_attr("USER_MEMORY").resolve()).as_posix()
         record_local_deletion(rel)
     except ValueError:
         for p in parse_projects():
@@ -2886,15 +3008,15 @@ def remove_staging_bullet(
 
     candidate_paths.extend(
         [
-            USER_MEMORY / "staging" / "captured.md",
-            USER_MEMORY / "staging" / "from-chats.md",
+            _attr("USER_MEMORY") / "staging" / "captured.md",
+            _attr("USER_MEMORY") / "staging" / "from-chats.md",
         ]
     )
-    if (USER_MEMORY / "staging").is_dir():
-        for f in sorted((USER_MEMORY / "staging").glob("*.md")):
+    if (_attr("USER_MEMORY") / "staging").is_dir():
+        for f in sorted((_attr("USER_MEMORY") / "staging").glob("*.md")):
             if f not in candidate_paths:
                 candidate_paths.append(f)
-        for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
+        for f in sorted((_attr("USER_MEMORY") / "staging").rglob("*.md")):
             if f not in candidate_paths:
                 candidate_paths.append(f)
 
@@ -2999,12 +3121,12 @@ def _collect_staging_paths(project: str = "") -> List[Path]:
     else:
         candidate_paths.extend(
             [
-                USER_MEMORY / "staging" / "captured.md",
-                USER_MEMORY / "staging" / "from-chats.md",
+                _attr("USER_MEMORY") / "staging" / "captured.md",
+                _attr("USER_MEMORY") / "staging" / "from-chats.md",
             ]
         )
-        if (USER_MEMORY / "staging").is_dir():
-            for f in sorted((USER_MEMORY / "staging").rglob("*.md")):
+        if (_attr("USER_MEMORY") / "staging").is_dir():
+            for f in sorted((_attr("USER_MEMORY") / "staging").rglob("*.md")):
                 if f.name.startswith("sync-"):
                     continue
                 if f not in candidate_paths:
@@ -3025,7 +3147,7 @@ def _staging_file_meta(path: Path) -> dict[str, str]:
     fid = file_id(path)
     meta = {"file": fid, "ingest_id": "", "source": fid, "project": ""}
     try:
-        rel_u = path.resolve().relative_to(USER_MEMORY.resolve()).as_posix()
+        rel_u = path.resolve().relative_to(_attr("USER_MEMORY").resolve()).as_posix()
     except ValueError:
         rel_u = ""
     if rel_u.startswith("staging/ingest/"):
@@ -3468,7 +3590,7 @@ def get_baton(project: str = "", cwd: str = "") -> str:
     if p:
         baton_path = p.memory_dir / "rituals" / "baton.md"
     else:
-        baton_path = USER_MEMORY / "rituals" / "baton.md"
+        baton_path = _attr("USER_MEMORY") / "rituals" / "baton.md"
     return _read(baton_path).strip()
 
 
@@ -3478,7 +3600,7 @@ def set_baton(text: str, project: str = "", cwd: str = "") -> str:
     if p:
         baton_path = p.memory_dir / "rituals" / "baton.md"
     else:
-        baton_path = USER_MEMORY / "rituals" / "baton.md"
+        baton_path = _attr("USER_MEMORY") / "rituals" / "baton.md"
     _write(baton_path, text)
     sync_injection()
     return str(baton_path)
@@ -3500,7 +3622,7 @@ def append_chronicle(
     date_stamp = now.strftime("%Y-%m-%d")
 
     slug = project.strip() if project.strip() else date_stamp
-    file_path = CHRONICLE_DIR / f"{slug}.md"
+    file_path = _attr("CHRONICLE_DIR") / f"{slug}.md"
 
     line = f"- {emoji} [{ts}] {beat}"
     if refs:

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Memory paths (`USER_MEMORY`, `AGENTS_HOME`, `AGENTS_RULES`, `INDEX_DIR`, `FTS_DB`, and the other store path globals) are no longer frozen at import time. `store`, `index`, `viewer`, and the ingest modules now resolve the workspace per call through `agents_workspace.Workspace.from_env()`, so two workspaces in one process write separate memory trees and separate `.index` databases. The module-level names remain as compatibility attributes (per-workspace values via module `__getattr__`); setting or patching them still overrides the dynamic value.
+
 ### Added
 - `add_memory` and `write_memory_file` (Python, MCP, and CLI) return a verified write receipt after reading the persisted file back: stable id and path, SHA-256 of the raw bytes, byte count, and a UTC timestamp. The Python value is still the memory id string. MCP and CLI keep the `Saved to` / `Saved and synced` / `Wrote` line and add the receipt JSON.
 

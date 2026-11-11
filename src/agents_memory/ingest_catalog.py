@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
+import sys
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 from .ingest_common import chats_index_path, clip, record_phase, write_entity_card
 from .ingest_config import (
@@ -15,7 +16,19 @@ from .ingest_config import (
     load_ingest,
     resolve_source_roots,
 )
-from .store import USER_MEMORY, ensure_memory_layout, _write
+from . import store as _store
+from .store import ensure_memory_layout, _write
+
+
+def __getattr__(name: str):
+    if name == "USER_MEMORY":
+        return _store._attr("USER_MEMORY")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _attr(name: str) -> Any:
+    """Module-level path value: a set/patched attr wins, else env resolution."""
+    return getattr(sys.modules[__name__], name)
 
 Row = Tuple[str, str, str]
 
@@ -362,7 +375,7 @@ def build_index(cfg: dict | None = None) -> Path:
         parts.extend([f"## {title}", "", render_table(["workspace", "title hint", "path"], rows), ""])
 
     index = chats_index_path()
-    USER_MEMORY.mkdir(parents=True, exist_ok=True)
+    _attr("USER_MEMORY").mkdir(parents=True, exist_ok=True)
     _write(index, "\n".join(parts) + "\n")
     return index
 

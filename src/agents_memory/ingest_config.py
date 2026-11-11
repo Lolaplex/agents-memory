@@ -3,13 +3,26 @@ from __future__ import annotations
 
 import glob
 import json
+import sys
 import os
 from pathlib import Path
 from typing import Any, Dict, List
 
+from . import store as _store
 from .store import EXAMPLES, _read
 
-INGEST_EXAMPLE = EXAMPLES / "ingest.example.json"
+
+def __getattr__(name: str):
+    if name == "INGEST_EXAMPLE":
+        return _store.EXAMPLES / "ingest.example.json"
+    if name == "USER_MEMORY":
+        return _store._attr("USER_MEMORY")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _attr(name: str) -> Any:
+    """Module-level path value: a set/patched attr wins, else env resolution."""
+    return getattr(sys.modules[__name__], name)
 
 
 def _expand(path: str) -> Path:
@@ -29,8 +42,8 @@ def _expand_glob(pattern: str) -> List[Path]:
 
 
 def default_ingest() -> dict[str, Any]:
-    if INGEST_EXAMPLE.is_file():
-        return normalize_ingest(json.loads(_read(INGEST_EXAMPLE)))
+    if _attr("INGEST_EXAMPLE").is_file():
+        return normalize_ingest(json.loads(_read(_attr("INGEST_EXAMPLE"))))
     return {"version": 1, "sources": []}
 
 
@@ -128,7 +141,7 @@ def migrate_ingest_legacy_ids() -> List[str]:
     from .store import USER_MEMORY, _read, _write
 
     notes: List[str] = []
-    staging_base = USER_MEMORY / "staging" / "ingest"
+    staging_base = _attr("USER_MEMORY") / "staging" / "ingest"
     for old, new in INGEST_SOURCE_ID_ALIASES.items():
         if old == new:
             continue
@@ -139,7 +152,7 @@ def migrate_ingest_legacy_ids() -> List[str]:
             old_dir.rename(new_dir)
             notes.append(f"migrated staging/ingest/{old} -> {new}")
 
-    state_path = USER_MEMORY / "ingest" / "state.json"
+    state_path = _attr("USER_MEMORY") / "ingest" / "state.json"
     if state_path.is_file():
         try:
             state = json.loads(_read(state_path))
@@ -163,7 +176,7 @@ def migrate_ingest_legacy_ids() -> List[str]:
             notes.append(f"migrated ingest state {old} -> {new}")
         _write(state_path, json.dumps(state, indent=2) + "\n")
 
-    entities = USER_MEMORY / "entities"
+    entities = _attr("USER_MEMORY") / "entities"
     for old, new in INGEST_SOURCE_ID_ALIASES.items():
         if old == new:
             continue
@@ -180,7 +193,7 @@ def migrate_ingest_legacy_ids() -> List[str]:
 def load_ingest(path: Path | None = None) -> dict[str, Any]:
     from .store import USER_MEMORY
 
-    ingest_json = path or (USER_MEMORY / "ingest.json")
+    ingest_json = path or (_attr("USER_MEMORY") / "ingest.json")
     if ingest_json.is_file():
         try:
             return normalize_ingest(json.loads(_read(ingest_json)))

@@ -10,38 +10,56 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import store
 from .store import (
-    CHRONICLE_DIR,
-    PROJECTS_MD,
     SEARCH_ALL,
-    USER_MEMORY,
     Project,
     _read,
     parse_projects,
     resolve_search_project,
 )
 
-INDEX_DIR = USER_MEMORY / ".index"
-FTS_DB = INDEX_DIR / "fts.sqlite"
-EMBEDDINGS_DB = INDEX_DIR / "embeddings.sqlite"
+# Deprecated import-time constants, resolved per call through the env store.
+_INDEX_ATTRS = {
+    "INDEX_DIR": "index_dir",
+    "FTS_DB": "fts_db",
+    "EMBEDDINGS_DB": "embeddings_db",
+}
+_STORE_PASSTHROUGH = {"USER_MEMORY", "CHRONICLE_DIR", "PROJECTS_MD"}
+
+
+def __getattr__(name: str):
+    attr = _INDEX_ATTRS.get(name)
+    if attr is not None:
+        return getattr(store.memory_store(), attr)
+    if name in _STORE_PASSTHROUGH:
+        return getattr(store, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _attr(name: str) -> Any:
+    """Module-level path value: a set/patched attr wins, else env resolution."""
+    return getattr(sys.modules[__name__], name)
 
 
 def ensure_index_dir() -> Path:
-    """Ensure ~/.agents/memory/.index exists and is gitignored."""
-    INDEX_DIR.mkdir(parents=True, exist_ok=True)
-    gi = INDEX_DIR / ".gitignore"
+    """Ensure the workspace memory .index dir exists and is gitignored."""
+    target = store.memory_store().index_dir
+    target.mkdir(parents=True, exist_ok=True)
+    gi = target / ".gitignore"
     if not gi.exists():
         gi.write_text("*\n", encoding="utf-8")
-    return INDEX_DIR
+    return target
 
 
 def get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     ensure_index_dir()
-    target_path = db_path or (INDEX_DIR / "fts.sqlite")
+    target_path = db_path or store.memory_store().fts_db
     target_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target_path), timeout=10.0)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -141,17 +159,17 @@ def parse_frontmatter_and_content(text: str) -> Tuple[Dict[str, Any], str, str, 
 def rebuild_index(db_path: Optional[Path] = None) -> Dict[str, Any]:
     """Crawl user memory + project memory trees and rebuild the FTS index."""
     t0 = time.perf_counter()
-    target_path = db_path or (INDEX_DIR / "fts.sqlite")
+    target_path = db_path or (_attr("INDEX_DIR") / "fts.sqlite")
     conn = get_db(target_path)
 
     # Collect all markdown files
     records: List[Tuple[str, str, str, str, str, str, str, float]] = []
 
     # 1. User memory
-    for p in USER_MEMORY.rglob("*.md"):
+    for p in _attr("USER_MEMORY").rglob("*.md"):
         if ".index" in p.parts or "export" in p.parts:
             continue
-        rel = str(p.relative_to(USER_MEMORY)).replace("\\", "/")
+        rel = str(p.relative_to(_attr("USER_MEMORY"))).replace("\\", "/")
         doc_id = f"user/{rel}"
         try:
             mtime = p.stat().st_mtime
@@ -234,7 +252,7 @@ def search_hybrid(
     if not query.strip():
         return []
 
-    target_path = db_path or (INDEX_DIR / "fts.sqlite")
+    target_path = db_path or (_attr("INDEX_DIR") / "fts.sqlite")
     # Auto-rebuild if db missing
     if not target_path.exists():
         rebuild_index(target_path)
@@ -299,7 +317,7 @@ def get_related(
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Retrieve explicit relations (refs/supersedes/same_as/backlinks) and content-related documents."""
-    target_path = db_path or (INDEX_DIR / "fts.sqlite")
+    target_path = db_path or (_attr("INDEX_DIR") / "fts.sqlite")
     if not target_path.exists():
         rebuild_index(target_path)
 

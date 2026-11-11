@@ -2,12 +2,25 @@
 from __future__ import annotations
 
 import json
+import sys
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List
 
-from .store import USER_MEMORY, _append_bullet, _read, _write
+from . import store as _store
+from .store import _append_bullet, _read, _write
+
+
+def __getattr__(name: str):
+    if name == "USER_MEMORY":
+        return _store._attr("USER_MEMORY")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _attr(name: str) -> Any:
+    """Module-level path value: a set/patched attr wins, else env resolution."""
+    return getattr(sys.modules[__name__], name)
 
 # Expanded bilingual ephemeral chat patterns (EN + DE)
 CHATTER_RE = re.compile(
@@ -189,15 +202,15 @@ CODEISH = re.compile(
 
 
 def staging_path(source_id: str) -> Path:
-    return USER_MEMORY / "staging" / "ingest" / source_id / "captured.md"
+    return _attr("USER_MEMORY") / "staging" / "ingest" / source_id / "captured.md"
 
 
 def ingest_state_path() -> Path:
-    return USER_MEMORY / "ingest" / "state.json"
+    return _attr("USER_MEMORY") / "ingest" / "state.json"
 
 
 def chats_index_path() -> Path:
-    return USER_MEMORY / "chats-index.md"
+    return _attr("USER_MEMORY") / "chats-index.md"
 
 
 def utc_now() -> str:
@@ -232,7 +245,7 @@ def clip(text: str, n: int = 120) -> str:
 
 
 def entity_path(source_id: str) -> Path:
-    return USER_MEMORY / "entities" / f"chat-source-{source_id}.md"
+    return _attr("USER_MEMORY") / "entities" / f"chat-source-{source_id}.md"
 
 
 def staging_header(source_id: str, label: str) -> str:

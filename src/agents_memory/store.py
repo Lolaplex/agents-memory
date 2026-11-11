@@ -106,8 +106,12 @@ class MemoryStore:
         return self.memory / "scan.json"
 
     @property
+    def host_dir(self) -> Path:
+        return self.ws.host.dir
+
+    @property
     def host_paths_json(self) -> Path:
-        return self.memory / "host_paths.json"
+        return self.ws.host.host_paths
 
     @property
     def ingest_json(self) -> Path:
@@ -142,12 +146,16 @@ class MemoryStore:
         return self.ws.claude
 
     @property
+    def skills(self) -> Path:
+        return self.ws.skills
+
+    @property
     def home_agents(self) -> Path:
-        return self.home / "AGENTS.md"
+        return self.ws.host.dir / "AGENTS.md"
 
     @property
     def home_claude(self) -> Path:
-        return self.home / "CLAUDE.md"
+        return self.ws.host.dir / "CLAUDE.md"
 
 
 _STORES: dict[str, MemoryStore] = {}
@@ -168,6 +176,8 @@ def memory_store(workspace: "Workspace | None" = None) -> MemoryStore:
 # read resolves the current env workspace instead of freezing one at import.
 _STORE_ATTRS = {
     "AGENTS_HOME": "home",
+    "HOST_DIR": "host_dir",
+    "AGENTS_SKILLS": "skills",
     "AGENTS_RULES": "rules",
     "USER_MEMORY": "memory",
     "MEMORY": "memory",
@@ -1222,11 +1232,12 @@ def skill_source_roots() -> List[Path]:
 
 
 def zed_skills_root() -> Path:
-    return Path.home() / ".agents" / "skills"
+    """Workspace skills dir — the only skills level (no host-wide skills)."""
+    return _attr("AGENTS_SKILLS")
 
 
 def mirror_skills_to_zed() -> List[str]:
-    """Copy user skills from agent host folders into ~/.agents/skills (Zed global)."""
+    """Copy user skills from editor skill folders into the workspace skills dir."""
     dest_root = zed_skills_root()
     dest_root.mkdir(parents=True, exist_ok=True)
     written: List[str] = []
@@ -2083,7 +2094,6 @@ def install_skills() -> List[str]:
     if text:
         targets = [
             Path.home() / ".cursor" / "skills" / "memory-sync" / "SKILL.md",
-            Path.home() / ".agents" / "skills" / "memory-sync" / "SKILL.md",
             Path.home() / ".gemini" / "config" / "skills" / "memory-sync" / "SKILL.md",
         ]
         for path in targets:
@@ -2099,7 +2109,6 @@ def install_skills() -> List[str]:
         d_text = _read(distill_src)
         d_targets = [
             Path.home() / ".cursor" / "skills" / "memory-distill" / "SKILL.md",
-            Path.home() / ".agents" / "skills" / "memory-distill" / "SKILL.md",
             Path.home()
             / ".gemini"
             / "config"
@@ -2118,9 +2127,9 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     written: List[str] = []
     warnings: List[str] = []
     inner = always_on_body()
-    _attr("AGENTS_HOME").mkdir(parents=True, exist_ok=True)
+    _attr("HOST_DIR").mkdir(parents=True, exist_ok=True)
     written.append(write_agents_file(_attr("HOME_AGENTS"), inner))
-    written.extend(repair_instruction_stub(_attr("AGENTS_HOME")))
+    written.extend(repair_instruction_stub(_attr("HOST_DIR")))
     for host_agents in (INJECTION_GEMINI, zed_config_dir() / "AGENTS.md"):
         written.append(write_agents_file(host_agents, inner, canonical=_attr("HOME_AGENTS")))
     claude_written, claude_warn = bind_claude_home(_attr("HOME_AGENTS"))

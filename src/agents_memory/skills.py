@@ -69,14 +69,7 @@ def skills_dir() -> Path:
     raw = os.environ.get("AGENTS_SKILLS_DIR", "").strip()
     if raw:
         return Path(raw).expanduser().resolve()
-    default_user_memory = (store.AGENTS_HOME / "memory").resolve()
-    try:
-        current_user_memory = store.USER_MEMORY.resolve()
-    except OSError:
-        current_user_memory = store.USER_MEMORY
-    if current_user_memory != default_user_memory:
-        return store.USER_MEMORY.parent / "skills"
-    return store.AGENTS_HOME / "skills"
+    return store.AGENTS_SKILLS
 
 
 def load_active_skills_config() -> Dict[str, Any]:

@@ -93,6 +93,7 @@ class CLIComprehensiveTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.env["AGENTS_HOME"] = str(agents)
+        self.env["AGENTS_MEMORY_DIR"] = str(mem)  # domain override must agree with the ws root
 
         write = self._run_cli(
             "write",

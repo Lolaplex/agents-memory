@@ -1,6 +1,7 @@
 # Agent memory layout
 
 User store `~/.agents/memory` plus `<repo>/.agents/memory`. Search unions all markdown.
+Hard rules live in `<ws>/rules/` — `HARD.md` (canonical) next to the always-on `*.mdc` files. The legacy `<user store>/rules/HARD.md` is still read for one release. `memory/` is knowledge only.
 
 One home per fact. Path encodes where it belongs. No dump files (`facts.md`, `MEMORY.md`).
 

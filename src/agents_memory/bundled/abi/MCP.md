@@ -8,7 +8,7 @@ Version: see [`VERSION`](VERSION).
 
 ### `search_memory(query, project="")`
 
-Search local markdown. **Default (`project` omitted) is the user store only** (`~/.agents/memory`). An unqualified search must not leak every registered clone.
+Search local markdown. **Default (`project` omitted) is the user store only** (`<ws>/memory`). An unqualified search must not leak every registered clone.
 
 - `project=<slug>` — that clone's `<repo>/.agents/memory/` plus the user store.
 - `project=*` (or `all`) — every registered clone plus the user store.

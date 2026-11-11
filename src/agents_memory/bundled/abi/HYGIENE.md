@@ -19,8 +19,8 @@ Every piece of information lives in exactly one lifetime. Promote deliberately; 
 
 Chat bodies, transcripts, brain folders, and export archives remain in their product directories.
 Ingest catalog creates **pointers** (`chats-index.md`). Ingest extract creates **filtered bullets** in staging.
-Neither phase copies bodies into `~/.agents/memory`.
-The derived execution log — tools, messages, live MCP and ingested vendor chats — is **agents-traces** (`~/.agents/traces`). Memory `session_snap` / `session_grep` / `session_tail` read that store. They do not open product jsonl.
+Neither phase copies bodies into `<ws>/memory`.
+The derived execution log — tools, messages, live MCP and ingested vendor chats — is **agents-traces** (`<ws>/traces`). Memory `session_snap` / `session_grep` / `session_tail` read that store. They do not open product jsonl.
 
 Wholesale import — symlink-all-histories, dump-entire-exports — floods search with one-shots and duplicates product stores. We do not want to remember everything ever said.
 
@@ -44,7 +44,7 @@ Who may write what. Violations are bugs, not edge cases.
 |---------|--------|------------|
 | Evidence (product folders) | Product only | agents-memory never writes to chat/brain/export archives |
 | `chats-index.md`, `entities/chat-source-*.md` | Ingest catalog | Pointers and titles. Rebuild from `ingest.json` at any time |
-| `~/.agents/traces` | agents-traces ingest + live interceptor | Conversation/tool log. Memory reads it; memory never writes it |
+| `<ws>/traces` | agents-traces ingest + live interceptor | Conversation/tool log. Memory reads it; memory never writes it |
 | `staging/` | Ingest extract, `add_memory(project=)`, manual | Append bullets. Distill gate before typed memory |
 | Typed memory (`concepts/`, `decisions/`, `notes/`, …) | `promote_bullet`, `distill_batch`, `add_memory(kind=, name=)`, direct file edit | Explicit kind + name required. No auto-promotion from staging |
 | `~/.agents/AGENTS.md`, host rules, per-repo `.agents/` inject | `sync` (generated) | Short identity + project map. Not transcripts, not extracted bullets |
@@ -88,7 +88,7 @@ Any index, embedding store, or search acceleration structure is a **disposable c
 | Markdown is source of truth | Delete the index; rebuild from files; same results |
 | Index never auto-writes memory | A search hit does not become a fact. `suggest_links` proposes; human accepts via explicit `add_memory` with refs |
 | Embedding vectors are optional | FTS is the baseline. Embeddings improve ranking but are not required for correctness |
-| Index location: `~/.agents/memory/.index/` | Gitignored. Not shipped, not synced, not versioned |
+| Index location: `<ws>/memory/.index/` | Gitignored. Not shipped, not synced, not versioned |
 | Rebuild command: `rebuild_index` | Deterministic from current markdown tree. No incremental-only state that can't be reconstructed |
 
 An index that cannot be deleted and rebuilt is a second store. That is a regression.
@@ -190,9 +190,9 @@ Chronicle and ritual kinds extend the memory layout for temporal operations. See
 
 | Kind | Path | Mutability | Purpose |
 |------|------|------------|---------|
-| `chronicle` | `~/.agents/memory/events/chronicle/<slug>.md` | Append-only beats | Ordered record of what happened (not inbox, not decision) |
+| `chronicle` | `<ws>/memory/events/chronicle/<slug>.md` | Append-only beats | Ordered record of what happened (not inbox, not decision) |
 | `ritual` | `<repo>/.agents/memory/rituals/baton.md` | Mutable by ritual MCP only | Session handoff marker — who was here, what was in progress, what to do next |
-| `event` | `~/.agents/memory/events/<name>.md` | Append-only | Generic append-only event log (optional; chronicle is the primary temporal kind) |
+| `event` | `<ws>/memory/events/<name>.md` | Append-only | Generic append-only event log (optional; chronicle is the primary temporal kind) |
 
 Chronicle beats are **observations**, not decisions. A beat records that something happened; it does not prescribe what to do about it. Beats carry optional `refs:` linking to memory files or external ids involved.
 

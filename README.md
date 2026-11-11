@@ -21,7 +21,7 @@
 pip install agents-memory && agents-memory sync --init
 ```
 
-Scaffolds `~/.agents/memory/`, autowires MCP into installed IDEs, and registers assistant skills.
+Scaffolds `<ws>/memory/`, autowires MCP into installed IDEs, and registers assistant skills.
 
 > [!TIP]
 > **🤖 Agent-Driven Setup:**
@@ -37,9 +37,9 @@ Vendors keep chat in product graves (Cursor jsonl, Claude sessions, Antigravity 
 
 | Layer | Where | What lives there |
 | --- | --- | --- |
-| **Global** | `~/.agents/memory/` | `USER.md`, `PROJECTS.md`, concepts, decisions, staging |
+| **Workspace store** | `<ws>/memory/` | `USER.md`, `PROJECTS.md`, concepts, decisions, staging |
 | **Per repo** | `<repo>/.agents/memory/` | facts, ADRs, in-progress work (gitignored) |
-| **Always-on** | host `AGENTS.md` / rules | short inject; agents `search_memory` for the rest |
+| **Always-on** | `<ws>/rules/` + host `AGENTS.md` | short inject; agents `search_memory` for the rest |
 
 **Search.** `search_memory` tries exact substring first, then FTS5 fill. `get_related` follows explicit frontmatter relations (`refs`, `supersedes`, `same_as`), not cosine similarity. Known project slug → `get_project_memories`.
 
@@ -61,7 +61,7 @@ Deeper support is layered — `sync --init` autowires what it finds on disk; ing
 |-------|----------------|-----|
 | **Vault + MCP/CLI** | Full tools (`search_memory`, `add_memory`, …) or CLI mirrors | Any MCP host / any shell |
 | **Autowire on sync** | Merge `agents-memory` into host MCP config; splice always-on `AGENTS.md`; install skills where the host has a slot | Cursor, Claude Code, Claude Desktop, Zed (`context_servers`), Antigravity / Gemini, Windsurf, Codex MCP paths, Roo, Cline |
-| **Always-on / rules** | Marked inject block + bound rules | `~/.agents/AGENTS.md` (canonical); also Gemini, Zed, Claude home; rules → Cursor / Gemini / Windsurf |
+| **Always-on / rules** | Marked inject block + bound rules | ``<host>/AGENTS.md` (canonical; host dir defaults to `~/.agents`); also Gemini, Zed, Claude home; rules → Cursor / Gemini / Windsurf |
 | **Chat ingest** | `ingest catalog` + `extract` → `chats-index.md` + staging (bodies stay in product folders) | Cursor, Claude Code, Antigravity, VS Code Copilot, Windsurf, Roo, Cline, Pi, Open AI GDPR export |
 
 **Ingest ≠ “supports the product.”** Titles/paths + filtered user bullets only — same contract for every source ([`abi/INGEST.md`](abi/INGEST.md)). Distill is still agent/human judgment.
@@ -74,7 +74,7 @@ Deeper support is layered — `sync --init` autowires what it finds on disk; ing
 
 ## Cloud sync (`agents-sync`)
 
-Cloud and multi-device synchronization for `~/.agents/memory/` (and the entire `~/.agents` stack: skills, docs, rules, traces, identity) has been decoupled into the dedicated package: [**`agents-sync`**](https://github.com/Lolaplex/agents-sync).
+Cloud and multi-device synchronization for workspace data (memory, skills, rules, traces) has been decoupled into the dedicated package: [**`agents-sync`**](https://github.com/Lolaplex/agents-sync).
 
 `agents-sync` coordinates state across local workstations, laptops, and remote VPS agent servers:
 
@@ -111,7 +111,7 @@ Sixteen tools. Full contract: [`abi/MCP.md`](abi/MCP.md). Session snap/grep/tail
 
 ### Hard rules
 
-Always-on rules live in `~/.agents/memory/rules/HARD.md`, one imperative rule per line. A project can add `projects/<slug>/RULES.md`. One renderer builds a `<memory_rules>` block for the MCP `instructions`, the first tool result of each session (plus a project's rules on its first project-scoped call), `agents-memory context`, and the synced `AGENTS.md` / agent rule. Budget: 30 lines and 2000 characters globally, 10 lines per project (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). Agents only `propose_rule` into `staging/rule-proposals.md`; the user edits with `agents-memory rules`.
+Always-on hard rules live in `<ws>/rules/HARD.md`, one imperative rule per line. A project can add `projects/<slug>/RULES.md`. One renderer builds a `<memory_rules>` block for the MCP `instructions`, the first tool result of each session (plus a project's rules on its first project-scoped call), `agents-memory context`, and the synced `AGENTS.md` / agent rule. Budget: 30 lines and 2000 characters globally, 10 lines per project (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). Agents only `propose_rule` into `staging/rule-proposals.md`; the user edits with `agents-memory rules`.
 
 ---
 

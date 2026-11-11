@@ -19,11 +19,11 @@ MCP tools: [`MCP.md`](MCP.md).
 | Artifact | Where | How it changes |
 |----------|-------|----------------|
 | `abi/*.md` | Engine repo | Edit in git; version in `abi/VERSION` |
-| `~/.agents/memory/LAYOUT.md` | Live user store | **Copied** from `abi/LAYOUT.md` on sync |
+| `<ws>/memory/LAYOUT.md` | Live user store | **Copied** from `abi/LAYOUT.md` on sync |
 | `~/.agents/AGENTS.md` | User home | **Generated** from `USER.md` + `PROJECTS.md` |
 | Always-on rule | `~/.agents/rules/<name>.mdc` | **Generated** from USER + PROJECTS; hosts bind here |
 | Per-repo `.agents/AGENTS.md` | Registered repos | **Generated** project slice + README only |
-| `memory-sync` skill | host skill dirs + `~/.agents/skills` | **Generated** from template + machine path block |
+| `memory-sync` skill | host skill dirs + `<ws>/skills` | **Generated** from template + machine path block |
 | Host MCP config | e.g. `~/.cursor/mcp.json` | **Merged** on `python -m agents_memory sync --init` |
 
 No roff man page. Use `--help-json` instead of scraping `--help` or README.
@@ -34,7 +34,7 @@ No roff man page. Use `--help-json` instead of scraping `--help` or README.
 
 ```bash
 pip install agents-memory
-# fill ~/.agents/memory/USER.md and scan.json (from examples/*.example.*)
+# fill <ws>/memory/USER.md and scan.json (from examples/*.example.*)
 agents-memory sync --init
 agents-memory inventory
 ```
@@ -43,7 +43,7 @@ agents-memory inventory
 
 ```bash
 python -m pip install -e .
-# fill ~/.agents/memory/USER.md and scan.json (from examples/*.example.*)
+# fill <ws>/memory/USER.md and scan.json (from examples/*.example.*)
 python -m agents_memory consolidate
 python -m agents_memory sync --init
 python -m agents_memory inventory
@@ -58,7 +58,7 @@ pip install -U agents-memory
 agents-memory sync
 ```
 
-Replaces the wheel (including bundled ABI docs, examples, and skill templates). Sync refreshes injection, skills, and copied layout files. Filled `USER.md` and live memory under `~/.agents/memory/` are never overwritten.
+Replaces the wheel (including bundled ABI docs, examples, and skill templates). Sync refreshes injection, skills, and copied layout files. Filled `USER.md` and live memory under `<ws>/memory/` are never overwritten.
 
 ## `python -m agents_memory sync`
 
@@ -99,8 +99,8 @@ Re-run after editing `USER.md`, `PROJECTS.md`, or `scan.json`.
 
 **Skills:**
 
-- Installs `memory-sync` to your Agent skill dirs and `~/.agents/skills`
-- Mirrors other user skills into `~/.agents/skills` (copy if missing)
+- Installs `memory-sync` to your Agent skill dirs and `<ws>/skills`
+- Mirrors other user skills into `<ws>/skills` (copy if missing)
 
 **MCP merge (`--init` only):**
 
@@ -144,5 +144,5 @@ Ingest contract (all providers): catalog → pointers, extract → filtered stag
 1. Durable facts → MCP `add_memory(kind=, name=)` or edit typed markdown in place.
 2. Identity / project map → edit `USER.md` / `PROJECTS.md`, then `python -m agents_memory sync`.
 3. New repo under a scan root → `python -m agents_memory inventory --register` or MCP `register_project`.
-4. Do not commit live `~/.agents/memory` or `<repo>/.agents/memory` (gitignored in registered repos).
+4. Do not commit live `<ws>/memory` or `<repo>/.agents/memory` (gitignored in registered repos).
 5. Prefer `python -m agents_memory --help-json` over README for flags and injection paths.

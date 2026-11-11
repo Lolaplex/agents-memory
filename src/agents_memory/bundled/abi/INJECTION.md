@@ -6,17 +6,17 @@ Agents read short always-on context from markdown instruction files. The memory 
 
 | File | Content |
 |------|---------|
-| `~/.agents/memory/USER.md` | Identity, talk style, stack defaults |
-| `~/.agents/memory/PROJECTS.md` | slug / path / role / stack / status table |
+| `<ws>/memory/USER.md` | Identity, talk style, stack defaults |
+| `<ws>/memory/PROJECTS.md` | slug / path / role / stack / status table |
 | `~/.agents/AGENTS.md` | Generated summary of USER + PROJECTS (+ optional paths block) |
 
 ### Compact always-on (`scan.json`)
 
-When `"compact_always_on": true` (default when omitted), generated inject uses a **one-line-per-project table** (slug, role, stack, status) instead of the full `PROJECTS.md` body. Paths live in `~/.agents/memory/projects/<slug>/README.md` — agents resolve detail via MCP `get_project_memories(project=slug)` or `search_memory`. Set `"compact_always_on": false` in `scan.json` to inject the full projects table including paths.
+When `"compact_always_on": true` (default when omitted), generated inject uses a **one-line-per-project table** (slug, role, stack, status) instead of the full `PROJECTS.md` body. Paths live in `<ws>/memory/projects/<slug>/README.md` — agents resolve detail via MCP `get_project_memories(project=slug)` or `search_memory`. Set `"compact_always_on": false` in `scan.json` to inject the full projects table including paths.
 
 Per-repo injection (when registered): `<repo>/.agents/AGENTS.md` and bound `<repo>/.agents/CLAUDE.md` with project paths and memory pointers.
 
-**Exception:** the agents-memory **engine clone** itself has install instructions at repo-root `AGENTS.md` only. Sync never writes `<engine>/.agents/` or `<engine>/.cursor/`. Project link for the engine lives at `~/.agents/memory/projects/agents-memory/README.md`.
+**Exception:** the agents-memory **engine clone** itself has install instructions at repo-root `AGENTS.md` only. Sync never writes `<engine>/.agents/` or `<engine>/.cursor/`. Project link for the engine lives at `<ws>/memory/projects/agents-memory/README.md`.
 
 ## AGENTS.md / CLAUDE.md binding
 

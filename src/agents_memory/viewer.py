@@ -8,23 +8,33 @@ from __future__ import annotations
 import html
 import http.server
 import json
+import sys
 import re
 import socketserver
 import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from . import store as _store
 from .index import get_related, rebuild_index, search_hybrid
 from .store import (
-    CHRONICLE_DIR,
-    PROJECTS_MD,
-    USER_MEMORY,
     _read,
     get_staging_inbox,
     parse_projects,
 )
 
-EXPORT_DIR = USER_MEMORY / "export"
+
+def __getattr__(name: str):
+    if name == "EXPORT_DIR":
+        return _store._attr("USER_MEMORY") / "export"
+    if name in ("USER_MEMORY", "CHRONICLE_DIR", "PROJECTS_MD"):
+        return getattr(_store, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _attr(name: str) -> Any:
+    """Module-level path value: a set/patched attr wins, else env resolution."""
+    return getattr(sys.modules[__name__], name)
 
 
 def _md_to_html(md_text: str) -> str:
@@ -456,8 +466,8 @@ class MemoryViewerHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/chronicle":
             beats: List[str] = ["# Chronicle Beats\n"]
-            if CHRONICLE_DIR.is_dir():
-                for f in sorted(CHRONICLE_DIR.glob("*.md"), reverse=True):
+            if _attr("CHRONICLE_DIR").is_dir():
+                for f in sorted(_attr("CHRONICLE_DIR").glob("*.md"), reverse=True):
                     beats.append(f"\n## {f.stem}\n" + _read(f))
             else:
                 beats.append("\nNo chronicle events recorded yet.")
@@ -553,7 +563,7 @@ def serve_viewer(host: str = "127.0.0.1", port: int = 8765) -> None:
 
 def export_static_web(dest_dir: Optional[Path] = None) -> Dict[str, Any]:
     """Export memory repository as static HTML website to ~/.agents/memory/export/."""
-    target = dest_dir or EXPORT_DIR
+    target = dest_dir or _attr("EXPORT_DIR")
     target.mkdir(parents=True, exist_ok=True)
 
     rebuild_index()
@@ -595,8 +605,8 @@ def export_static_web(dest_dir: Optional[Path] = None) -> Dict[str, Any]:
 
     # 4. Chronicle page
     beats: List[str] = ["# Chronicle Beats\n"]
-    if CHRONICLE_DIR.is_dir():
-        for f in sorted(CHRONICLE_DIR.glob("*.md"), reverse=True):
+    if _attr("CHRONICLE_DIR").is_dir():
+        for f in sorted(_attr("CHRONICLE_DIR").glob("*.md"), reverse=True):
             beats.append(f"\n## {f.stem}\n" + _read(f))
     (target / "chronicle.html").write_text(
         _generate_page_html("Chronicle Timeline", _md_to_html("\n".join(beats)), active_doc="chronicle"),

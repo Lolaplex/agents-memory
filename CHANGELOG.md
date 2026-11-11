@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
+
+### Changed
 - README + abi/LAYOUT.md describe the workspace store `<ws>/memory` and `<ws>/rules`; no `~/.agents` paths outside migration notes.
 
 ### Changed

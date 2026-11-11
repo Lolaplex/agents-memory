@@ -107,6 +107,8 @@ class AutoTriggeringTests(unittest.TestCase):
 
         with patch("pathlib.Path.home", return_value=user_home), patch.object(
             store, "USER_MEMORY", user_home / ".agents" / "memory"
+        ), patch.object(
+            store, "AGENTS_SKILLS", agents_skills
         ):
             # Ensure skill source exists
             store.sync_injection(include_repos=False)

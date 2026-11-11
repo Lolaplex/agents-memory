@@ -45,17 +45,8 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 
 def _cache_file(package_name: str) -> Path:
-    ws = Workspace.from_env()
-    if ws.explicit_root:
-        base = ws.root / "cache"
-    else:
-        xdg = os.environ.get("XDG_CACHE_HOME")
-        base = (
-            Path(xdg).expanduser().resolve() / "agents"
-            if xdg
-            else Path.home() / ".cache" / "agents"
-        )
-    return base / f"updates-{package_name}.json"
+    host = Workspace.from_env().host
+    return host.cache / "updates" / f"updates-{package_name}.json"
 
 
 def format_notice(package_name: str, current: str, latest: str) -> str:

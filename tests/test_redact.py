@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from io import StringIO
 from pathlib import Path
@@ -20,6 +21,7 @@ from agents_memory import mcp_server, rules, store
 from agents_memory.ingest_common import scrub, write_staging
 from agents_memory.receipt import RECEIPT_FIELDS
 from agents_memory.redact import (
+    MAX_EXTRA_INPUT,
     REDACTED,
     annotate_success,
     clear_redact_cache,
@@ -34,6 +36,7 @@ OPENAI_SHORT = "sk-1234567890"
 OPENAI_LETTERS = "sk-abcdefghijklmnopqrstuvwxyz"
 ANTHROPIC = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz"
 GITHUB = "ghp_123456789012345678901234567890"
+GITHUB_LETTERS = "ghp_" + ("a" * 36)
 GITHUB_PAT = "github_pat_" + ("1a" * 16)
 RESEND = "re_12345678901234567890"
 NETLIFY = "nfp_12345678901234567890"
@@ -64,6 +67,7 @@ VENDOR_SECRETS = (
     OPENAI_LETTERS,
     ANTHROPIC,
     GITHUB,
+    GITHUB_LETTERS,
     GITHUB_PAT,
     RESEND,
     NETLIFY,
@@ -230,6 +234,45 @@ class RedactUnitTests(unittest.TestCase):
         self.assertIn("shorter than 4 characters", notes)
         self.assertNotIn("(unclosed", notes)
         self.assertNotIn("kernel", notes)
+
+    def test_catastrophic_extra_pattern_is_rejected(self) -> None:
+        text = "a" * 24
+        stderr = StringIO()
+        started = time.perf_counter()
+        with patch("sys.stderr", stderr):
+            out = redact_secrets(text, extra_patterns=["(a+)+$"], use_config=False)
+        elapsed = time.perf_counter() - started
+        self.assertLess(elapsed, 0.25)
+        self.assertEqual(out.text, text)
+        self.assertEqual(out.count, 0)
+        self.assertIn("nested quantifiers", stderr.getvalue())
+        self.assertNotIn("(a+)+", stderr.getvalue())
+
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            ambiguous = redact_secrets("a" * 24, extra_patterns=["(a|aa)+"], use_config=False)
+        self.assertEqual(ambiguous.text, "a" * 24)
+        self.assertIn("ambiguous quantifiers", stderr.getvalue())
+
+    def test_extra_patterns_skip_oversized_input(self) -> None:
+        secret = "corp_Abcd1234Wxyz"
+        short = redact_secrets(
+            f"shipped {secret} today",
+            extra_patterns=[r"corp_[A-Za-z0-9]{12}"],
+            use_config=False,
+        )
+        self.assertNotIn(secret, short.text)
+        huge = f"shipped {secret} today " + ("x" * MAX_EXTRA_INPUT)
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            kept = redact_secrets(
+                huge,
+                extra_patterns=[r"corp_[A-Za-z0-9]{12}"],
+                use_config=False,
+            )
+        self.assertIn(secret, kept.text)
+        self.assertEqual(kept.count, 0)
+        self.assertIn("longer than", stderr.getvalue())
 
     def test_sync_module_does_not_redact(self) -> None:
         source = (ROOT / "src" / "agents_memory" / "sync.py").read_text(encoding="utf-8")
@@ -434,12 +477,31 @@ class RedactStorageTests(_Vault):
         stored = (self.user / "notes" / "scratch" / "corp.md").read_text(encoding="utf-8")
         self.assertNotIn(corp, stored)
 
-        with patch.dict(os.environ, {"AGENTS_MEMORY_REDACT_PATTERNS": r"acme_[A-Za-z0-9]{12,}"}):
+        legacy = f"acme_[A-Za-z0-9]{{12,}};;{acme}"
+        with patch.dict(os.environ, {"AGENTS_MEMORY_REDACT_PATTERNS": legacy}):
+            clear_redact_cache()
+            stderr = StringIO()
+            with patch("sys.stderr", stderr):
+                ignored = store.add_memory(
+                    f"legacy {acme} stays",
+                    kind="note",
+                    name="legacy",
+                    auto_sync=False,
+                )
+        self.assertIn("JSON array of strings", stderr.getvalue())
+        self.assertEqual(ignored.secrets_redacted, 0)
+        legacy_file = (self.user / "notes" / "scratch" / "legacy.md").read_text(encoding="utf-8")
+        self.assertIn(acme, legacy_file)
+
+        with patch.dict(
+            os.environ,
+            {"AGENTS_MEMORY_REDACT_PATTERNS": json.dumps([r"acme_[A-Za-z0-9]{12,}"])},
+        ):
             clear_redact_cache()
             store.add_memory(f"other {acme} value", kind="note", name="acme", auto_sync=False)
         stored = (self.user / "notes" / "scratch" / "acme.md").read_text(encoding="utf-8")
         self.assertNotIn(acme, stored)
-        self.assert_tree_clean(corp, acme)
+        self.assert_tree_clean(corp)
 
     def test_broad_config_pattern_does_not_eat_prose(self) -> None:
         (self.user / "redact.json").write_text(

@@ -12,11 +12,14 @@ key is a secret name. Ordinary prose is left alone (``token: preferences``,
 
 Extra patterns are operator config, not product defaults. They come from
 ``<memory>/redact.json`` (``extra_patterns``) and/or
-``AGENTS_MEMORY_REDACT_PATTERNS`` (one regex per line, or ``;;`` on one line).
-``AGENTS_MEMORY_REDACT_CONFIG`` overrides the file path. A pattern that does
-not compile, matches the empty string, is shorter than 4 characters, is longer
-than 200 characters, or matches ordinary prose is skipped. ``sync`` does not
-create the file.
+``AGENTS_MEMORY_REDACT_PATTERNS`` (a JSON array of strings, same shape as
+``AGENTS_TRACE_REDACT_EXTRA``). ``AGENTS_MEMORY_REDACT_CONFIG`` overrides the
+file path. A pattern that does not compile, matches the empty string, is
+shorter than 4 characters, is longer than 200 characters, matches ordinary
+prose, or has nested or ambiguous quantifiers is skipped. Extra patterns are
+not applied to inputs longer than ``MAX_EXTRA_INPUT`` characters. If the
+third-party ``regex`` module is installed, each extra pattern also gets a
+short match timeout. ``sync`` does not create the file.
 
 ``MemoryReceipt.secrets_redacted`` is the count for that write. It is not part
 of the receipt JSON schema. MCP and CLI append a notice only when the count
@@ -31,7 +34,17 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
+
+try:
+    import regex as _regex_mod
+except ImportError:  # optional; stdlib re has no match timeout
+    _regex_mod = None
+
+try:
+    from re import _parser as _re_parser
+except ImportError:  # pragma: no cover - Python 3.10 keeps the public parser name
+    import sre_parse as _re_parser  # type: ignore
 
 REDACTED = "[redacted]"
 CONFIG_NAME = "redact.json"
@@ -39,6 +52,10 @@ ENV_PATTERNS = "AGENTS_MEMORY_REDACT_PATTERNS"
 ENV_CONFIG = "AGENTS_MEMORY_REDACT_CONFIG"
 _MIN_EXTRA = 4
 _MAX_EXTRA = 200
+# Extra patterns never see more than this many characters in one match.
+MAX_EXTRA_INPUT = 8192
+_EXTRA_TIMEOUT_SEC = 0.1
+_REPEAT_OPS = frozenset({"MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT"})
 
 # Prose and placeholder values that sit next to the words password/token/secret
 # and are not credentials. High-confidence keys still replace other values.
@@ -211,9 +228,10 @@ _TOKEN_RES = (
         r"(?![A-Za-z0-9_-])"
     ),
     re.compile(r"(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{22,}"),
-    re.compile(
-        r"(?<![A-Za-z0-9])gh[pousr]_(?=[A-Za-z0-9_]*[0-9])[A-Za-z0-9_]{16,}"
-    ),
+    # Fixed prefix. No digit gate: a letters-only ghp_/gho_/ghu_/ghs_/ghr_
+    # token is still a credential. The body must be at least 16 characters,
+    # so `ghp_` followed by a short word stays.
+    re.compile(r"(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9_]{16,}(?![A-Za-z0-9_])"),
     re.compile(
         r"(?<![A-Za-z0-9])xox[baprs]-(?=[0-9A-Za-z-]*[0-9])"
         r"[0-9A-Za-z-]{10,}(?:-[0-9A-Za-z-]{10,})+"
@@ -565,15 +583,28 @@ def _config_path() -> Optional[Path]:
     return Path(root) / CONFIG_NAME
 
 
-def _split_env(raw: str) -> List[str]:
+def _parse_env_patterns(raw: str) -> List[str]:
+    """``AGENTS_MEMORY_REDACT_PATTERNS`` is a JSON array of strings.
+
+    The same shape as ``AGENTS_TRACE_REDACT_EXTRA``. A line list or ``;;``
+    separator is not accepted.
+    """
     text = (raw or "").strip()
     if not text:
         return []
-    if "\n" in text or "\r" in text:
-        return [line.strip() for line in text.splitlines() if line.strip()]
-    if ";;" in text:
-        return [part.strip() for part in text.split(";;") if part.strip()]
-    return [text]
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        _warn_once(
+            "skipped extra patterns: AGENTS_MEMORY_REDACT_PATTERNS must be a JSON array of strings"
+        )
+        return []
+    if not isinstance(data, list) or not all(isinstance(item, str) for item in data):
+        _warn_once(
+            "skipped extra patterns: AGENTS_MEMORY_REDACT_PATTERNS must be a JSON array of strings"
+        )
+        return []
+    return list(data)
 
 
 def _patterns_from_file(path: Optional[Path]) -> List[str]:
@@ -609,14 +640,14 @@ def _cache_key() -> tuple:
     return (env, str(path), stamp)
 
 
-def _configured_patterns() -> List[re.Pattern[str]]:
+def _configured_patterns() -> List[_ExtraPattern]:
     global _cache
     key = _cache_key()
     with _lock:
         if _cache is not None and _cache[0] == key:
             return _cache[1]
     sources = _patterns_from_file(_config_path())
-    sources.extend(_split_env(os.environ.get(ENV_PATTERNS, "")))
+    sources.extend(_parse_env_patterns(os.environ.get(ENV_PATTERNS, "")))
     compiled = _compile_extra(sources)
     with _lock:
         _cache = (key, compiled)
@@ -635,8 +666,128 @@ def _matches_canary(pattern: re.Pattern[str]) -> bool:
     return any(pattern.search(sample) for sample in _CANARIES)
 
 
-def _compile_extra(sources: Sequence[str]) -> List[re.Pattern[str]]:
-    compiled: List[re.Pattern[str]] = []
+def _op_name(op: Any) -> str:
+    return str(getattr(op, "name", op))
+
+
+def _child_patterns(op: Any, av: Any) -> List[Any]:
+    """Sub-patterns of one regex opcode. Repeats are not descended here."""
+    name = _op_name(op)
+    children: List[Any] = []
+    if name == "SUBPATTERN":
+        children.append(av[-1])
+    elif name == "BRANCH":
+        children.extend(av[1])
+    elif name in {"ASSERT", "ASSERT_NOT"}:
+        body = av[-1]
+        if body is not None and not isinstance(body, int):
+            children.append(body)
+    elif name == "ATOMIC_GROUP":
+        children.append(av)
+    elif name == "GROUPREF_EXISTS":
+        children.append(av[1])
+        if av[2] is not None:
+            children.append(av[2])
+    return children
+
+
+def _has_opcode(nodes: Any, wanted: str) -> bool:
+    for op, av in nodes:
+        if _op_name(op) == wanted:
+            return True
+        for child in _child_patterns(op, av):
+            if _has_opcode(child, wanted):
+                return True
+        if _op_name(op) in _REPEAT_OPS and _has_opcode(av[2], wanted):
+            return True
+    return False
+
+
+def _pattern_risk(nodes: Any, *, in_repeat: bool) -> Optional[str]:
+    """Reject nested quantifiers and quantified alternation.
+
+    ``(a+)+`` is nested. ``(a|aa)+`` is one quantifier over an alternation
+    that can match the same text two ways. Both are catastrophic on stdlib
+    ``re``, which has no match deadline.
+    """
+    for op, av in nodes:
+        name = _op_name(op)
+        if name in _REPEAT_OPS:
+            if in_repeat:
+                return "nested quantifiers"
+            sub = av[2]
+            inner = _pattern_risk(sub, in_repeat=True)
+            if inner:
+                return inner
+            if _has_opcode(sub, "BRANCH"):
+                return "ambiguous quantifiers"
+            continue
+        for child in _child_patterns(op, av):
+            found = _pattern_risk(child, in_repeat=in_repeat)
+            if found:
+                return found
+    return None
+
+
+def _lint_extra(source: str) -> Optional[str]:
+    try:
+        parsed = _re_parser.parse(source)
+    except re.error:
+        return "does not compile"
+    return _pattern_risk(parsed, in_repeat=False)
+
+
+@dataclass(frozen=True)
+class _ExtraPattern:
+    """A user pattern. ``rx`` is the optional ``regex`` module compile."""
+
+    std: re.Pattern[str]
+    rx: Any = None
+
+
+def _timeout_error(exc: BaseException) -> bool:
+    if isinstance(exc, TimeoutError):
+        return True
+    if _regex_mod is None:
+        return False
+    timeout_type = getattr(_regex_mod, "TimeoutError", None)
+    return bool(timeout_type) and isinstance(exc, timeout_type)
+
+
+def _apply_extra(pattern: _ExtraPattern, text: str) -> Tuple[str, int]:
+    if len(text) > MAX_EXTRA_INPUT:
+        _warn_once(
+            f"skipped extra patterns (input longer than {MAX_EXTRA_INPUT} characters)"
+        )
+        return text, 0
+    count = 0
+
+    def repl(match: Any) -> str:
+        nonlocal count
+        span = match.group(0)
+        if not span or span == REDACTED:
+            return span
+        count += 1
+        return REDACTED
+
+    try:
+        if pattern.rx is not None:
+            try:
+                replaced = pattern.rx.sub(repl, text, timeout=_EXTRA_TIMEOUT_SEC)
+            except TypeError:
+                replaced = pattern.std.sub(repl, text)
+        else:
+            replaced = pattern.std.sub(repl, text)
+    except Exception as exc:
+        if _timeout_error(exc):
+            _warn_once("skipped extra pattern (timed out)")
+            return text, 0
+        raise
+    return replaced, count
+
+
+def _compile_extra(sources: Sequence[str]) -> List[_ExtraPattern]:
+    compiled: List[_ExtraPattern] = []
     seen: set[str] = set()
     for raw in sources:
         source = (raw or "").strip()
@@ -652,18 +803,28 @@ def _compile_extra(sources: Sequence[str]) -> List[re.Pattern[str]]:
         if len(source) > _MAX_EXTRA:
             _warn_once(f"skipped extra pattern {label} (longer than 200 characters)")
             continue
+        risk = _lint_extra(source)
+        if risk:
+            _warn_once(f"skipped extra pattern {label} ({risk})")
+            continue
         try:
-            pattern = re.compile(source)
+            std = re.compile(source)
         except re.error:
             _warn_once(f"skipped extra pattern {label} (does not compile)")
             continue
-        if pattern.search("") is not None:
+        if std.search("") is not None:
             _warn_once(f"skipped extra pattern {label} (matches empty string)")
             continue
-        if _matches_canary(pattern):
+        if _matches_canary(std):
             _warn_once(f"skipped extra pattern {label} (matches ordinary prose)")
             continue
-        compiled.append(pattern)
+        rx = None
+        if _regex_mod is not None:
+            try:
+                rx = _regex_mod.compile(source)
+            except Exception:
+                rx = None
+        compiled.append(_ExtraPattern(std=std, rx=rx))
     return compiled
 
 
@@ -672,11 +833,15 @@ def _redact_extra(
     extra_patterns: Optional[Sequence[str]],
     use_config: bool,
 ) -> Tuple[str, int]:
-    patterns: List[re.Pattern[str]] = []
+    patterns: List[_ExtraPattern] = []
     if use_config:
         patterns.extend(_configured_patterns())
     if extra_patterns:
         patterns.extend(_compile_extra(extra_patterns))
     if not patterns:
         return text, 0
-    return _sub_count(text, patterns)
+    count = 0
+    for pattern in patterns:
+        text, n = _apply_extra(pattern, text)
+        count += n
+    return text, count

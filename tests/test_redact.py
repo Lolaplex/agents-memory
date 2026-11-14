@@ -21,7 +21,7 @@ from agents_memory import mcp_server, rules, store
 from agents_memory.ingest_common import scrub, write_staging
 from agents_memory.receipt import RECEIPT_FIELDS
 from agents_memory.redact import (
-    MAX_EXTRA_INPUT,
+    MAX_EXTRA_CHUNK,
     REDACTED,
     annotate_success,
     clear_redact_cache,
@@ -254,25 +254,28 @@ class RedactUnitTests(unittest.TestCase):
         self.assertEqual(ambiguous.text, "a" * 24)
         self.assertIn("ambiguous quantifiers", stderr.getvalue())
 
-    def test_extra_patterns_skip_oversized_input(self) -> None:
+    def test_extra_pattern_covers_late_offset_and_chunk_border(self) -> None:
         secret = "corp_Abcd1234Wxyz"
-        short = redact_secrets(
-            f"shipped {secret} today",
-            extra_patterns=[r"corp_[A-Za-z0-9]{12}"],
-            use_config=False,
-        )
-        self.assertNotIn(secret, short.text)
-        huge = f"shipped {secret} today " + ("x" * MAX_EXTRA_INPUT)
-        stderr = StringIO()
-        with patch("sys.stderr", stderr):
-            kept = redact_secrets(
-                huge,
-                extra_patterns=[r"corp_[A-Za-z0-9]{12}"],
-                use_config=False,
-            )
-        self.assertIn(secret, kept.text)
-        self.assertEqual(kept.count, 0)
-        self.assertIn("longer than", stderr.getvalue())
+        pattern = r"corp_[A-Za-z0-9]{12}"
+        late = ("n" * 20000) + secret + " tail"
+        found = redact_secrets(late, extra_patterns=[pattern], use_config=False)
+        self.assertNotIn(secret, found.text)
+        self.assertEqual(found.count, 1)
+        self.assertEqual(found.text.count(REDACTED), 1)
+        self.assertTrue(found.text.startswith("n" * 20000))
+        self.assertTrue(found.text.endswith(" tail"))
+
+        start = MAX_EXTRA_CHUNK - 8
+        self.assertGreater(start, 0)
+        self.assertLess(start, MAX_EXTRA_CHUNK)
+        self.assertGreater(start + len(secret), MAX_EXTRA_CHUNK)
+        border = ("q" * start) + secret + ("z" * 40)
+        crossed = redact_secrets(border, extra_patterns=[pattern], use_config=False)
+        self.assertNotIn(secret, crossed.text)
+        self.assertEqual(crossed.count, 1)
+        self.assertEqual(crossed.text.count(REDACTED), 1)
+        self.assertTrue(crossed.text.startswith("q" * start))
+        self.assertTrue(crossed.text.endswith("z" * 40))
 
     def test_sync_module_does_not_redact(self) -> None:
         source = (ROOT / "src" / "agents_memory" / "sync.py").read_text(encoding="utf-8")

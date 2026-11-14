@@ -16,10 +16,11 @@ Extra patterns are operator config, not product defaults. They come from
 ``AGENTS_TRACE_REDACT_EXTRA``). ``AGENTS_MEMORY_REDACT_CONFIG`` overrides the
 file path. A pattern that does not compile, matches the empty string, is
 shorter than 4 characters, is longer than 200 characters, matches ordinary
-prose, or has nested or ambiguous quantifiers is skipped. Extra patterns are
-not applied to inputs longer than ``MAX_EXTRA_INPUT`` characters. If the
-third-party ``regex`` module is installed, each extra pattern also gets a
-short match timeout. ``sync`` does not create the file.
+prose, or has nested or ambiguous quantifiers is skipped. Extra patterns run
+on the whole write: chunks of ``MAX_EXTRA_CHUNK`` characters with an overlap
+of ``MAX_EXTRA_MATCH`` (the longest allowed pattern) so a match on a chunk
+border is still seen once. If the third-party ``regex`` module is installed,
+each chunk also gets a short match timeout. ``sync`` does not create the file.
 
 ``MemoryReceipt.secrets_redacted`` is the count for that write. It is not part
 of the receipt JSON schema. MCP and CLI append a notice only when the count
@@ -52,8 +53,11 @@ ENV_PATTERNS = "AGENTS_MEMORY_REDACT_PATTERNS"
 ENV_CONFIG = "AGENTS_MEMORY_REDACT_CONFIG"
 _MIN_EXTRA = 4
 _MAX_EXTRA = 200
-# Extra patterns never see more than this many characters in one match.
-MAX_EXTRA_INPUT = 8192
+# One regex call sees at most this many characters (ReDoS bound).
+MAX_EXTRA_CHUNK = 8192
+# Overlap. A match up to this long that crosses a chunk border is fully
+# inside the next window, and is claimed only once.
+MAX_EXTRA_MATCH = _MAX_EXTRA
 _EXTRA_TIMEOUT_SEC = 0.1
 _REPEAT_OPS = frozenset({"MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT"})
 
@@ -754,36 +758,85 @@ def _timeout_error(exc: BaseException) -> bool:
     return bool(timeout_type) and isinstance(exc, timeout_type)
 
 
-def _apply_extra(pattern: _ExtraPattern, text: str) -> Tuple[str, int]:
-    if len(text) > MAX_EXTRA_INPUT:
-        _warn_once(
-            f"skipped extra patterns (input longer than {MAX_EXTRA_INPUT} characters)"
-        )
-        return text, 0
-    count = 0
+def _chunk_windows(length: int) -> List[Tuple[int, int, int]]:
+    """``(start, end, own_end)`` windows covering ``length``.
 
-    def repl(match: Any) -> str:
-        nonlocal count
-        span = match.group(0)
-        if not span or span == REDACTED:
-            return span
-        count += 1
-        return REDACTED
+    Each window is at most ``MAX_EXTRA_CHUNK`` characters. The next window
+    starts ``MAX_EXTRA_MATCH`` characters before this one ends, so a match no
+    longer than that overlap is fully visible in the window that owns its
+    start. ``own_end`` is the first start index that belongs to a later window.
+    """
+    if length <= 0:
+        return []
+    if length <= MAX_EXTRA_CHUNK:
+        return [(0, length, length)]
+    step = MAX_EXTRA_CHUNK - MAX_EXTRA_MATCH
+    if step < 1:
+        step = 1
+    windows: List[Tuple[int, int, int]] = []
+    pos = 0
+    while pos < length:
+        end = min(pos + MAX_EXTRA_CHUNK, length)
+        own_end = length if end == length else min(pos + step, length)
+        windows.append((pos, end, own_end))
+        if end == length:
+            break
+        pos += step
+    return windows
 
+
+def _finditer(pattern: _ExtraPattern, chunk: str) -> List[Any]:
+    if pattern.rx is not None:
+        try:
+            return list(pattern.rx.finditer(chunk, timeout=_EXTRA_TIMEOUT_SEC))
+        except TypeError:
+            return list(pattern.std.finditer(chunk))
+    return list(pattern.std.finditer(chunk))
+
+
+def _spans_in_window(
+    pattern: _ExtraPattern, text: str, start: int, end: int, own_end: int
+) -> List[Tuple[int, int]]:
     try:
-        if pattern.rx is not None:
-            try:
-                replaced = pattern.rx.sub(repl, text, timeout=_EXTRA_TIMEOUT_SEC)
-            except TypeError:
-                replaced = pattern.std.sub(repl, text)
-        else:
-            replaced = pattern.std.sub(repl, text)
+        matches = _finditer(pattern, text[start:end])
     except Exception as exc:
         if _timeout_error(exc):
             _warn_once("skipped extra pattern (timed out)")
-            return text, 0
+            return []
         raise
-    return replaced, count
+    spans: List[Tuple[int, int]] = []
+    for match in matches:
+        abs_start = start + match.start()
+        abs_end = start + match.end()
+        if abs_start < start or abs_start >= own_end:
+            continue
+        if abs_end > end or abs_end <= abs_start:
+            continue
+        spans.append((abs_start, abs_end))
+    return spans
+
+
+def _apply_spans(text: str, spans: List[Tuple[int, int]]) -> Tuple[str, int]:
+    """Replace non-overlapping spans with ``[redacted]``, from the end."""
+    ordered = sorted(set(spans))
+    merged: List[Tuple[int, int]] = []
+    for start, end in ordered:
+        if merged and start < merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            continue
+        merged.append((start, end))
+    for start, end in reversed(merged):
+        text = text[:start] + REDACTED + text[end:]
+    return text, len(merged)
+
+
+def _apply_extra(pattern: _ExtraPattern, text: str) -> Tuple[str, int]:
+    spans: List[Tuple[int, int]] = []
+    for start, end, own_end in _chunk_windows(len(text)):
+        spans.extend(_spans_in_window(pattern, text, start, end, own_end))
+    if not spans:
+        return text, 0
+    return _apply_spans(text, spans)
 
 
 def _compile_extra(sources: Sequence[str]) -> List[_ExtraPattern]:

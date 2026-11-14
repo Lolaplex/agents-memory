@@ -17,10 +17,14 @@ Extra patterns are operator config, not product defaults. They come from
 file path. A pattern that does not compile, matches the empty string, is
 shorter than 4 characters, is longer than 200 characters, matches ordinary
 prose, or has nested or ambiguous quantifiers is skipped. Extra patterns run
-on the whole write: chunks of ``MAX_EXTRA_CHUNK`` characters with an overlap
-of ``MAX_EXTRA_MATCH`` (the longest allowed pattern) so a match on a chunk
-border is still seen once. If the third-party ``regex`` module is installed,
-each chunk also gets a short match timeout. ``sync`` does not create the file.
+on the whole write in chunks of ``MAX_EXTRA_CHUNK`` characters. The next chunk
+overlaps by ``MAX_EXTRA_MATCH`` characters so a match start near the edge is
+inside a window. That overlap is not a cap on match length. A match that
+reaches the end of its window is matched again at that start on the full
+text, and the whole span is replaced once. If that re-match times out, the
+span still runs at least through the end of the window. If the third-party
+``regex`` module is installed, each chunk and that re-match also get a short
+match timeout. ``sync`` does not create the file.
 
 ``MemoryReceipt.secrets_redacted`` is the count for that write. It is not part
 of the receipt JSON schema. MCP and CLI append a notice only when the count
@@ -53,10 +57,11 @@ ENV_PATTERNS = "AGENTS_MEMORY_REDACT_PATTERNS"
 ENV_CONFIG = "AGENTS_MEMORY_REDACT_CONFIG"
 _MIN_EXTRA = 4
 _MAX_EXTRA = 200
-# One regex call sees at most this many characters (ReDoS bound).
+# One regex search sees at most this many characters (ReDoS bound).
 MAX_EXTRA_CHUNK = 8192
-# Overlap. A match up to this long that crosses a chunk border is fully
-# inside the next window, and is claimed only once.
+# How far the next window overlaps this one. This is the longest allowed
+# pattern, not the longest allowed match. A match that runs past the window
+# is completed on the full text.
 MAX_EXTRA_MATCH = _MAX_EXTRA
 _EXTRA_TIMEOUT_SEC = 0.1
 _REPEAT_OPS = frozenset({"MAX_REPEAT", "MIN_REPEAT", "POSSESSIVE_REPEAT"})
@@ -762,9 +767,10 @@ def _chunk_windows(length: int) -> List[Tuple[int, int, int]]:
     """``(start, end, own_end)`` windows covering ``length``.
 
     Each window is at most ``MAX_EXTRA_CHUNK`` characters. The next window
-    starts ``MAX_EXTRA_MATCH`` characters before this one ends, so a match no
-    longer than that overlap is fully visible in the window that owns its
-    start. ``own_end`` is the first start index that belongs to a later window.
+    starts ``MAX_EXTRA_MATCH`` characters before this one ends, so a start
+    near the edge is still inside the window that owns it. ``own_end`` is the
+    first start index that belongs to a later window. Match length is not
+    limited to the overlap.
     """
     if length <= 0:
         return []
@@ -794,6 +800,37 @@ def _finditer(pattern: _ExtraPattern, chunk: str) -> List[Any]:
     return list(pattern.std.finditer(chunk))
 
 
+def _match_at(pattern: _ExtraPattern, text: str, pos: int) -> Any:
+    """Match ``pattern`` at ``pos`` in the full text. Indexes are absolute."""
+    if pattern.rx is not None:
+        try:
+            return pattern.rx.match(text, pos, timeout=_EXTRA_TIMEOUT_SEC)
+        except TypeError:
+            return pattern.std.match(text, pos)
+    return pattern.std.match(text, pos)
+
+
+def _true_end(pattern: _ExtraPattern, text: str, abs_start: int, window_end: int) -> int:
+    """End of the match that begins at ``abs_start``.
+
+    The window match ran into the chunk edge, so it may be a prefix of a
+    longer match. Re-match the same pattern there on the full text. A timeout
+    or a failed re-match still covers through ``window_end``: a known start
+    is never left raw, and the truncated window slice is not the result we
+    keep when the real end is longer.
+    """
+    try:
+        found = _match_at(pattern, text, abs_start)
+    except Exception as exc:
+        if _timeout_error(exc):
+            _warn_once("extra pattern timed out; redacted through the current window")
+            return window_end
+        raise
+    if found is None or found.start() != abs_start or found.end() <= abs_start:
+        return window_end
+    return found.end()
+
+
 def _spans_in_window(
     pattern: _ExtraPattern, text: str, start: int, end: int, own_end: int
 ) -> List[Tuple[int, int]]:
@@ -805,13 +842,17 @@ def _spans_in_window(
             return []
         raise
     spans: List[Tuple[int, int]] = []
+    claimed: set[int] = set()
     for match in matches:
         abs_start = start + match.start()
         abs_end = start + match.end()
-        if abs_start < start or abs_start >= own_end:
+        if abs_start < start or abs_start >= own_end or abs_end <= abs_start:
             continue
-        if abs_end > end or abs_end <= abs_start:
+        if abs_start in claimed:
             continue
+        claimed.add(abs_start)
+        if abs_end >= end and end < len(text):
+            abs_end = _true_end(pattern, text, abs_start, end)
         spans.append((abs_start, abs_end))
     return spans
 
@@ -831,12 +872,16 @@ def _apply_spans(text: str, spans: List[Tuple[int, int]]) -> Tuple[str, int]:
 
 
 def _apply_extra(pattern: _ExtraPattern, text: str) -> Tuple[str, int]:
-    spans: List[Tuple[int, int]] = []
+    """One span per match start. A later window does not claim that start again."""
+    by_start: dict[int, int] = {}
     for start, end, own_end in _chunk_windows(len(text)):
-        spans.extend(_spans_in_window(pattern, text, start, end, own_end))
-    if not spans:
+        for span_start, span_end in _spans_in_window(pattern, text, start, end, own_end):
+            previous = by_start.get(span_start)
+            if previous is None or span_end > previous:
+                by_start[span_start] = span_end
+    if not by_start:
         return text, 0
-    return _apply_spans(text, spans)
+    return _apply_spans(text, list(by_start.items()))
 
 
 def _compile_extra(sources: Sequence[str]) -> List[_ExtraPattern]:

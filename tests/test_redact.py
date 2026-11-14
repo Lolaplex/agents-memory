@@ -22,6 +22,7 @@ from agents_memory.ingest_common import scrub, write_staging
 from agents_memory.receipt import RECEIPT_FIELDS
 from agents_memory.redact import (
     MAX_EXTRA_CHUNK,
+    MAX_EXTRA_MATCH,
     REDACTED,
     annotate_success,
     clear_redact_cache,
@@ -276,6 +277,49 @@ class RedactUnitTests(unittest.TestCase):
         self.assertEqual(crossed.text.count(REDACTED), 1)
         self.assertTrue(crossed.text.startswith("q" * start))
         self.assertTrue(crossed.text.endswith("z" * 40))
+
+    def test_extra_pattern_completes_long_match_past_window(self) -> None:
+        """A match longer than the overlap is replaced once, not cut at the chunk edge."""
+        pattern = r"tok_[A-Za-z0-9]+"
+        # Last index owned by the first window. A match here runs into the chunk edge.
+        start = MAX_EXTRA_CHUNK - MAX_EXTRA_MATCH - 1
+        self.assertGreater(start, 0)
+
+        def check(secret: str, extra: str) -> None:
+            self.assertGreaterEqual(start + len(secret), MAX_EXTRA_CHUNK)
+            text = ("q" * start) + secret + " tail"
+            out = redact_secrets(text, extra_patterns=[extra], use_config=False)
+            self.assertNotIn(secret, out.text)
+            self.assertEqual(out.count, 1)
+            self.assertEqual(out.text.count(REDACTED), 1)
+            self.assertEqual(out.text, ("q" * start) + REDACTED + " tail")
+
+        for length in (201, 500, 4097, 9000):
+            check("tok_" + ("a" * (length - 4)), pattern)
+        # Starts on the next window's first owned index and runs past that window.
+        on_step = MAX_EXTRA_CHUNK - MAX_EXTRA_MATCH
+        long = "tok_" + ("a" * (9000 - 4))
+        self.assertGreater(on_step + len(long), on_step + MAX_EXTRA_CHUNK)
+        check_at = ("q" * on_step) + long + " tail"
+        stepped = redact_secrets(check_at, extra_patterns=[pattern], use_config=False)
+        self.assertEqual(stepped.text, ("q" * on_step) + REDACTED + " tail")
+        self.assertEqual(stepped.count, 1)
+        # Same lengths, non-ASCII. ``\\w`` matches letters outside ASCII.
+        word = r"tok_\w+"
+        for length in (201, 500, 4097, 9000):
+            check("tok_" + ("字" * (length - 4)), word)
+
+    def test_extra_rematch_timeout_redacts_through_window(self) -> None:
+        start = MAX_EXTRA_CHUNK - MAX_EXTRA_MATCH - 1
+        secret = "tok_" + ("b" * 496)
+        text = ("q" * start) + secret + " tail"
+        with patch("agents_memory.redact._match_at", side_effect=TimeoutError("slow")):
+            out = redact_secrets(text, extra_patterns=[r"tok_[A-Za-z0-9]+"], use_config=False)
+        self.assertNotIn("tok_", out.text)
+        self.assertEqual(out.count, 1)
+        self.assertTrue(out.text.startswith(("q" * start) + REDACTED))
+        # Fail closed covers at least the window. The tail past that edge stays.
+        self.assertIn(text[MAX_EXTRA_CHUNK:], out.text)
 
     def test_sync_module_does_not_redact(self) -> None:
         source = (ROOT / "src" / "agents_memory" / "sync.py").read_text(encoding="utf-8")

@@ -46,9 +46,12 @@ class MemoryReceipt(str):
     String equality, formatting, and containment follow the id
     (``user/...``, ``project/<slug>/...``, ``rules/...``), which is what
     existing callers compare against.
+
+    ``secrets_redacted`` counts secret spans replaced before this write. It is
+    not a field of :meth:`as_dict` (the receipt JSON schema stays stable).
     """
 
-    __slots__ = ("sha256", "_byte_count", "written_at", "verified")
+    __slots__ = ("sha256", "_byte_count", "written_at", "verified", "secrets_redacted")
 
     def __new__(
         cls,
@@ -57,6 +60,7 @@ class MemoryReceipt(str):
         sha256: str,
         byte_count: int,
         written_at: str,
+        secrets_redacted: int = 0,
     ) -> "MemoryReceipt":
         if not isinstance(location, str) or not location:
             raise MemoryWriteVerificationError(
@@ -69,6 +73,7 @@ class MemoryReceipt(str):
         obj._byte_count = int(byte_count)
         obj.written_at = written_at
         obj.verified = True
+        obj.secrets_redacted = int(secrets_redacted)
         return obj
 
     @property

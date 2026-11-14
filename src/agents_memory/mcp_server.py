@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 
 from . import rules as rules_mod
 from .receipt import MemoryReceipt, render_mcp_receipt
+from .redact import annotate_success, redaction_notice
 from .store import (
     add_memory as store_add,
     auto_distill as store_auto_distill,
@@ -110,6 +111,8 @@ def add_memory(
     Sequential 001-topic.md: plans, tasks, waves, roadmap, decisions, lifecycle notes.
     kind=research is topical (input). project= alone writes <repo>/.agents/memory/facts.md (direct fact).
     Do not dump transcripts, emails, phones, tokens, or one-shot how-tos.
+    Tokens, authorization credentials, key=value secrets, and PEM blocks are
+    replaced with [redacted] before the write.
     Revise-in-place kinds (research, decision, adr, implemented) can be initialized with add_memory,
     but subsequent edits to an existing file MUST use write_memory_file.
 
@@ -128,7 +131,9 @@ def add_memory(
         )
         if not isinstance(loc, MemoryReceipt):
             raise RuntimeError("add_memory returned no verified receipt")
-        return render_mcp_receipt(loc, f"Saved to {loc}")
+        return render_mcp_receipt(
+            loc, annotate_success(f"Saved to {loc}", loc.secrets_redacted)
+        )
     except Exception as e:
         return f"Error saving memory: {e}"
 
@@ -148,13 +153,16 @@ def write_memory_file(file_id: str, content: str) -> str:
 
     Success is the line `Saved and synced <id>` plus a JSON write receipt of the
     bytes read back from disk. A missing file, partial write, or readback
-    mismatch is an error, not a save.
+    mismatch is an error, not a save. Tokens, authorization credentials,
+    key=value secrets, and PEM blocks are replaced with [redacted] before the write.
     """
     try:
         loc = store_write_file(file_id, content, auto_sync=True)
         if not isinstance(loc, MemoryReceipt):
             raise RuntimeError("write_memory_file returned no verified receipt")
-        return render_mcp_receipt(loc, f"Saved and synced {loc}")
+        return render_mcp_receipt(
+            loc, annotate_success(f"Saved and synced {loc}", loc.secrets_redacted)
+        )
     except Exception as e:
         return f"Error writing memory file '{file_id}': {e}"
 
@@ -166,16 +174,21 @@ def propose_rule(rule: str, project: str = "") -> str:
     Lands in the user staging inbox (staging/rule-proposals.md). Never edits the
     rule files; the user applies it with `agents-memory rules add`. Use only when the
     user states a durable, always-on rule. Ordinary facts go to add_memory.
+    Secret material in the rule is replaced with [redacted] before it is staged.
     """
     try:
         res = rules_mod.propose_rule(rule, project=project or None)
         usage = res["usage"]
         scope = f"project '{res['project']}'" if res["project"] else "global"
-        return (
+        message = (
             f"Proposed {scope} rule in {res['staged']} for user review "
             f"(current rules: {usage['lines']}/{usage['max_lines']} lines). "
             "The user applies it with `agents-memory rules add`."
         )
+        n = int(res.get("secrets_redacted") or 0)
+        if n:
+            message += f" {redaction_notice(n)}."
+        return message
     except Exception as e:
         return f"Error proposing rule: {e}"
 

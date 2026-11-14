@@ -32,6 +32,8 @@ Write or overwrite any memory or rule file and automatically trigger sync to all
 
 Success is a verified write receipt ([below](#write-receipts)). The first line stays `Saved and synced <id>`. The Python return value is still that stable id.
 
+`add_memory`, `write_memory_file`, and `propose_rule` replace tokens, authorization credentials, `key=value` secrets, and PEM blocks with `[redacted]` before anything is stored. The rest of the text stays. Extra patterns: `<memory>/redact.json` key `extra_patterns`, or `AGENTS_MEMORY_REDACT_PATTERNS`. See [`HYGIENE.md`](HYGIENE.md). The success line gains `(N secrets replaced with [redacted])` only when a replacement happened. The receipt JSON schema does not change.
+
 ### Write receipts
 
 `add_memory` and `write_memory_file` (and the CLI `add` / `write` mirrors) read the file back after the write. They return a receipt only when those bytes match the text that was written. A missing file, a partial write, or a read-back mismatch is an error. The tool result then starts with `Error saving memory:` or `Error writing memory file` and does not include a success line.

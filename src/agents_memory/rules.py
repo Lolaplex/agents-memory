@@ -377,6 +377,9 @@ def _require_user_intent(user_intent: bool) -> None:
 
 
 def _write_rules(text: str, slug: str) -> Path:
+    from .redact import redact_secrets
+
+    text = redact_secrets(text).text
     path = rules_path(slug)
     previous = path.read_text(encoding="utf-8") if path.is_file() else ""
     check_budget(parse_rules(text), slug, previous=parse_rules(previous) if previous else None)
@@ -404,8 +407,10 @@ def _current_lines(project: str) -> List[str]:
 def add_rule(rule: str, project: Optional[str] = None, *, user_intent: bool = False) -> Path:
     """Append one rule; drops the matching staged proposal if there is one."""
     _require_user_intent(user_intent)
+    from .redact import redact_secrets
+
     slug = normalize_project(project)
-    text = _clean_rule(rule)
+    text = _clean_rule(redact_secrets(_clean_rule(rule)).text)
     lines = _current_lines(slug)
     if text.lower() in {r.lower() for r in parse_rules("\n".join(lines))}:
         raise RulesError(f"rule already present: {text}")
@@ -434,7 +439,9 @@ def _replace_rule_line(
     if new_rule is None:
         del lines[pos]
     else:
-        lines[pos] = f"- {_clean_rule(new_rule)}"
+        from .redact import redact_secrets
+
+        lines[pos] = f"- {_clean_rule(redact_secrets(_clean_rule(new_rule)).text)}"
     path = _write_rules("\n".join(lines) + "\n", slug)
     store._finish_store_write()
     return path
@@ -463,9 +470,12 @@ def proposal_bullet(rule: str, project: Optional[str] = None) -> str:
 def propose_rule(rule: str, project: Optional[str] = None) -> Dict[str, Any]:
     """Append a rule proposal to the user staging inbox. Never touches rule files."""
     from .ingest_common import scrub
+    from .redact import redact_secrets
 
     slug = normalize_project(project)
-    text = _clean_rule(scrub(_clean_rule(rule)))
+    cleaned = _clean_rule(rule)
+    red = redact_secrets(cleaned)
+    text = _clean_rule(scrub(red.text))
     path = proposals_path()
     loc = store._append_bullet(path, proposal_bullet(text, slug))
     store.clear_memory_cache()
@@ -476,6 +486,7 @@ def propose_rule(rule: str, project: Optional[str] = None) -> Dict[str, Any]:
         "rule": text,
         "project": slug or None,
         "usage": budget_usage(current, slug),
+        "secrets_redacted": red.count,
     }
 
 

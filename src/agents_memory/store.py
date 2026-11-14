@@ -1305,7 +1305,19 @@ def render_projects_table(projects: Iterable[Project]) -> str:
 
 
 def write_projects(projects: List[Project]) -> None:
-    rendered = render_projects_table(projects)
+    from .redact import redact_secrets
+
+    cleaned = [
+        Project(
+            slug=p.slug,
+            path=p.path,
+            role=redact_secrets(p.role).text,
+            stack=redact_secrets(p.stack).text,
+            status=redact_secrets(p.status).text,
+        )
+        for p in projects
+    ]
+    rendered = render_projects_table(cleaned)
     _write(_attr("PROJECTS_MD"), rendered)
 
 
@@ -2243,11 +2255,18 @@ def write_memory_file(
     Returns a ``MemoryReceipt`` (a ``str`` of the stable id) only after the
     persisted bytes are read back and match. A missing, partial, or mismatched
     write raises ``MemoryWriteVerificationError`` instead of a success value.
+    Secret spans are replaced with ``[redacted]`` before the write; the rest
+    of the markdown is kept. ``secrets_redacted`` is that count.
     """
+    from .redact import redact_secrets
+
+    red = redact_secrets(content)
+    content = red.text
     path = resolve_memory_path(file_id_or_path)
     _refuse_rules_write(path)
     previous = _read(path) if path.is_file() else ""
     receipt = _persist_memory_file(path, content)
+    receipt.secrets_redacted = red.count
     _note_memory_write(path, previous, content)
     clear_memory_cache()
     if auto_sync:
@@ -2740,10 +2759,15 @@ def add_memory(
     The return value compares equal to the stable memory id. Receipt fields
     (``sha256``, ``bytes``, ``written_at``, ``verified``) describe the bytes
     read back after the write. Verification failure raises and does not return.
+    Secret spans in ``fact`` are replaced with ``[redacted]`` before the write.
+    ``secrets_redacted`` is that count.
     """
     from .ingest_common import scrub
+    from .redact import redact_secrets
 
-    fact = scrub(fact.strip())
+    raw = fact.strip()
+    red = redact_secrets(raw)
+    fact = scrub(red.text)
     if not fact:
         raise ValueError("empty fact")
     path = memory_file_for(kind=kind, name=name, project=project, collection=collection)
@@ -2757,6 +2781,7 @@ def add_memory(
             f"Revise this file in place using write_memory_file(file_id='{fid}', content=...)."
         )
     loc = _append_bullet(path, fact)
+    loc.secrets_redacted = red.count
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
@@ -3298,6 +3323,8 @@ def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[s
       - discard: bool (if True, removes from staging without adding to memory)
       - kind, name, project, collection: str (for add_memory)
     """
+    from .redact import redact_secrets
+
     promoted = 0
     discarded = 0
     errors: List[str] = []
@@ -3326,7 +3353,8 @@ def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[s
             )
             promoted += 1
         except Exception as e:
-            errors.append(f"{bullet[:30]}...: {e}")
+            safe = redact_secrets(bullet).text
+            errors.append(f"{safe[:30]}...: {e}")
 
     clear_memory_cache()
     if auto_sync:
@@ -3604,7 +3632,9 @@ def get_baton(project: str = "", cwd: str = "") -> str:
 
 
 def set_baton(text: str, project: str = "", cwd: str = "") -> str:
-    text = text.strip()
+    from .redact import redact_secrets
+
+    text = redact_secrets(text.strip()).text
     p = find_project(project, cwd)
     if p:
         baton_path = p.memory_dir / "rituals" / "baton.md"
@@ -3621,7 +3651,11 @@ def append_chronicle(
     emoji: str = "📝",
     refs: Optional[List[str]] = None,
 ) -> str:
-    beat = beat.strip()
+    from .redact import redact_secrets
+
+    beat = redact_secrets(beat.strip()).text
+    if refs:
+        refs = [redact_secrets(str(item)).text for item in refs]
     if not beat:
         raise ValueError("Chronicle beat cannot be empty")
     from datetime import datetime, timezone

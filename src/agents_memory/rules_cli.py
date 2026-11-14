@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from . import rules as R
+from .redact import redact_secrets, redaction_notice
 
 
 def build_context_parser() -> argparse.ArgumentParser:
@@ -122,10 +123,15 @@ def rules_main(argv: Optional[List[str]] = None) -> int:
                 return 1
             print("Within budget.")
             return 0
+        notice_count = 0
         if action == "add":
-            path = R.add_rule(" ".join(ns.rule), project or None, user_intent=True)
+            submitted = " ".join(ns.rule)
+            notice_count = redact_secrets(submitted).count
+            path = R.add_rule(submitted, project or None, user_intent=True)
         elif action == "edit":
-            path = R.edit_rule(ns.number, " ".join(ns.rule), project or None, user_intent=True)
+            submitted = " ".join(ns.rule)
+            notice_count = redact_secrets(submitted).count
+            path = R.edit_rule(ns.number, submitted, project or None, user_intent=True)
         elif action == "remove":
             path = R.remove_rule(ns.number, project or None, user_intent=True)
         elif action == "set":
@@ -133,6 +139,7 @@ def rules_main(argv: Optional[List[str]] = None) -> int:
                 text = sys.stdin.read()
             else:
                 text = Path(ns.from_file).expanduser().read_text(encoding="utf-8")
+            notice_count = redact_secrets(text).count
             path = R.save_rules_text(text, project or None, user_intent=True)
         else:
             parser.print_usage(sys.stderr)
@@ -141,4 +148,7 @@ def rules_main(argv: Optional[List[str]] = None) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     print(f"Wrote {path}")
+    notice = redaction_notice(notice_count)
+    if notice:
+        print(notice, file=sys.stderr)
     return 0

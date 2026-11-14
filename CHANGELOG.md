@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Memory writes replace secrets with `[redacted]` before disk and keep the surrounding text. Covered: common vendor token shapes, `Authorization` / `Proxy-Authorization` credentials, `key=value` secrets, URL userinfo, and PEM blocks that contain key material. Extra Python regexes come from `<memory>/redact.json` (`extra_patterns`) or `AGENTS_MEMORY_REDACT_PATTERNS`. A pattern that does not compile, matches empty, or matches ordinary prose is skipped. The same pass runs for the library, CLI, and MCP write tools. Redaction is used instead of rejecting the write so a fact that accidentally includes a secret is still stored. `secrets_redacted` is on the receipt object only; the receipt JSON schema is unchanged. Sync is unchanged.
+
 ### Changed
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 

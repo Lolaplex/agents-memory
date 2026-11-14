@@ -51,7 +51,7 @@ Who may write what. Violations are bugs, not edge cases.
 
 ### No LLM on write
 
-`add_memory`, `promote_bullet`, and `distill_batch` file text as given. They do not summarize, rephrase, merge, or "clean up" the input. The agent or human provides the final wording; the tool provides the path.
+`add_memory`, `promote_bullet`, and `distill_batch` file text as given. They do not summarize, rephrase, merge, or "clean up" the input. The agent or human provides the final wording; the tool provides the path. A deterministic secret redaction runs before the write (below). It does not rephrase the rest of the text.
 
 Auto-distill (`auto_distill`) may **discard** obvious noise and **categorize** standard facts, but it does not rewrite bullet text or invent facts not present in staging.
 
@@ -78,6 +78,32 @@ Extract pulls **user-durable lines** from evidence and drops everything else. Sh
 | Duplicate bullets (within run) | Dedupe before staging |
 
 Per-source `extract_max_bullets` caps volume per run. The cap exists because uncapped extract from a large archive will overwhelm any distill session.
+
+## Write-time secret redaction
+
+Tokens, API keys, passwords, and PEM key material are replaced with `[redacted]` before a memory write. The write is not rejected. A fact that happens to contain a secret is still stored; the secret bytes are not. Markdown around the secret stays. The same function runs for the Python library, the CLI, and the MCP tools (`add_memory`, `write_memory_file`, staging, hard rules, chronicle, baton, project role/stack/status). Ingest `scrub` uses it, then keeps the email and phone filter. Sync and injection are not a second pass; they copy what is already in the store.
+
+Built-in coverage, case-sensitive on vendor prefixes:
+
+| Shape | Examples |
+| --- | --- |
+| Vendor tokens | OpenAI/Anthropic `sk-`, GitHub `ghp_` / `github_pat_`, Slack, Google `AIza`, AWS `AKIA`/`ASIA`, JWT `eyJ`, Stripe, npm, Hugging Face, SendGrid, PyPI, GitLab, Resend, Netlify, Groq |
+| Headers | `Authorization` and `Proxy-Authorization` credentials, plus a bare `Bearer` / `Basic` credential |
+| Assignments | `password`, `api_key`, `secret`, `token`, `client_secret`, and the other secret key names, in `key=value`, JSON, or `key: value` |
+| URLs | `scheme://user:password@host` |
+| PEM | `-----BEGIN …-----` armor that contains a base64 body |
+
+Left in place on purpose, so ordinary notes survive: `token: preferences`, `password=changeme`, `password: required`, `${API_KEY}`, version numbers, a PEM skeleton with no base64, `sk-implementation`, and `ghp_` followed by a space. Unquoted `token:` values need a digit, mixed case, or a symbol. Other secret keys in `key=value` or quotes are replaced when the value is at least 6 characters and is not a placeholder. A short all-letter `password: supersecret` is replaced; `password: policy` is not.
+
+Extra patterns are Python regular expressions. Put them in `<memory>/redact.json`:
+
+```json
+{ "version": 1, "extra_patterns": ["corp_[A-Za-z0-9]{16,}"] }
+```
+
+or in `AGENTS_MEMORY_REDACT_PATTERNS` (one pattern per line, or `;;` between patterns). `AGENTS_MEMORY_REDACT_CONFIG` selects another file. A pattern that does not compile, matches the empty string, is shorter than 4 characters, is longer than 200 characters, or matches ordinary prose is skipped and reported once on stderr. The pattern text is not printed. `sync` does not create `redact.json`.
+
+When a write receipt is returned, `secrets_redacted` is the count. It is not a field in the receipt JSON. MCP and CLI append `(N secrets replaced with [redacted])` to the success line only when the count is non-zero.
 
 ## Index-as-cache law
 

@@ -148,21 +148,12 @@ def is_ephemeral_noise(text: str) -> tuple[bool, str]:
         return True, "question"
     return False, ""
 
+# Emails and phone numbers only. Token, key, PEM, and header shapes live in
+# redact.py so every write path shares one definition.
 PII = re.compile(
     r"("
     r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     r"|(\+?\d[\d\s().-]{8,}\d)"
-    r"|sk-[A-Za-z0-9_\-]{10,}"
-    r"|sk-ant-[A-Za-z0-9_\-]{10,}"
-    r"|github_pat_[A-Za-z0-9_]+"
-    r"|gh[pors]_[A-Za-z0-9_]+"
-    r"|re_[A-Za-z0-9_]{15,}"
-    r"|nfp_[A-Za-z0-9_]{15,}"
-    r"|xox[baprs]-[A-Za-z0-9-]+"
-    r"|Bearer\s+[A-Za-z0-9._\-]{15,}"
-    r"|AIza[0-9A-Za-z\-_]{35}"
-    r"|AKIA[0-9A-Z]{16}"
-    r"|ey[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}"
     r")",
     re.I,
 )
@@ -218,6 +209,10 @@ def utc_now() -> str:
 
 
 def scrub(text: str) -> str:
+    """Lossy ingest filter. Secrets are redacted first; fences and whitespace collapse stay."""
+    from .redact import redact_secrets
+
+    text = redact_secrets(text).text
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
     text = PII.sub("[redacted]", text)
     text = re.sub(r"\s+", " ", text).strip()
@@ -285,12 +280,14 @@ def record_phase(source_id: str, phase: str, **fields: Any) -> None:
 
 
 def write_staging(source_id: str, label: str, lines: List[str]) -> Path:
+    from .redact import redact_secrets
+
     path = staging_path(source_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     header = staging_header(source_id, label)
     body = header
     for line in lines:
-        body += f"- {line}\n"
+        body += f"- {redact_secrets(line).text}\n"
     if body == header:
         body += "- (none yet)\n"
     _write(path, body)
@@ -301,9 +298,12 @@ def append_staging_bullets(source_id: str, label: str, lines: List[str]) -> Path
     path = staging_path(source_id)
     if not path.exists():
         return write_staging(source_id, label, lines)
+    from .redact import redact_secrets
+
     for line in lines:
-        if line.strip():
-            _append_bullet(path, line.strip())
+        cleaned = redact_secrets(line.strip()).text
+        if cleaned:
+            _append_bullet(path, cleaned)
     return path
 
 

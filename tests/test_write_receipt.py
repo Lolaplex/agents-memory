@@ -280,7 +280,7 @@ class CLIReceiptTests(unittest.TestCase):
         (agents / "memory").mkdir(parents=True)
         env = dict(os.environ)
         env["PYTHONPATH"] = str(ROOT / "src")
-        env["AGENTS_HOME"] = str(agents)
+        env["AGENTS_HOST_DIR"] = str(agents)
         env["AGENTS_NO_UPDATE_CHECK"] = "1"
         env.pop("AGENTS_MEMORY_PATH", None)
 

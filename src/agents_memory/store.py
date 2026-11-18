@@ -175,7 +175,7 @@ def memory_store(workspace: "Workspace | None" = None) -> MemoryStore:
 # Deprecated import-time constants. Accessed through module __getattr__ so each
 # read resolves the current env workspace instead of freezing one at import.
 _STORE_ATTRS = {
-    "AGENTS_HOME": "home",
+    "HOME": "home",
     "HOST_DIR": "host_dir",
     "AGENTS_SKILLS": "skills",
     "AGENTS_RULES": "rules",
@@ -2788,7 +2788,7 @@ def _deleted_log_file() -> Path:
 
 
 def _sync_tombstone_file() -> Path:
-    return _attr("AGENTS_HOME") / ".tombstones.json"
+    return _attr("HOME") / ".tombstones.json"
 
 
 def _now_utc_iso() -> str:

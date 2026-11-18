@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Dropped the deprecated `store.AGENTS_HOME` import-time alias (`ws.dir` stays reachable via `store.HOME`); tombstones resolve through `memory_store().home`.
+
+### Changed
 - `.mailmap` maps legacy `Klix`/`Felix Kempf` author names to `Klix927` (no history rewrite; display only).
 
 ### Changed

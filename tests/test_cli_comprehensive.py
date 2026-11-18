@@ -92,7 +92,7 @@ class CLIComprehensiveTests(unittest.TestCase):
             json.dumps({"roots": [], "ignore_slugs": []}),
             encoding="utf-8",
         )
-        self.env["AGENTS_HOME"] = str(agents)
+        self.env["AGENTS_HOST_DIR"] = str(agents)
         self.env["AGENTS_MEMORY_DIR"] = str(mem)  # domain override must agree with the ws root
 
         write = self._run_cli(
@@ -125,7 +125,7 @@ class CLIComprehensiveTests(unittest.TestCase):
         target = mem / "USER.md"
         target.write_text("# keep\n", encoding="utf-8")
         env = dict(self.env)
-        env["AGENTS_HOME"] = str(agents)
+        env["AGENTS_HOST_DIR"] = str(agents)
         res = subprocess.run(
             [sys.executable, "-m", "agents_memory", "write", "user/USER.md"],
             cwd=ROOT,

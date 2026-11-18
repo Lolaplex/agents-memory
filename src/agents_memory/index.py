@@ -2,7 +2,7 @@
 
 Source of truth is always markdown on disk.
 The index lives in USER_MEMORY/.index/ (gitignored) and is rebuildable in one command.
-USER_MEMORY follows AGENTS_MEMORY_PATH, else AGENTS_HOME/memory.
+USER_MEMORY follows AGENTS_MEMORY_PATH, else <ws>/memory.
 """
 from __future__ import annotations
 

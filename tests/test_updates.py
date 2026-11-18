@@ -18,7 +18,7 @@ CUR = "1.0.0"
 
 @pytest.fixture(autouse=True)
 def _clean_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENTS_HOME", str(tmp_path / "agents"))
+    monkeypatch.setenv("AGENTS_HOST_DIR", str(tmp_path / "agents"))
     for key in ("AGENTS_NO_UPDATE_CHECK", "CI", "GITHUB_ACTIONS", "XDG_CACHE_HOME"):
         monkeypatch.delenv(key, raising=False)
     u._mcp_checked.clear()

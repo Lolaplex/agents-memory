@@ -411,7 +411,7 @@ class CliTests(unittest.TestCase):
             {
                 "HOME": str(self.home),
                 "USERPROFILE": str(self.home),
-                "AGENTS_HOME": str(self.agents),
+                "AGENTS_HOST_DIR": str(self.agents),
                 "AGENTS_NO_UPDATE_CHECK": "1",
                 "PYTHONPATH": _SRC,
             }

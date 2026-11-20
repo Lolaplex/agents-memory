@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `--help-json` emits `cordis_expose: true` so agents-harness auto-mounts this package's commands as Cordis tools when no checked-in manifest exists (#32/#34).
+
 ### Security
 - Memory writes replace secrets with `[redacted]` before disk and keep the surrounding text. Covered: common vendor token shapes, `Authorization` / `Proxy-Authorization` credentials, `key=value` secrets, URL userinfo, and PEM blocks that contain key material. Fixed-prefix tokens such as `ghp_` do not require a digit. Extra Python regexes come from `<memory>/redact.json` (`extra_patterns`) or `AGENTS_MEMORY_REDACT_PATTERNS`. Patterns with nested or ambiguous quantifiers are rejected. Extra patterns run on the whole write, in chunks of 8192 characters that overlap by 200 characters so a match start near the edge is still seen. That overlap is not a match-length cap. A match that reaches the end of a chunk is matched again at that start on the full text, and the whole span is replaced once. If that re-match times out, the span still runs at least through the end of the chunk. When the `regex` module is installed, each chunk and that re-match also have a short match timeout. The same pass runs for the library, CLI, and MCP write tools. Redaction is used instead of rejecting the write so a fact that accidentally includes a secret is still stored. `secrets_redacted` is on the receipt object only; the receipt JSON schema is unchanged. Sync is unchanged.
 - `AGENTS_MEMORY_REDACT_PATTERNS` accepts only a JSON array of strings (the same shape as `AGENTS_TRACE_REDACT_EXTRA`). A line list, or a string split on `;;`, is no longer applied. That value is ignored, and one stderr notice is printed. The notice does not include the pattern text.

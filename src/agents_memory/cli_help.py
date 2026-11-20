@@ -292,6 +292,7 @@ def full_spec() -> dict[str, Any]:
     return {
         "name": "agents-memory",
         "abi_version": ABI_VERSION,
+        "cordis_expose": True,
         "commands": commands,
         "scripts": {
             "sync": sync,

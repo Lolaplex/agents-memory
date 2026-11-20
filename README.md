@@ -45,6 +45,8 @@ Vendors keep chat in product graves (Cursor jsonl, Claude sessions, Antigravity 
 
 **Ingest → staging → distill.** Catalog writes titles and paths to `chats-index.md`. Extract filters user lines into `staging/` (PII, how-tos, dumps dropped). You (or `distill_batch` / `memory-distill`) promote durable facts into typed files. Chat bodies never become memory. Conversation logs belong to [agents-traces](https://github.com/Lolaplex/agents-traces).
 
+**Secrets.** Library, CLI, and MCP writes replace tokens, authorization credentials, key=value secrets, and PEM blocks with `[redacted]` before disk. Extra patterns are config (`redact.json` or `AGENTS_MEMORY_REDACT_PATTERNS`). See [`abi/HYGIENE.md`](abi/HYGIENE.md).
+
 **IDE injection.** One `sync` splices always-on context into hosts it knows (`AGENTS.md` / rules) and merges MCP where a config file already lives. Text outside `<!-- agents-memory-sync -->` stays. Details: [Where it runs](#where-it-runs).
 
 **Multi-device sync.** Unified across all stack domains via [`agents-sync`](https://github.com/Lolaplex/agents-sync).

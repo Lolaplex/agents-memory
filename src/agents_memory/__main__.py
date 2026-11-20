@@ -223,6 +223,7 @@ def main(argv: list[str] | None = None) -> int:
             print(write_usage, file=sys.stderr)
             return 2
         from .receipt import MemoryReceipt, render_mcp_receipt
+        from .redact import annotate_success
         from .store import write_memory_file
 
         try:
@@ -233,7 +234,7 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            print(render_mcp_receipt(loc, f"Wrote {loc}"))
+            print(render_mcp_receipt(loc, annotate_success(f"Wrote {loc}", loc.secrets_redacted)))
             return 0
         except Exception as e:
             print(f"Error writing memory file '{ns.file_id}': {e}", file=sys.stderr)
@@ -328,6 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         except SystemExit:
             return 2
         from .receipt import MemoryReceipt, render_mcp_receipt
+        from .redact import annotate_success
         from .store import add_memory
 
         try:
@@ -341,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
             if not isinstance(loc, MemoryReceipt):
                 print("Error saving memory: no verified receipt", file=sys.stderr)
                 return 1
-            print(render_mcp_receipt(loc, f"Saved to {loc}"))
+            print(render_mcp_receipt(loc, annotate_success(f"Saved to {loc}", loc.secrets_redacted)))
             return 0
         except Exception as e:
             print(f"Error saving memory: {e}", file=sys.stderr)

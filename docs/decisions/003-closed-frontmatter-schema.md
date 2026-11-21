@@ -1,0 +1,3 @@
+# 003 Closed Frontmatter Schema
+
+- Closed YAML frontmatter schema is the machine half of HYGIENE relation vocabulary. Files may omit a fence; a fence must close and may only use SCHEMA_KEYS (project card, identity, relations, pins). Unknown keys fail (keeps UMP envelopes out). python -m agents_memory check emits named ids: staging-leftovers, duplicate-notes, near-duplicate-slugs, stub-notes, index-stale, frontmatter-schema, dangling-refs. Trade-off stated: live vault will fail check until existing unknown keys and dangling refs are cleaned; we did not make unknown keys warnings because that is the cheap path an expert would reject.

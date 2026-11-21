@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 concurrency:
@@ -24,9 +24,14 @@ jobs:
           python-version: '3.12'
 
       - name: Install build tools & dependencies
+        env:
+          READ_REPO_TOKEN: ${{ secrets.READ_REPO_TOKEN }}
         run: |
           python -m pip install --upgrade pip
           pip install build twine pytest httpx
+          if [ "${GITHUB_BASE_REF:-}" != "main" ] && [ "${GITHUB_REF_NAME:-}" != "main" ]; then
+            python scripts/dev-suite.py
+          fi
           pip install -e .
 
       - name: Run test suite

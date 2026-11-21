@@ -2,7 +2,7 @@
 
 Two layers, one retrieval:
 
-- User: ``~/.agents/memory`` — identity, project map, concepts/entities/workflows,
+- User: ``<ws>/memory`` — identity, project map, concepts/entities/workflows,
   project **links**, personal notes, chat index.
 - Project: ``<repo>/.agents/memory`` — staging (inbox), research, sequential
   plans/tasks/waves/roadmap, decisions, lifecycle notes.
@@ -31,10 +31,62 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from agents_workspace import Workspace
+try:
+    from agents_workspace import Workspace
+except ImportError:
+    Workspace = None  # type: ignore[assignment]
 
 from . import PACKAGE_DIR, ROOT
 from .receipt import MemoryReceipt, MemoryWriteVerificationError, verify_memory_write
+
+
+class _StandaloneHost:
+    def __init__(self, host_dir: Path) -> None:
+        self.dir = host_dir
+        self.host_paths = host_dir / "host_paths.json"
+        self.mcp_json = host_dir / "mcp.json"
+
+
+class _StandaloneWorkspace:
+    """Minimal workspace view used when agents-workspace is not installed."""
+
+    def __init__(self, ws_dir: Path, host_dir: Path) -> None:
+        self.id = ""
+        self.host = _StandaloneHost(host_dir)
+        self.dir = ws_dir
+        mem = os.environ.get("AGENTS_MEMORY_DIR") or os.environ.get("AGENTS_MEMORY_PATH") or ""
+        rules = os.environ.get("AGENTS_RULES_DIR") or ""
+        skills = os.environ.get("AGENTS_SKILLS_DIR") or ""
+        traces = os.environ.get("AGENTS_TRACES_DIR") or ""
+        workdir = os.environ.get("AGENTS_WORKDIR") or ""
+        self.memory = Path(mem).expanduser() if mem.strip() else ws_dir / "memory"
+        self.rules = Path(rules).expanduser() if rules.strip() else ws_dir / "rules"
+        self.skills = Path(skills).expanduser() if skills.strip() else ws_dir / "skills"
+        self.traces = Path(traces).expanduser() if traces.strip() else ws_dir / "traces"
+        self.workdir = Path(workdir).expanduser() if workdir.strip() else ws_dir / "work"
+        self.claude = Path.home() / ".claude"
+
+    @classmethod
+    def from_env(cls) -> "_StandaloneWorkspace":
+        raw_host = os.environ.get("AGENTS_HOST_DIR", "").strip()
+        host_dir = Path(raw_host).expanduser() if raw_host else Path.home() / ".agents"
+        raw_root = os.environ.get("AGENTS_WORKSPACE_ROOT", "").strip()
+        ws_id = os.environ.get("AGENTS_WORKSPACE", "").strip()
+        if raw_root:
+            ws_dir = Path(raw_root).expanduser()
+        elif ws_id:
+            ws_dir = host_dir / "workspaces" / ws_id
+        else:
+            ws_dir = host_dir
+        return cls(ws_dir, host_dir)
+
+
+def _current_workspace(workspace: "Workspace | None" = None):
+    if workspace is not None:
+        return workspace
+    if Workspace is not None:
+        return Workspace.from_env()
+    return _StandaloneWorkspace.from_env()
 
 
 def is_engine_repo(repo: Path) -> bool:
@@ -63,7 +115,7 @@ class MemoryStore:
     __slots__ = ("ws",)
 
     def __init__(self, workspace: "Workspace | None" = None) -> None:
-        self.ws = workspace or Workspace.from_env()
+        self.ws = _current_workspace(workspace)
 
     @property
     def home(self) -> Path:
@@ -163,7 +215,7 @@ _STORES: dict[str, MemoryStore] = {}
 
 def memory_store(workspace: "Workspace | None" = None) -> MemoryStore:
     """The store for ``workspace`` (env-selected when None), cached per dir."""
-    ws = workspace or Workspace.from_env()
+    ws = _current_workspace(workspace)
     key = str(ws.dir.resolve() if ws.dir.exists() else ws.dir)
     cached = _STORES.get(key)
     if cached is None or cached.ws is not ws:
@@ -570,7 +622,7 @@ def _is_scaffold_file(path: Path) -> bool:
 
 
 def consolidate_repo_leaks() -> List[str]:
-    """Move live markdown from the engine clone into ~/.agents/memory; delete clone copies."""
+    """Move live markdown from the engine clone into <ws>/memory; delete clone copies."""
     moved: List[str] = []
     orphans_doc = _attr("ORPHANS") / "README.md"
     if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
@@ -764,7 +816,7 @@ def migrate_taxonomy() -> None:
 
 
 def ensure_memory_layout() -> None:
-    """Create ~/.agents/memory and copy example scaffolding if missing."""
+    """Create <ws>/memory and copy example scaffolding if missing."""
     _attr("USER_MEMORY").mkdir(parents=True, exist_ok=True)
     _attr("CHRONICLE_DIR").mkdir(parents=True, exist_ok=True)
     _write(_attr("LAYOUT_MD"), shipped_layout_text())
@@ -850,7 +902,7 @@ HOST_RULE_DIRS = (
 
 
 def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
-    """Bind every ``~/.agents/rules/*.mdc`` into host rule slots (e.g. ``~/.cursor/rules/``)."""
+    """Bind every ``<ws>/rules/*.mdc`` into host rule slots (e.g. ``~/.cursor/rules/``)."""
     written: List[str] = []
     warnings: List[str] = []
     _attr("AGENTS_RULES").mkdir(parents=True, exist_ok=True)

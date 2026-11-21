@@ -1,0 +1,61 @@
+# Commit discipline — the server-side wall. Local hooks/ install the same gate
+# via `hooks/install.sh`, but hooks are bypassable (--no-verify, or simply
+# never installed). This workflow re-runs the exact same grammar (the donor's
+# commit-msg.cjs, not a re-implementation) over every commit a PR adds, so the
+# discipline is enforced where it cannot be skipped.
+name: commit-discipline
+on:
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  messages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Hook dispatchers must be executable in git index (100755)
+        run: bash scripts/check_hook_dispatchers.sh
+      - name: Validate every commit message in the PR range
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_REF="origin/${GITHUB_BASE_REF}"
+          if ! git rev-parse --verify -q "$BASE_REF" >/dev/null 2>&1; then
+            git fetch origin "$GITHUB_BASE_REF"
+          fi
+          RANGE_ARG="${BASE_REF}..HEAD"
+          # Grandfather: history that predates the gate can never satisfy it.
+          # Exempt anything reachable from the parent of the commit that first
+          # added hooks/commit-msg.cjs — the wall only judges commits authored
+          # into a tree that already carried it (e.g. a dev→main release PR
+          # carries pre-discipline commits nobody can or should rewrite).
+          GATE_FIRST="$(git rev-list --first-parent HEAD -- hooks/commit-msg.cjs | tail -n 1)"
+          EXCLUDE=()
+          [ -n "$GATE_FIRST" ] && EXCLUDE=(--not "${GATE_FIRST}^")
+          FAILED=0
+          for sha in $(git rev-list "$RANGE_ARG" "${EXCLUDE[@]}"); do
+            # Merge commits (>1 parent) author no belief — exempt them.
+            PARENTS=($(git rev-list --no-walk --parents "$sha"))
+            if [ "${#PARENTS[@]}" -gt 2 ]; then
+              continue
+            fi
+            PARENT="${PARENTS[1]:-4b825dc642cb6eb9a060e54bf8d69288fbee4904}"
+            # Only judge commits authored into a tree that already carried hooks/commit-msg.cjs.
+            git cat-file -e "${PARENT}:hooks/commit-msg.cjs" 2>/dev/null || continue
+            MSG="$(mktemp)"
+            git log --format=%B -1 "$sha" > "$MSG"
+            FIRST="$(head -1 "$MSG")"
+            case "$FIRST" in Merge*) rm -f "$MSG"; continue ;; esac
+            if ! HOOK_DIFF_RANGE="${PARENT}..${sha}" node hooks/commit-msg.cjs "$MSG"; then
+              echo "::error::commit $sha fails the discipline — $(echo "$FIRST" | cut -c1-72)"
+              FAILED=1
+            fi
+            rm -f "$MSG"
+          done
+          [ "$FAILED" -eq 0 ] || { echo "Commit discipline gate FAILED"; exit 1; }
+          echo "All commits in $RANGE_ARG pass the discipline"

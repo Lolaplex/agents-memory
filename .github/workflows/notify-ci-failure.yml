@@ -1,0 +1,29 @@
+# Failure ping — notify-feature.yml only covers merges into dev. This watches
+# the gate workflows themselves and pings Discord when one goes red, so a red
+# run is a push notification, not something discovered on the next visit.
+name: Notify CI Failure
+
+on:
+  workflow_run:
+    workflows: [commit-discipline, CI]
+    types: [completed]
+
+jobs:
+  notify-failure:
+    if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Post failure to product webhook
+        env:
+          WEBHOOK_URL: ${{ secrets.CI_WEBHOOK_URL }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          WF_URL: ${{ github.event.workflow_run.html_url }}
+          WF_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "::warning::CI_WEBHOOK_URL unset; skip notification"
+            exit 0
+          fi
+          PAYLOAD=$(python3 -c "import json, os; repo=os.environ['GITHUB_REPOSITORY']; print(json.dumps({'embeds':[{'title':f'🔴 CI failed: {os.environ[\"WF_NAME\"]}','url':os.environ['WF_URL'],'description':f'**{repo}** — run failed at `{os.environ[\"WF_SHA\"][:8]}`','color':15158332}]}))")
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$WEBHOOK_URL"

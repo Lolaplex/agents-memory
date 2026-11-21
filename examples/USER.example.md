@@ -1,6 +1,6 @@
 # Agent profile
 
-Live store: `~/.agents/memory` (user) and `<repo>/.agents/memory` (project).
+Live store: `<ws>/memory` (user) and `<repo>/.agents/memory` (project).
 Projects: `PROJECTS.md`. Links: `projects/<slug>/`. In-tree: `.agents/memory/` (staging inbox, sequential work, decisions, lifecycle notes).
 MCP: `agents-memory`. Skill: `memory-sync`.
 
@@ -16,7 +16,7 @@ MCP: `agents-memory`. Skill: `memory-sync`.
 - OS, shell, package managers, languages, UI defaults — fill in.
 
 ## Memory (local, not cloud)
-- Identity + project map live in `~/.agents/memory`. Synced into Cursor rules, Antigravity `AGENTS.md`, and Zed `%APPDATA%/Zed/AGENTS.md`.
+- Identity + project map live in `<ws>/memory`. Synced into Cursor rules, Antigravity `AGENTS.md`, and Zed `%APPDATA%/Zed/AGENTS.md`.
 - **Proactive capture:** ALWAYS call `add_memory` (MCP) immediately when user reveals durable preferences, project standards, architecture decisions (ADRs), or global rules. Do not wait for explicit user prompt to save.
 - **Context retrieval:** Call `search_memory` or `get_project_memories` before guessing project architecture, past decisions, or user preferences.
 - Project-local research/plans/tasks/waves/roadmap/decisions live in `<repo>/.agents/memory/`. Staging is inbox only.

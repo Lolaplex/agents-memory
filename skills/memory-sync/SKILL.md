@@ -10,24 +10,24 @@ Local markdown memory. Not cloud.
 ## Paths
 
 <!-- agents-memory-paths -->
-User memory: `~/.agents/memory`. Project memory: `<repo>/.agents/memory`.
+User memory: `<ws>/memory`. Project memory: `<repo>/.agents/memory`.
 <!-- /agents-memory-paths -->
 
 | File | What |
 |------|------|
-| `~/.agents/memory/USER.md` | Identity, talk style, stack, ALWAYS/NEVER |
-| `~/.agents/memory/PROJECTS.md` | slug / path / role / stack / status |
-| `~/.agents/memory/concepts/` | Ideas |
-| `~/.agents/memory/entities/` | Named things |
-| `~/.agents/memory/workflows/` | Procedures |
-| `~/.agents/memory/projects/<slug>/` | Link to a real tree (not a second copy) |
-| `~/.agents/memory/notes/<collection>/` | Personal notes. Guide: projects, interests, education, finance, family, preferences, programming, work, certifications, scratch — **not a closed set** |
+| `<ws>/memory/USER.md` | Identity, talk style, stack, ALWAYS/NEVER |
+| `<ws>/memory/PROJECTS.md` | slug / path / role / stack / status |
+| `<ws>/memory/concepts/` | Ideas |
+| `<ws>/memory/entities/` | Named things |
+| `<ws>/memory/workflows/` | Procedures |
+| `<ws>/memory/projects/<slug>/` | Link to a real tree (not a second copy) |
+| `<ws>/memory/notes/<collection>/` | Personal notes. Guide: projects, interests, education, finance, family, preferences, programming, work, certifications, scratch — **not a closed set** |
 | `<repo>/.agents/memory/staging/` | Inbox only (`captured.md`, `from-chats.md`). Distill, then empty. |
 | `<repo>/.agents/memory/` | research (input); `plans/` `tasks/` `waves/` `roadmap/` `decisions/` as `001-topic.md`; `notes/proposed\|implemented\|rejected/<class>/` |
 | `~/.agents/AGENTS.md` | Canonical always-on (USER + PROJECTS). `CLAUDE.md` is bound to it. |
-| `~/.agents/memory/chats-index.md` | Chat title catalog |
-| `~/.agents/memory/scan.json` | Roots, ignore list (includes `.agents`, `.cursor`), agent rule name |
-| `~/.agents/rules/*.mdc` | Personal always-on rules (canonical). Sync binds them into `~/.cursor/rules/`. Example: `run-commands.mdc` |
+| `<ws>/memory/chats-index.md` | Chat title catalog |
+| `<ws>/memory/scan.json` | Roots, ignore list (includes `.agents`, `.cursor`), agent rule name |
+| `<ws>/rules/*.mdc` | Personal always-on rules (canonical). Sync binds them into `~/.cursor/rules/`. Example: `run-commands.mdc` |
 
 MCP server `agents-memory`: see [`abi/MCP.md`](../../abi/MCP.md). CLI/injection: `python -m agents_memory --help-json`.
 
@@ -82,7 +82,7 @@ If you scaffold a repo under a scan root:
 
 ## Edit rules
 
-- Durable identity → `~/.agents/memory/USER.md` then `python -m agents_memory sync`
+- Durable identity → `<ws>/memory/USER.md` then `python -m agents_memory sync`
 - Idea → MCP `add_memory(kind="concept"|"entity", name="stem")`
 - Procedure → `add_memory(kind="workflow", name="stem")`
 - Project **link** → `add_memory(kind="project", name="slug")` writes `projects/<slug>/README.md` pointing at the real tree

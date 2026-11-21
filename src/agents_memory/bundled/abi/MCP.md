@@ -118,7 +118,7 @@ Source: `rules/HARD.md` in the user store (global) and `projects/<slug>/RULES.md
 - **Piggyback**: the first string result in an MCP session is prefixed with the global block and a blank line. A call with `project=` / `project_slug=` adds that project's overlay once. Blocks are deduplicated per session by content hash, so an edited rule file is delivered again. The rest of the result is unchanged.
 - **Budget**: global 30 rule lines and 2000 characters, project 10 lines (`AGENTS_MEMORY_RULES_MAX_LINES`, `AGENTS_MEMORY_RULES_MAX_CHARS`, `AGENTS_MEMORY_RULES_PROJECT_MAX_LINES`). A write over budget is rejected with a request to consolidate; a file that is already over budget may only shrink.
 - **Writes**: `write_memory_file`, `add_memory`, and `delete_memory` refuse the rule files. Agents use `propose_rule`; the user edits with `agents-memory rules show|add|edit|remove|set|check`.
-- **Sync**: `rules/HARD.md` syncs as user-store content (only `rules/*.mdc` maps to `~/.agents/rules`). Rule files merge last-write-wins, not as a bullet union.
+- **Sync**: `rules/HARD.md` syncs as user-store content (only `rules/*.mdc` maps to `<ws>/rules`). Rule files merge last-write-wins, not as a bullet union.
 
 ## Related surfaces (not this MCP)
 

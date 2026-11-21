@@ -92,6 +92,33 @@ def search_memory(query: str, project: str = "") -> str:
 
 
 @mcp.tool()
+def search_stores(query: str, store: str = "") -> str:
+    """Fan out over all named stores (memory corpus, repo docs, traces…).
+
+    Stores are configured in <ws>/memory/stores.json — kinds: markdown,
+    repo-docs, traces. Hits from every store merge by RRF; each hit names
+    its store. A store that fails surfaces as a named refusal, never silence.
+    Pass store=<name> to query one store only.
+    """
+    try:
+        from .stores.search import search_stores as fan_out
+
+        out = fan_out(query, store=store)
+        hits, rows = out["hits"], out["stores"]
+        if not hits and not any("error" in r for r in rows):
+            return f"No hits for '{query}'" + (f" in {store}" if store else " in any store")
+        lines = [f"Found {len(hits)} hits across stores:"]
+        for h in hits:
+            lines.append(f"- [{h.get('store', '?')}] {h.get('file', '?')}:{h.get('line', '?')} {h.get('text', '')}")
+        for r in rows:
+            if "error" in r:
+                lines.append(f"! {r['store']}: {r['error']}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Error searching stores: {e}"
+
+
+@mcp.tool()
 def add_memory(
     fact_or_message: str,
     kind: str = "",

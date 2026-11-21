@@ -380,6 +380,41 @@ def main(argv: list[str] | None = None) -> int:
         for hit in hits:
             print(f"{hit.get('id', '?')} {hit.get('text', '')}")
         return 0
+    if cmd in ("stores", "search-stores", "search_stores"):
+        import argparse
+        import json
+
+        parser = argparse.ArgumentParser(prog="agents_memory stores")
+        parser.add_argument("query", nargs="*", help="Search string; omit to list stores")
+        parser.add_argument("--store", "-s", default="", help="One named store")
+        parser.add_argument("--limit", "-n", type=int, default=20)
+        parser.add_argument("--json", action="store_true", help="Emit JSON")
+        try:
+            ns = parser.parse_args(rest)
+        except SystemExit:
+            return 2
+        if not ns.query:
+            from .stores.registry import list_stores
+
+            for s in list_stores():
+                if isinstance(s, dict):
+                    print(f"{s.get('name', '?'):16} ERROR: {s.get('error', 'refused')}")
+                else:
+                    st = s.status()
+                    print(f"{st['name']:16} {st['kind']:10} {st.get('files', '-')} files  {st['root']}")
+            return 0
+        from .stores.search import search_stores
+
+        out = search_stores(" ".join(ns.query), store=ns.store, limit=ns.limit)
+        if ns.json:
+            print(json.dumps(out, indent=2, ensure_ascii=False))
+            return 0
+        for h in out["hits"]:
+            print(f"[{h.get('store', '?')}] {h.get('file', '?')}:{h.get('line', '?')}  {h.get('text', '')}")
+        for r in out["stores"]:
+            if "error" in r:
+                print(f"! {r['store']}: {r['error']}", file=sys.stderr)
+        return 0
     if cmd in ("reset", "clean"):
         if "--yes" not in rest and "-y" not in rest:
             print(

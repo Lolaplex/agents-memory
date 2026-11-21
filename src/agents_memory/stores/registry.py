@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import Store
+from .manifest_index import ManifestIndexStore
 from .markdown import MarkdownStore
 from .repo_docs import RepoDocsStore
 from .traces import TracesStore
@@ -26,6 +27,7 @@ _KINDS = {
     "markdown": MarkdownStore,
     "repo-docs": RepoDocsStore,
     "traces": TracesStore,
+    "manifest-index": ManifestIndexStore,
 }
 
 

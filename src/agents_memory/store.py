@@ -2,7 +2,7 @@
 
 Two layers, one retrieval:
 
-- User: ``~/.agents/memory`` — identity, project map, concepts/entities/workflows,
+- User: ``<ws>/memory`` — identity, project map, concepts/entities/workflows,
   project **links**, personal notes, chat index.
 - Project: ``<repo>/.agents/memory`` — staging (inbox), research, sequential
   plans/tasks/waves/roadmap, decisions, lifecycle notes.
@@ -570,7 +570,7 @@ def _is_scaffold_file(path: Path) -> bool:
 
 
 def consolidate_repo_leaks() -> List[str]:
-    """Move live markdown from the engine clone into ~/.agents/memory; delete clone copies."""
+    """Move live markdown from the engine clone into <ws>/memory; delete clone copies."""
     moved: List[str] = []
     orphans_doc = _attr("ORPHANS") / "README.md"
     if not orphans_doc.exists() and (EXAMPLES / "orphans.example.md").is_file():
@@ -764,7 +764,7 @@ def migrate_taxonomy() -> None:
 
 
 def ensure_memory_layout() -> None:
-    """Create ~/.agents/memory and copy example scaffolding if missing."""
+    """Create <ws>/memory and copy example scaffolding if missing."""
     _attr("USER_MEMORY").mkdir(parents=True, exist_ok=True)
     _attr("CHRONICLE_DIR").mkdir(parents=True, exist_ok=True)
     _write(_attr("LAYOUT_MD"), shipped_layout_text())
@@ -850,7 +850,7 @@ HOST_RULE_DIRS = (
 
 
 def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
-    """Bind every ``~/.agents/rules/*.mdc`` into host rule slots (e.g. ``~/.cursor/rules/``)."""
+    """Bind every ``<ws>/rules/*.mdc`` into host rule slots (e.g. ``~/.cursor/rules/``)."""
     written: List[str] = []
     warnings: List[str] = []
     _attr("AGENTS_RULES").mkdir(parents=True, exist_ok=True)

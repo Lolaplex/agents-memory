@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Thin shim → runs the CommonJS signal ledger. The .cjs extension forces
+# CommonJS so the hook works regardless of package.json "type".
+exec node "$(dirname "$0")/post-commit.cjs" "$@"

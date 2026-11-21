@@ -1,0 +1,7 @@
+name: contradiction
+kind: inferred
+shape: event
+face: in
+membrane: true
+route:
+note: Belief-class membrane signal for correct/evolve commits

@@ -20,10 +20,12 @@ from typing import Any
 from .base import Store
 from .markdown import MarkdownStore
 from .repo_docs import RepoDocsStore
+from .traces import TracesStore
 
 _KINDS = {
     "markdown": MarkdownStore,
     "repo-docs": RepoDocsStore,
+    "traces": TracesStore,
 }
 
 
@@ -56,8 +58,7 @@ def list_stores() -> list[Store | dict[str, Any]]:
             stores.append({"name": name or kind, "kind": "error",
                            "error": "store spec missing path"})
             continue
-        stores.append(cls(Path(path), name=name) if cls is RepoDocsStore
-                      else cls(Path(path), name=name))
+        stores.append(cls(Path(path), name=name))
     return stores
 
 

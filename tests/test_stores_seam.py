@@ -7,6 +7,34 @@ from unittest.mock import patch
 from agents_memory.stores.repo_docs import RepoDocsStore
 from agents_memory.stores.registry import list_stores
 from agents_memory.stores.search import search_stores
+from agents_memory.stores.traces import TracesStore
+
+
+class TracesStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "traces"
+        self.root.mkdir(parents=True)
+        (self.root / "2026-11-20.jsonl").write_text(
+            json.dumps({"ts": "2026-11-20T02:37:21Z", "session": "ses_a",
+                        "type": "message", "origin": "live",
+                        "metadata": {"role": "user", "content": "run the ACP loop"}}) + "\n"
+            + json.dumps({"ts": "2026-11-20T02:38:00Z", "session": "ses_a",
+                          "type": "message", "origin": "live",
+                          "metadata": {"role": "assistant", "content": "ACP LIVE OK"}}) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_hits_session_content(self):
+        hits = TracesStore(self.root).search("ACP loop")
+        self.assertTrue(hits)
+        self.assertEqual(hits[0]["session"], "ses_a")
+        self.assertEqual(hits[0]["role"], "user")
+
+    def test_non_message_lines_ignored(self):
+        (self.root / "runner.jsonl").write_text('{"verb":"ACP flood"}\n', encoding="utf-8")
+        hits = TracesStore(self.root).search("ACP")
+        self.assertTrue(all(h["file"] != "runner.jsonl" for h in hits))
 
 
 class RepoDocsStoreTests(unittest.TestCase):

@@ -28,7 +28,7 @@ Binding order: **symlink → hardlink → copy**. Copy is last resort and can dr
 Installed homes get the **same marked block spliced** into their `AGENTS.md`. They are not bound to `~/.agents/AGENTS.md` (a bind would delete local instructions). `CLAUDE.md` is bound to the local `AGENTS.md` only when it has no text outside the memory block.
 
 - `~/.agents/` (`CLAUDE.md` bound to `AGENTS.md` when CLAUDE is not a separate hand-written file)
-- `~/.agents/rules/*.mdc` → host slots such as `~/.cursor/rules/`
+- `<ws>/rules/*.mdc` → host slots such as `~/.cursor/rules/`
 - Gemini / Antigravity `AGENTS.md` (spliced)
 - Zed `AGENTS.md` (spliced)
 - `~/.claude/AGENTS.md` (spliced); `CLAUDE.md` spliced if it already has other text

@@ -657,6 +657,28 @@ class RegisterBootstrapTests(unittest.TestCase):
             self.assertTrue(removed)
             self.assertEqual(store.get_staging_inbox()["total"], 0)
 
+    def test_memory_store_standalone_without_agents_workspace(self):
+        import os
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        host = Path(tmp.name) / ".agents"
+        env_patch = {
+            "AGENTS_HOST_DIR": str(host),
+            "AGENTS_WORKSPACE": "",
+            "AGENTS_WORKSPACE_ROOT": "",
+            "AGENTS_MEMORY_DIR": "",
+            "AGENTS_MEMORY_PATH": "",
+        }
+        with patch.dict(os.environ, env_patch, clear=False), \
+             patch.object(store, "Workspace", None):
+            s = store.MemoryStore()
+            self.assertEqual(s.memory, host / "memory")
+            self.assertEqual(s.rules, host / "rules")
+            self.assertEqual(s.host_dir, host)
+            cached = store.memory_store()
+            self.assertEqual(cached.memory, host / "memory")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -112,13 +112,22 @@ def ref_for(name: str) -> str:
     return os.environ.get("SUITE_REF") or "dev"
 
 
+def _git_env() -> dict[str, str]:
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    token = os.environ.get("READ_REPO_TOKEN", "").strip()
+    if token:
+        env["GIT_CONFIG_COUNT"] = "1"
+        env["GIT_CONFIG_KEY_0"] = f"url.https://x-access-token:{token}@github.com/.insteadOf"
+        env["GIT_CONFIG_VALUE_0"] = "https://github.com/"
+    return env
+
+
 def _remote_branch_exists(name: str, ref: str) -> bool:
     url = f"https://github.com/Lolaplex/{name}.git"
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
         proc = subprocess.run(
             ["git", "ls-remote", "--exit-code", "--heads", url, ref],
-            env=env,
+            env=_git_env(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=15,
@@ -192,7 +201,7 @@ def main() -> int:
     if args.dry_run:
         print("$ " + " ".join(cmd))
         return 0
-    return subprocess.run(cmd).returncode
+    return subprocess.run(cmd, env=_git_env()).returncode
 
 
 if __name__ == "__main__":

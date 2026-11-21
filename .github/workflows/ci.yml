@@ -29,9 +29,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install build twine pytest httpx
-          if [ -n "${READ_REPO_TOKEN:-}" ]; then
-            git config --global credential.helper \'!f() { echo username=x-access-token; echo "password=${READ_REPO_TOKEN}"; }; f\'
-          fi
           if [ "${GITHUB_BASE_REF:-}" != "main" ] && [ "${GITHUB_REF_NAME:-}" != "main" ]; then
             python scripts/dev-suite.py
           fi

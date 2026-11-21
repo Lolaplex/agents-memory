@@ -1,0 +1,6 @@
+name: oracle-lesson
+kind: inferred
+shape: categorical
+face: in
+membrane: true
+note: a provider/compositor oracle taught the contract something — a surface shape, a protocol fact, a boot path — that changes a belief we held or names one we lacked

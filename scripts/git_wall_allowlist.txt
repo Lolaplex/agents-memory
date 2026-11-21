@@ -1,0 +1,1 @@
+# git_wall allowlist — grandfather only; the wall does not widen

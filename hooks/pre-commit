@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# pre-commit — the git-wall: refuse commits that stage repo rot
+# (.gitignore is the oracle; scripts/git_wall_allowlist.txt is the only
+# grandfather list, and it does not widen). koru's second leg ran the
+# in-language invariants gate; koru-os's evidence discipline lives in the
+# commit-msg Gates wall instead — the three check-*.sh suites are far too
+# heavy to run on every commit.
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+bash "$ROOT/scripts/git_wall.sh" --staged

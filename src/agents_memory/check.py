@@ -76,7 +76,7 @@ def _resolve_relation_target(source: Path, target: str) -> Path | None:
     for cand in candidates:
         try:
             path = store.resolve_memory_path(cand)
-        except FileNotFoundError:
+        except (FileNotFoundError, ValueError):
             continue
         if path.is_file():
             return path

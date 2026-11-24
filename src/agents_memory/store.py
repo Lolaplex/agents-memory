@@ -255,6 +255,8 @@ def __getattr__(name: str):
     attr = _STORE_ATTRS.get(name)
     if attr is not None:
         return getattr(memory_store(), attr)
+    if name == "INJECTION_GEMINI":
+        return _gemini_agents_path()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -342,7 +344,9 @@ SKIP_SKILL_NAMES = {
     "permissioned-github",
 }
 
-INJECTION_GEMINI = Path.home() / ".gemini" / "config" / "AGENTS.md"
+def _gemini_agents_path() -> Path:
+    """Gemini host AGENTS.md — resolved per call, never frozen at import."""
+    return Path.home() / ".gemini" / "config" / "AGENTS.md"
 
 SKIP_DIR_DEFAULT = {
     ".git",
@@ -492,7 +496,9 @@ def _persist_memory_file(path: Path, content: str) -> MemoryReceipt:
     """Write ``content``, read it back, and return a receipt only on a match."""
     expected = _expected_persisted_text(content)
     _write(path, content)
-    return verify_memory_write(path, expected, file_id=file_id(path))
+    receipt = verify_memory_write(path, expected, file_id=file_id(path))
+    _index_upsert(path)
+    return receipt
 
 
 def splice_region(existing: str, begin: str, end: str, inner: str) -> str:
@@ -894,11 +900,14 @@ def injection_agent_rule() -> Path:
     return canonical_agent_rule()
 
 
-HOST_RULE_DIRS = (
-    Path.home() / ".cursor" / "rules",
-    Path.home() / ".gemini" / "config" / "rules",
-    Path.home() / ".codeium" / "windsurf" / "rules",
-)
+def _host_rule_dirs() -> Tuple[Path, ...]:
+    """Host-global rule slots — resolved per call, never frozen at import."""
+    home = Path.home()
+    return (
+        home / ".cursor" / "rules",
+        home / ".gemini" / "config" / "rules",
+        home / ".codeium" / "windsurf" / "rules",
+    )
 
 
 def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
@@ -909,7 +918,7 @@ def bind_host_rules(canonical: Path) -> Tuple[List[str], List[str]]:
     sources = sorted(_attr("AGENTS_RULES").glob("*.mdc"), key=lambda p: p.name.lower())
     if canonical.exists() and canonical not in sources:
         sources.insert(0, canonical)
-    for rules_dir in HOST_RULE_DIRS:
+    for rules_dir in _host_rule_dirs():
         rules_dir.mkdir(parents=True, exist_ok=True)
         for src in sources:
             dest = rules_dir / src.name
@@ -1898,7 +1907,7 @@ def iter_rules_dirs() -> List[Path]:
         out.append(path)
 
     add(_attr("AGENTS_RULES"))
-    for rules_dir in HOST_RULE_DIRS:
+    for rules_dir in _host_rule_dirs():
         add(rules_dir)
     return out
 
@@ -2194,7 +2203,7 @@ def sync_injection(include_repos: bool = True) -> Tuple[List[str], List[str]]:
     _attr("HOST_DIR").mkdir(parents=True, exist_ok=True)
     written.append(write_agents_file(_attr("HOME_AGENTS"), inner))
     written.extend(repair_instruction_stub(_attr("HOST_DIR")))
-    for host_agents in (INJECTION_GEMINI, zed_config_dir() / "AGENTS.md"):
+    for host_agents in (_gemini_agents_path(), zed_config_dir() / "AGENTS.md"):
         written.append(write_agents_file(host_agents, inner, canonical=_attr("HOME_AGENTS")))
     claude_written, claude_warn = bind_claude_home(_attr("HOME_AGENTS"))
     written.extend(claude_written)
@@ -2248,11 +2257,42 @@ def file_id(path: Path) -> str:
     return path.as_posix()
 
 
+def _confine(base: Path, rel: str, root: str) -> Path:
+    """Join ``rel`` under ``base``; refuse loudly on any escape (../, abs)."""
+    try:
+        base_res = base.resolve()
+    except OSError:
+        base_res = base.absolute()
+    try:
+        target = (base_res / rel).resolve()
+    except (OSError, RuntimeError) as e:
+        raise ValueError(f"memory path {rel!r} escapes root {root}: {e}")
+    if not target.is_relative_to(base_res):
+        raise ValueError(f"memory path {rel!r} escapes root {root}")
+    return target
+
+
 def resolve_memory_path(rel: str) -> Path:
     rel = rel.strip()
     if rel.startswith("memory:"):
         rel = rel[len("memory:"):].strip()
-    rel = rel.replace("\\", "/").lstrip("/")
+    rel = rel.replace("\\", "/")
+    # Absolute check before any slash normalization: on POSIX a leading "/" is
+    # the absolute marker. Stripping it first smuggles outside paths through as
+    # false relatives and double-joins legit ones under the user root.
+    raw = Path(rel)
+    if raw.is_absolute() or rel.startswith("/"):
+        target = raw.resolve()
+        bases = [_attr("USER_MEMORY"), _attr("AGENTS_RULES")]
+        bases.extend(p.memory_dir for p in parse_projects())
+        for base in bases:
+            try:
+                if target.is_relative_to(base.resolve()):
+                    return target
+            except OSError:
+                continue
+        raise ValueError(f"memory path {rel!r} escapes every store root")
+    rel = rel.lstrip("/")
     if rel in ("user/USER.md", "USER.md", "user.md"):
         return _attr("USER_MD")
     if rel in ("user/PROJECTS.md", "PROJECTS.md", "projects.md"):
@@ -2266,9 +2306,14 @@ def resolve_memory_path(rel: str) -> Path:
 
         return active_skills_path()
     if rel.startswith("rules/"):
-        return (_attr("AGENTS_RULES") / rel[len("rules/") :]).resolve()
+        return _confine(_attr("AGENTS_RULES"), rel[len("rules/") :], "rules")
     if rel.startswith("user/"):
-        return (_attr("USER_MEMORY") / rel[len("user/") :]).resolve()
+        return _confine(_attr("USER_MEMORY"), rel[len("user/") :], "user")
+    if rel == "ws" or rel.startswith("ws/"):
+        # The workspace dir is not a memory root: it holds mcp.json,
+        # config.json, store.db, modules/, schedules/ — never reachable or
+        # writable through memory tools.
+        raise ValueError(f"memory path {rel!r} escapes every store root")
     if rel.startswith("project/"):
         rest = rel[len("project/") :]
         slug, _, inner = rest.partition("/")
@@ -2277,8 +2322,8 @@ def resolve_memory_path(rel: str) -> Path:
             raise FileNotFoundError(rel)
         if not inner:
             return p.detail_path
-        return (p.memory_dir / inner).resolve()
-    legacy = _attr("USER_MEMORY") / rel
+        return _confine(p.memory_dir, inner, f"project/{slug}")
+    legacy = _confine(_attr("USER_MEMORY"), rel, "user")
     if legacy.exists():
         return legacy
     if rel.startswith("projects/"):
@@ -2287,7 +2332,7 @@ def resolve_memory_path(rel: str) -> Path:
         if p:
             return p.detail_path
     if "/" in rel or "." in rel:
-        return (_attr("USER_MEMORY") / rel).resolve()
+        return legacy
     raise FileNotFoundError(rel)
 
 
@@ -2300,7 +2345,7 @@ def read_memory_file(file_id_or_path: str) -> str:
 
 
 def write_memory_file(
-    file_id_or_path: str, content: str, auto_sync: bool = True
+    file_id_or_path: str, content: str, auto_sync: Optional[bool] = None
 ) -> MemoryReceipt:
     """Write/overwrite any memory or rule file and automatically sync to all IDEs/CLIs.
 
@@ -2312,6 +2357,7 @@ def write_memory_file(
     """
     from .redact import redact_secrets
 
+    auto_sync = _auto_sync(auto_sync)
     red = redact_secrets(content)
     content = red.text
     path = resolve_memory_path(file_id_or_path)
@@ -2425,6 +2471,44 @@ _MEMORY_FILE_CACHE: dict[str, Tuple[float, List[str]]] = {}
 
 def clear_memory_cache() -> None:
     _MEMORY_FILE_CACHE.clear()
+
+
+def _agent_turn() -> bool:
+    """True inside a workspace-scoped agent turn or its MCP child process."""
+    return bool(os.environ.get("AGENTS_WORKSPACE", "").strip())
+
+
+def _auto_sync(auto_sync: Optional[bool]) -> bool:
+    """Resolve ``auto_sync=None`` per caller context.
+
+    Inside an agent turn (``AGENTS_WORKSPACE`` set) workspace memory tools
+    default to no injection rewrite — they must not rewrite host-global
+    ``~/.agents/AGENTS.md`` / IDE configs. Human-driven sync passes
+    ``auto_sync=True`` explicitly or runs outside a workspace turn.
+    """
+    if auto_sync is None:
+        return not _agent_turn()
+    return bool(auto_sync)
+
+
+def _index_upsert(path: Path) -> None:
+    """Keep ``.index/fts.sqlite`` in step with a persisted memory file."""
+    try:
+        from . import index as _idx
+
+        _idx.upsert_document(path)
+    except Exception:
+        pass
+
+
+def _index_remove(doc_id: str) -> None:
+    """Drop a deleted file's row so get_related/FTS stop serving it."""
+    try:
+        from . import index as _idx
+
+        _idx.remove_document(doc_id)
+    except Exception:
+        pass
 
 
 def _finish_store_write() -> None:
@@ -2804,7 +2888,7 @@ def add_memory(
     name: str = "",
     project: str = "",
     collection: str = "",
-    auto_sync: bool = True,
+    auto_sync: Optional[bool] = None,
 ) -> MemoryReceipt:
     """File a durable fact. kind+name → taxonomy; project= alone → facts.md (direct fact).
 
@@ -2817,6 +2901,7 @@ def add_memory(
     from .ingest_common import scrub
     from .redact import redact_secrets
 
+    auto_sync = _auto_sync(auto_sync)
     raw = fact.strip()
     red = redact_secrets(raw)
     fact = scrub(red.text)
@@ -2951,12 +3036,14 @@ def clear_acknowledged_deletions(acknowledged: list[str]) -> None:
         log_file.unlink(missing_ok=True)
 
 
-def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
+def delete_memory_file(file_id_or_path: str, auto_sync: Optional[bool] = None) -> bool:
     """Delete a memory or rule file and sync injection."""
+    auto_sync = _auto_sync(auto_sync)
     path = resolve_memory_path(file_id_or_path)
     _refuse_rules_write(path)
     if not path.is_file():
         raise FileNotFoundError(f"Memory file not found: {file_id_or_path}")
+    doc_id = file_id(path)
 
     # Track relative path for synchronization tombstones
     try:
@@ -2972,13 +3059,15 @@ def delete_memory_file(file_id_or_path: str, auto_sync: bool = True) -> bool:
                 pass
 
     path.unlink()
+    _index_remove(doc_id)
     clear_memory_cache()
     if auto_sync:
         _finish_store_write()
     return True
 
 
-def delete_memory(memory_id: str, auto_sync: bool = True) -> str:
+def delete_memory(memory_id: str, auto_sync: Optional[bool] = None) -> str:
+    auto_sync = _auto_sync(auto_sync)
     clean_id = memory_id.strip()
     if clean_id.startswith("memory:"):
         clean_id = clean_id[len("memory:") :].strip()
@@ -3151,13 +3240,14 @@ def promote_bullet(
     project: str = "",
     collection: str = "",
     source_path: str = "",
-    auto_sync: bool = True,
+    auto_sync: Optional[bool] = None,
 ) -> Tuple[MemoryReceipt, bool]:
     """Promote a staging bullet into a typed memory file and remove it from staging.
 
     Returns ``(saved_location, removed_from_staging)``. ``saved_location`` is a
     ``MemoryReceipt`` and still compares equal to the stable memory id.
     """
+    auto_sync = _auto_sync(auto_sync)
     clean_bullet = bullet.strip().lstrip("-").strip()
     if not clean_bullet:
         raise ValueError("empty bullet")
@@ -3367,7 +3457,7 @@ def staging_status_summary() -> dict[str, Any]:
     }
 
 
-def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[str, Any]:
+def distill_batch(items: list[dict[str, Any]], auto_sync: Optional[bool] = None) -> dict[str, Any]:
     """Batch process staging bullets into typed memory or discard them.
 
     Each item is a dict with:
@@ -3377,6 +3467,7 @@ def distill_batch(items: list[dict[str, Any]], auto_sync: bool = True) -> dict[s
     """
     from .redact import redact_secrets
 
+    auto_sync = _auto_sync(auto_sync)
     promoted = 0
     discarded = 0
     errors: List[str] = []
@@ -3435,11 +3526,12 @@ def is_rule_proposals_file(file_id_or_path: str) -> bool:
 
 
 def auto_distill(
-    limit: int = 50, discard_noise: bool = True, auto_sync: bool = True
+    limit: int = 50, discard_noise: bool = True, auto_sync: Optional[bool] = None
 ) -> dict:
     """Automatically classify and distill staging inbox bullets into memory or discard noise."""
     from .ingest_common import is_ephemeral_noise
 
+    auto_sync = _auto_sync(auto_sync)
     inbox = get_staging_inbox(limit=limit)
     items_to_distill = []
     unclassified_candidates = []
@@ -3570,11 +3662,12 @@ def auto_distill(
 def auto_distill_noise_pass(
     max_rounds: Optional[int] = None,
     batch_size: int = 50,
-    auto_sync: bool = True,
+    auto_sync: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Repeat auto_distill until no progress. Discard noise; promote only heuristics."""
     from .ingest_config import load_ingest
 
+    auto_sync = _auto_sync(auto_sync)
     cfg = load_ingest()
     rounds = max_rounds if max_rounds is not None else int(cfg.get("auto_distill_max_rounds") or 3)
     rounds = max(1, min(int(rounds), 10))
@@ -3606,10 +3699,11 @@ def auto_distill_noise_pass(
 _startup_noise_pass_ran = False
 
 
-def maybe_run_threshold_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
+def maybe_run_threshold_noise_pass(*, auto_sync: Optional[bool] = None) -> Optional[dict[str, Any]]:
     """If inbox >= noise threshold, run a deterministic noise pass. No silent promote of leftover bullets."""
     from .ingest_config import load_ingest
 
+    auto_sync = _auto_sync(auto_sync)
     cfg = load_ingest()
     if not cfg.get("auto_distill_on_start", False):
         return None
@@ -3619,10 +3713,11 @@ def maybe_run_threshold_noise_pass(*, auto_sync: bool = True) -> Optional[dict[s
     return auto_distill_noise_pass(auto_sync=auto_sync)
 
 
-def maybe_run_after_extract_noise_pass(*, auto_sync: bool = True) -> Optional[dict[str, Any]]:
+def maybe_run_after_extract_noise_pass(*, auto_sync: Optional[bool] = None) -> Optional[dict[str, Any]]:
     """After ingest extract: noise pass when inbox >= noise threshold."""
     from .ingest_config import load_ingest
 
+    auto_sync = _auto_sync(auto_sync)
     cfg = load_ingest()
     if not cfg.get("auto_distill_after_extract", True):
         return None
@@ -3639,7 +3734,7 @@ def maybe_run_startup_noise_pass() -> Optional[dict[str, Any]]:
         return None
     _startup_noise_pass_ran = True
     try:
-        return maybe_run_threshold_noise_pass(auto_sync=True)
+        return maybe_run_threshold_noise_pass(auto_sync=None)
     except Exception:
         return None
 
@@ -3693,7 +3788,8 @@ def set_baton(text: str, project: str = "", cwd: str = "") -> str:
     else:
         baton_path = _attr("USER_MEMORY") / "rituals" / "baton.md"
     _write(baton_path, text)
-    sync_injection()
+    if _auto_sync(None):
+        sync_injection()
     return str(baton_path)
 
 

@@ -241,6 +241,88 @@ def rebuild_index(db_path: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
+def _doc_id_parts(doc_id: str) -> Tuple[str, str]:
+    """(project, kind) for a doc id — 'user/x' -> ('', 'user'), 'project/s/x' -> ('s', 'project')."""
+    head, _, rest = doc_id.partition("/")
+    if head == "project":
+        return (rest.partition("/")[0], "project")
+    return ("", head)
+
+
+def upsert_document(path: Path, db_path: Optional[Path] = None) -> bool:
+    """Refresh one file's index rows after a write. False when not indexable.
+
+    Only ``user/`` and ``project/`` doc ids are indexed — rules, host files
+    and absolute paths outside the store are skipped, exactly as
+    ``rebuild_index`` scopes them.
+    """
+    doc_id = store.file_id(path)
+    proj, kind = _doc_id_parts(doc_id)
+    if kind not in ("user", "project"):
+        return False
+    try:
+        rel_parts = Path(doc_id.split("/", 1)[1]).parts
+    except (IndexError, ValueError):
+        rel_parts = ()
+    if ".index" in rel_parts or "export" in rel_parts:
+        return False
+    if not path.is_file():
+        return False
+    target_path = db_path or (_attr("INDEX_DIR") / "fts.sqlite")
+    if not target_path.is_file():
+        # Never mint a partial 1-doc index: a missing db must stay missing so
+        # the next search/get_related rebuilds the full index from disk
+        # instead of blinding itself to all pre-existing files.
+        return False
+    conn = get_db(target_path)
+    try:
+        try:
+            mtime = path.stat().st_mtime
+            text = _read(path)
+        except OSError:
+            return False
+        fm, title, body, headings = parse_frontmatter_and_content(text)
+        with conn:
+            conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            conn.execute("DELETE FROM documents_fts WHERE id = ?", (doc_id,))
+            conn.execute(
+                """
+                INSERT INTO documents (id, file_path, project, title, headings, frontmatter_json, content, mtime)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (doc_id, str(path.resolve()), proj, title,
+                 " | ".join(headings), json.dumps(fm), body, mtime),
+            )
+            conn.execute(
+                """
+                INSERT INTO documents_fts (id, title, headings, content)
+                VALUES (?, ?, ?, ?);
+                """,
+                (doc_id, title, " | ".join(headings), body),
+            )
+        return True
+    finally:
+        conn.close()
+
+
+def remove_document(doc_id: str, db_path: Optional[Path] = None) -> bool:
+    """Delete one file's index rows after the file is gone. Idempotent."""
+    proj, kind = _doc_id_parts(doc_id)
+    if kind not in ("user", "project"):
+        return False
+    target_path = db_path or (_attr("INDEX_DIR") / "fts.sqlite")
+    if not target_path.is_file():
+        return False
+    conn = get_db(target_path)
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            conn.execute("DELETE FROM documents_fts WHERE id = ?", (doc_id,))
+        return bool(cur.rowcount)
+    finally:
+        conn.close()
+
+
 def search_hybrid(
     query: str,
     semantic: bool = False,

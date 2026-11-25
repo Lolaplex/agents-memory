@@ -28,7 +28,9 @@ from .store import (
     maybe_run_startup_noise_pass,
 )
 
-ensure_memory_layout()
+# No ensure_memory_layout() at import: the server must not create or rewrite
+# host files before main() knows it is actually serving. Layout is ensured
+# lazily by the write paths and once in main().
 
 mcp = FastMCP("agents-memory", instructions=rules_mod.render_instructions())
 
@@ -157,7 +159,7 @@ def write_memory_file(file_id: str, content: str) -> str:
     key=value secrets, and PEM blocks are replaced with [redacted] before the write.
     """
     try:
-        loc = store_write_file(file_id, content, auto_sync=True)
+        loc = store_write_file(file_id, content, auto_sync=None)
         if not isinstance(loc, MemoryReceipt):
             raise RuntimeError("write_memory_file returned no verified receipt")
         return render_mcp_receipt(
@@ -197,7 +199,7 @@ def propose_rule(rule: str, project: str = "") -> str:
 def auto_distill(limit: int = 50, discard_noise: bool = True) -> str:
     """Automatically classify and distill staging bullets (discard obvious noise/chatter, promote standard facts/preferences) and auto-sync immediately."""
     try:
-        res = store_auto_distill(limit=limit, discard_noise=discard_noise, auto_sync=True)
+        res = store_auto_distill(limit=limit, discard_noise=discard_noise, auto_sync=None)
         return json.dumps(res, indent=2, ensure_ascii=False)
     except Exception as e:
         return f"Error in auto_distill: {e}"
@@ -372,6 +374,10 @@ except Exception:
 
 def main() -> int:
     print("Starting local agents-memory MCP on stdio...", file=sys.stderr)
+    try:
+        ensure_memory_layout()
+    except Exception:
+        pass
     try:
         maybe_run_startup_noise_pass()
     except Exception:
